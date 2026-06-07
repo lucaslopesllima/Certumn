@@ -7,7 +7,7 @@ Faz, em um só script:
      Se nada mudou, encerra sem baixar nem mexer no banco.
   2. DOWNLOAD (retomável, com retry e checagem de integridade) + extração dos CSVs.
   3. UPSERT idempotente em companies (source='rfb'), por cnpj — atualiza os que já
-     existem e insere os novos, SEM duplicar (ON CONFLICT (cnpj)). MEIs excluídos.
+     existem e insere os novos, SEM duplicar (ON CONFLICT (cnpj)). Inclui MEIs.
      Município RFB->IBGE resolvido por nome (de-para construído em memória).
 
 Reimplementa a lógica do server/etl/etl.ts em Python (staging via COPY + UPSERT
@@ -26,6 +26,7 @@ Requer: requests, psycopg2-binary.
 
 import argparse
 import csv
+import datetime
 import io
 import json
 import os
@@ -306,6 +307,23 @@ def _linha_csv(campos):
     return sio.getvalue()
 
 
+def _data(s):
+    """Data RFB (AAAAMMDD) -> 'AAAA-MM-DD' válida, ou '' (NULL no COPY)."""
+    s = (s or "").strip()
+    if len(s) != 8 or not s.isdigit() or s == "00000000":
+        return ""
+    try:
+        datetime.date(int(s[:4]), int(s[4:6]), int(s[6:8]))
+    except ValueError:
+        return ""
+    return f"{s[:4]}-{s[4:6]}-{s[6:8]}"
+
+
+def _int(s):
+    s = (s or "").strip()
+    return s if s.lstrip("-").isdigit() else ""
+
+
 class IteradorArquivo:
     """Adapta um gerador de linhas CSV a um objeto file-like para COPY (read/readline)."""
     def __init__(self, it):
@@ -348,42 +366,96 @@ def copy_into(cur, tabela, colunas, gerador_linhas):
 
 # ═══════════════════════ staging ═══════════════════════
 DDL = """
-DROP TABLE IF EXISTS stg_emp_raw, stg_emp, stg_est, stg_mei_raw, stg_mei, stg_mun;
+DROP TABLE IF EXISTS stg_emp_raw, stg_emp, stg_est, stg_simples_raw, stg_simples, stg_mun;
 CREATE UNLOGGED TABLE stg_emp_raw (cnpj_base char(8), razao_social text,
-  capital_social numeric(16,2), porte porte_emp);
+  capital_social numeric(16,2), porte porte_emp,
+  natureza_juridica int, qualificacao_responsavel smallint, ente_federativo text);
 CREATE UNLOGGED TABLE stg_est (cnpj char(14), cnpj_base char(8), nome_fantasia text,
-  cnae_principal int, cnae_secundarios int[], municipio_rfb int, uf char(2), grp smallint);
-CREATE UNLOGGED TABLE stg_mei_raw (cnpj_base char(8));
+  cnae_principal int, cnae_secundarios int[], municipio_rfb int, uf char(2), grp smallint,
+  logradouro text, numero text, complemento text, bairro text, cep char(8),
+  telefone1 text, telefone2 text, email text,
+  data_inicio_atividade date, matriz_filial smallint, motivo_situacao smallint,
+  data_situacao_cadastral date, situacao_especial text, data_situacao_especial date,
+  nome_cidade_exterior text, pais int, fax text);
+CREATE UNLOGGED TABLE stg_simples_raw (cnpj_base char(8),
+  opcao_simples char(1), data_opcao_simples date, data_exclusao_simples date,
+  opcao_mei char(1), data_opcao_mei date, data_exclusao_mei date);
 CREATE UNLOGGED TABLE stg_mun (rfb int PRIMARY KEY, ibge int);
 """
 
 
 def gen_empresas(arquivos):
+    """EMPRESAS: c0 base, c1 razao, c2 natureza, c3 qualif_resp, c4 capital, c5 porte, c6 ente."""
     for f in arquivos:
         print(f"empresas: {f}")
         for c in ler_csv(f):
             base = (c[0] if c else "").zfill(8)
             if len(base) != 8:
                 continue
-            capital = (c[4] if len(c) > 4 else "0").replace(".", "").replace(",", ".")
+
+            def g(i):
+                return c[i].strip() if i < len(c) else ""
+            capital = g(4).replace(".", "").replace(",", ".")
             try:
                 capital = float(capital or 0)
             except ValueError:
                 capital = 0
-            porte = PORTE_MAP.get(c[5] if len(c) > 5 else "00", "nao_informado")
-            yield _linha_csv([base, c[1] if len(c) > 1 else "", f"{capital:.2f}", porte])
+            porte = PORTE_MAP.get(g(5) or "00", "nao_informado")
+            yield _linha_csv([base, g(1), f"{capital:.2f}", porte,
+                              _int(g(2)), _int(g(3)), g(6)])
 
 
 def gen_simples(arquivos):
+    """SIMPLES: c0 base, c1 opcao_simples, c2 data_opc, c3 data_exc,
+    c4 opcao_mei, c5 data_opc_mei, c6 data_exc_mei."""
     for f in arquivos:
         print(f"simples: {f}")
         for c in ler_csv(f):
-            if len(c) > 4 and c[4].upper() == "S":
-                yield _linha_csv([(c[0] or "").zfill(8)])
+            base = (c[0] if c else "").zfill(8)
+            if len(base) != 8:
+                continue
+
+            def g(i):
+                return c[i].strip().upper() if i < len(c) else ""
+            os_, om = g(1), g(4)
+            yield _linha_csv([base,
+                              os_ if os_ in ("S", "N") else "", _data(g(2)), _data(g(3)),
+                              om if om in ("S", "N") else "", _data(g(5)), _data(g(6))])
+
+
+def gen_socios(arquivos):
+    """SOCIOCSV: c0 base, c1 ident, c2 nome, c3 cnpj_cpf, c4 qualif, c5 data_entrada,
+    c6 pais, c7 rep_legal, c8 nome_rep, c9 qualif_rep, c10 faixa_etaria. + source='rfb'."""
+    for f in arquivos:
+        print(f"socios: {f}")
+        for c in ler_csv(f):
+            base = (c[0] if c else "").zfill(8)
+            if len(base) != 8:
+                continue
+
+            def g(i):
+                return c[i].strip() if i < len(c) else ""
+            yield _linha_csv([base, _int(g(1)), g(2), g(3), _int(g(4)), _data(g(5)),
+                              _int(g(6)), g(7), g(8), _int(g(9)), _int(g(10)), "rfb"])
+
+
+def gen_ref(arquivo):
+    """Auxiliar RFB (codigo;descricao) -> linhas COPY, dedup por código."""
+    visto = set()
+    for c in ler_csv(arquivo):
+        if len(c) >= 2 and _int(c[0].strip()) and c[0].strip() not in visto:
+            visto.add(c[0].strip())
+            yield _linha_csv([c[0].strip(), c[1].strip()])
 
 
 def gen_estab(arquivos, code_uf):
-    """Streama estabs ativos (situação '02'), coleta (cod,uf) e gera linhas COPY."""
+    """Streama estabs ativos (situação '02'), coleta (cod,uf) e gera linhas COPY.
+
+    Campos do ESTABELE: c3 matriz_filial, c6 data_situacao, c7 motivo,
+    c8 cidade_exterior, c9 pais, c10 data_inicio, c13 tipo_logr, c14 logr,
+    c15 num, c16 compl, c17 bairro, c18 cep, c21-24 telefones, c25/26 fax,
+    c27 email, c28 situacao_especial, c29 data_situacao_especial.
+    """
     for f in arquivos:
         print(f"estabelecimentos: {f}")
         for c in ler_csv(f):
@@ -408,7 +480,62 @@ def gen_estab(arquivos, code_uf):
             code_uf.add((mun, uf))
             mun_i = mun if mun.isdigit() else ""
             grp = int(base[:2] or 0) % NGRP
-            yield _linha_csv([cnpj, base, c[4] or "", cnae_p, arr, mun_i, uf, grp])
+
+            def g(i):
+                return c[i].strip() if i < len(c) else ""
+            logr = (g(13) + " " + g(14)).strip()
+            cep = g(18)
+            cep = cep if (len(cep) == 8 and cep.isdigit()) else ""
+            tel1 = (g(21) + g(22)) if g(22) else ""
+            tel2 = (g(23) + g(24)) if g(24) else ""
+            fax = (g(25) + g(26)) if g(26) else ""
+            email = g(27).lower()
+
+            yield _linha_csv([cnpj, base, c[4] or "", cnae_p, arr, mun_i, uf, grp,
+                              logr, g(15), g(16), g(17), cep, tel1, tel2, email,
+                              _data(g(10)), _int(g(3)), _int(g(7)), _data(g(6)),
+                              g(28), _data(g(29)), g(8), _int(g(9)), fax])
+
+
+# ═══════════════════════ referências RFB ═══════════════════════
+# (substr do arquivo auxiliar -> tabela de referência codigo;descricao)
+REFS = [("NATJU", "rfb_natureza"), ("QUALS", "rfb_qualificacao"),
+        ("MOTI", "rfb_motivo"), ("PAIS", "rfb_pais")]
+
+
+def carregar_referencias(cur, csv_dir):
+    for substr, tabela in REFS:
+        arqs = resolver(csv_dir, substr)
+        if not arqs:
+            print(f"[ref] {substr} não encontrado — pulado")
+            continue
+        cur.execute(f"TRUNCATE {tabela}")
+        copy_into(cur, tabela, ["codigo", "descricao"], gen_ref(arqs[0]))
+        cur.execute(f"SELECT count(*) FROM {tabela}")
+        print(f"ref {tabela}: {cur.fetchone()[0]}")
+    carregar_cnae_ref(cur, csv_dir)
+
+
+def carregar_cnae_ref(cur, csv_dir):
+    """Popula cnae_reference (descrição de TODOS os CNAEs) a partir do CNAECSV da RFB.
+    divisão = codigo/100000; seção via cnae_divisao_secao. UPSERT (não perde sinônimos)."""
+    arqs = resolver(csv_dir, "CNAECSV")
+    if not arqs:
+        print("[ref] CNAECSV não encontrado — pulado")
+        return
+    cur.execute("DROP TABLE IF EXISTS stg_cnae; CREATE UNLOGGED TABLE stg_cnae (codigo int, descricao text);")
+    copy_into(cur, "stg_cnae", ["codigo", "descricao"], gen_ref(arqs[0]))
+    cur.execute("""
+      INSERT INTO cnae_reference (codigo, descricao, secao, divisao)
+      SELECT s.codigo, s.descricao, COALESCE(ds.secao, 'Z'), (s.codigo / 100000)::smallint
+      FROM (SELECT DISTINCT ON (codigo) codigo, descricao FROM stg_cnae ORDER BY codigo) s
+      LEFT JOIN cnae_divisao_secao ds ON ds.divisao = (s.codigo / 100000)
+      ON CONFLICT (codigo) DO UPDATE
+        SET descricao = EXCLUDED.descricao, secao = EXCLUDED.secao, divisao = EXCLUDED.divisao
+    """)
+    cur.execute("DROP TABLE stg_cnae")
+    cur.execute("SELECT count(*) FROM cnae_reference")
+    print(f"ref cnae_reference: {cur.fetchone()[0]}")
 
 
 # ═══════════════════════ UPSERT ═══════════════════════
@@ -425,23 +552,30 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
         emp = resolver(csv_dir, "EMPRE")
         if not emp:
             sys.exit("nenhum arquivo de empresas (EMPRE) no csv/")
-        copy_into(cur, "stg_emp_raw", ["cnpj_base", "razao_social", "capital_social", "porte"], gen_empresas(emp))
+        copy_into(cur, "stg_emp_raw",
+                  ["cnpj_base", "razao_social", "capital_social", "porte",
+                   "natureza_juridica", "qualificacao_responsavel", "ente_federativo"],
+                  gen_empresas(emp))
         cur.execute("""CREATE UNLOGGED TABLE stg_emp AS
-                       SELECT DISTINCT ON (cnpj_base) cnpj_base, razao_social, capital_social, porte
+                       SELECT DISTINCT ON (cnpj_base) cnpj_base, razao_social, capital_social, porte,
+                              natureza_juridica, qualificacao_responsavel, ente_federativo
                        FROM stg_emp_raw ORDER BY cnpj_base;
                        ALTER TABLE stg_emp ADD PRIMARY KEY (cnpj_base);
                        DROP TABLE stg_emp_raw;""")
         cur.execute("SELECT count(*) FROM stg_emp"); print(f"empresas: {cur.fetchone()[0]}")
         conn.commit()
 
-        # 2) simples -> stg_mei (dedup)
+        # 2) simples -> stg_simples (dedup por cnpj_base; traz flags Simples/MEI)
         sim = resolver(csv_dir, "SIMPLES")
         if sim:
-            copy_into(cur, "stg_mei_raw", ["cnpj_base"], gen_simples(sim))
-        cur.execute("""CREATE UNLOGGED TABLE stg_mei AS
-                       SELECT DISTINCT cnpj_base FROM stg_mei_raw;
-                       ALTER TABLE stg_mei ADD PRIMARY KEY (cnpj_base);
-                       DROP TABLE stg_mei_raw;""")
+            copy_into(cur, "stg_simples_raw",
+                      ["cnpj_base", "opcao_simples", "data_opcao_simples", "data_exclusao_simples",
+                       "opcao_mei", "data_opcao_mei", "data_exclusao_mei"],
+                      gen_simples(sim))
+        cur.execute("""CREATE UNLOGGED TABLE stg_simples AS
+                       SELECT DISTINCT ON (cnpj_base) * FROM stg_simples_raw ORDER BY cnpj_base;
+                       ALTER TABLE stg_simples ADD PRIMARY KEY (cnpj_base);
+                       DROP TABLE stg_simples_raw;""")
         conn.commit()
 
         # 3) estabelecimentos ativos -> stg_est (coleta code_uf p/ de-para)
@@ -451,9 +585,18 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
         code_uf = set()
         copy_into(cur, "stg_est",
                   ["cnpj", "cnpj_base", "nome_fantasia", "cnae_principal",
-                   "cnae_secundarios", "municipio_rfb", "uf", "grp"],
+                   "cnae_secundarios", "municipio_rfb", "uf", "grp",
+                   "logradouro", "numero", "complemento", "bairro", "cep",
+                   "telefone1", "telefone2", "email",
+                   "data_inicio_atividade", "matriz_filial", "motivo_situacao",
+                   "data_situacao_cadastral", "situacao_especial", "data_situacao_especial",
+                   "nome_cidade_exterior", "pais", "fax"],
                   gen_estab(est, code_uf))
         cur.execute("SELECT count(*) FROM stg_est"); print(f"estabelecimentos ativos: {cur.fetchone()[0]}")
+        conn.commit()
+
+        # 3b) tabelas de referência RFB (decodificam códigos)
+        carregar_referencias(cur, csv_dir)
         conn.commit()
 
         # 4) de-para -> stg_mun
@@ -466,7 +609,7 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
         conn.commit()
 
         cur.execute("CREATE INDEX ON stg_est (cnpj_base); CREATE INDEX ON stg_est (grp); CREATE INDEX ON stg_est (cnpj);")
-        cur.execute("ANALYZE stg_emp; ANALYZE stg_est; ANALYZE stg_mei; ANALYZE stg_mun;")
+        cur.execute("ANALYZE stg_emp; ANALYZE stg_est; ANALYZE stg_simples; ANALYZE stg_mun;")
         conn.commit()
 
         # 5) UPSERT por grupo (commit a cada grupo)
@@ -481,6 +624,7 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
         # 5b) snapshot completo: quem saiu do conjunto ativo do mês é DESATIVADO
         # (marcado 'baixada'), não deletado. Só vira quem ainda consta 'ativa'.
         if desativar:
+            # "ainda ativa" = consta no snapshot ativo (stg_est). Inclui MEI.
             cur.execute("""
               UPDATE companies c
                  SET situacao_cadastral = 'baixada'
@@ -491,11 +635,25 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
             print(f"empresas desativadas (fora do snapshot): {cur.rowcount}")
             conn.commit()
 
+        # 5c) sócios (quadro societário) -> tabela socios. Snapshot completo:
+        # troca atômica (apaga os 'rfb' e recarrega) numa transação só.
+        soc = resolver(csv_dir, "SOCIO")
+        if soc:
+            cur.execute("DELETE FROM socios WHERE source='rfb'")
+            copy_into(cur, "socios",
+                      ["cnpj_base", "identificador", "nome", "cnpj_cpf", "qualificacao",
+                       "data_entrada", "pais", "representante_legal", "nome_representante",
+                       "qualificacao_representante", "faixa_etaria", "source"],
+                      gen_socios(soc))
+            cur.execute("SELECT count(*) FROM socios WHERE source='rfb'")
+            print(f"socios carregados: {cur.fetchone()[0]}")
+            conn.commit()
+
         # 6) habilita as 27 UFs
         for u, r in UF_REGIAO.items():
             cur.execute("""INSERT INTO enabled_regions (uf, regiao) VALUES (%s,%s)
                            ON CONFLICT (uf) DO UPDATE SET regiao=EXCLUDED.regiao""", (u, r))
-        cur.execute("DROP TABLE IF EXISTS stg_emp, stg_est, stg_mei, stg_mun;")
+        cur.execute("DROP TABLE IF EXISTS stg_emp, stg_est, stg_simples, stg_mun;")
         conn.commit()
         print("Atualização concluída.")
     finally:
@@ -508,24 +666,53 @@ _FALLBACK = ("CASE e.uf " + " ".join(
 _UPSERT_SQL = f"""
   INSERT INTO companies
     (cnpj, razao_social, nome_fantasia, cnae_principal, cnae_secundarios,
-     municipio_id, uf, regiao, geom, porte, capital_social, situacao_cadastral, source, raw_data)
+     municipio_id, uf, regiao, geom, porte, capital_social, situacao_cadastral, source, raw_data,
+     logradouro, numero, complemento, bairro, cep, telefone1, telefone2, email,
+     data_inicio_atividade, matriz_filial, natureza_juridica, qualificacao_responsavel,
+     ente_federativo, motivo_situacao, data_situacao_cadastral, situacao_especial,
+     data_situacao_especial, nome_cidade_exterior, pais, fax,
+     opcao_simples, data_opcao_simples, data_exclusao_simples,
+     opcao_mei, data_opcao_mei, data_exclusao_mei)
   SELECT e.cnpj, COALESCE(emp.razao_social,''), e.nome_fantasia,
          e.cnae_principal, e.cnae_secundarios, m.id, e.uf,
          COALESCE(m.regiao, {_FALLBACK}), m.geom,
          COALESCE(emp.porte,'nao_informado'), COALESCE(emp.capital_social,0),
-         'ativa','rfb',NULL
+         'ativa','rfb',NULL,
+         e.logradouro, e.numero, e.complemento, e.bairro, e.cep,
+         e.telefone1, e.telefone2, e.email,
+         e.data_inicio_atividade, e.matriz_filial, emp.natureza_juridica,
+         emp.qualificacao_responsavel, emp.ente_federativo, e.motivo_situacao,
+         e.data_situacao_cadastral, e.situacao_especial, e.data_situacao_especial,
+         e.nome_cidade_exterior, e.pais, e.fax,
+         si.opcao_simples, si.data_opcao_simples, si.data_exclusao_simples,
+         si.opcao_mei, si.data_opcao_mei, si.data_exclusao_mei
   FROM stg_est e
   LEFT JOIN stg_emp emp ON emp.cnpj_base = e.cnpj_base
+  LEFT JOIN stg_simples si ON si.cnpj_base = e.cnpj_base
   LEFT JOIN stg_mun map ON map.rfb = e.municipio_rfb
   LEFT JOIN municipios m ON m.id = COALESCE(map.ibge, e.municipio_rfb)
   WHERE e.grp = {{grp}}
-    AND NOT EXISTS (SELECT 1 FROM stg_mei x WHERE x.cnpj_base = e.cnpj_base)
   ON CONFLICT (cnpj) DO UPDATE SET
     razao_social=EXCLUDED.razao_social, nome_fantasia=EXCLUDED.nome_fantasia,
     cnae_principal=EXCLUDED.cnae_principal, cnae_secundarios=EXCLUDED.cnae_secundarios,
     municipio_id=EXCLUDED.municipio_id, uf=EXCLUDED.uf, regiao=EXCLUDED.regiao,
     geom=EXCLUDED.geom, porte=EXCLUDED.porte, capital_social=EXCLUDED.capital_social,
-    situacao_cadastral='ativa', source='rfb'
+    situacao_cadastral='ativa', source='rfb',
+    logradouro=EXCLUDED.logradouro, numero=EXCLUDED.numero, complemento=EXCLUDED.complemento,
+    bairro=EXCLUDED.bairro, cep=EXCLUDED.cep,
+    telefone1=EXCLUDED.telefone1, telefone2=EXCLUDED.telefone2, email=EXCLUDED.email,
+    data_inicio_atividade=EXCLUDED.data_inicio_atividade, matriz_filial=EXCLUDED.matriz_filial,
+    natureza_juridica=EXCLUDED.natureza_juridica,
+    qualificacao_responsavel=EXCLUDED.qualificacao_responsavel,
+    ente_federativo=EXCLUDED.ente_federativo, motivo_situacao=EXCLUDED.motivo_situacao,
+    data_situacao_cadastral=EXCLUDED.data_situacao_cadastral,
+    situacao_especial=EXCLUDED.situacao_especial,
+    data_situacao_especial=EXCLUDED.data_situacao_especial,
+    nome_cidade_exterior=EXCLUDED.nome_cidade_exterior, pais=EXCLUDED.pais, fax=EXCLUDED.fax,
+    opcao_simples=EXCLUDED.opcao_simples, data_opcao_simples=EXCLUDED.data_opcao_simples,
+    data_exclusao_simples=EXCLUDED.data_exclusao_simples,
+    opcao_mei=EXCLUDED.opcao_mei, data_opcao_mei=EXCLUDED.data_opcao_mei,
+    data_exclusao_mei=EXCLUDED.data_exclusao_mei
   WHERE companies.source='rfb'
 """
 

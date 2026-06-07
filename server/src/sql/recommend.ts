@@ -11,11 +11,19 @@ export interface RecommendProfile {
   pesos: { cnae?: number; proximidade?: number; porte?: number };
 }
 
+export interface RecommendFilters {
+  q?: string;            // texto: razão / fantasia / cnpj
+  cnae?: number[];       // cnae_principal exato (varre a base toda p/ esses CNAEs)
+  uf?: string[];         // UFs
+  porte?: string;        // porte_emp
+}
+
 export interface RecommendArgs {
   orgId: number;
   profile: RecommendProfile;
   limit: number;
   offset: number;
+  filters?: RecommendFilters;
 }
 
 const DEFAULT_NORM_M = 150_000; // proximity normalization in municipio mode (~150km)
@@ -33,7 +41,7 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   const wPorte = profile.pesos?.porte ?? 0.2;
 
   // $1 cnaes, $2 municipios, $3 orgId, $4 normMeters, $5 wCnae, $6 wProx, $7 wPorte,
-  // $8 capitalRef, $9 limit, $10 offset
+  // $8 capitalRef, $9 limit, $10 offset, $11+ filtros (server-side, sobre a base toda)
   const params: unknown[] = [
     cnaes, municipios, orgId, normMeters, wCnae, wProx, wPorte, CAPITAL_REF, limit, offset,
   ];
@@ -41,6 +49,32 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   const territoryPredicate = radiusMode
     ? `ST_DWithin(c.geom, centro.g, $4)`
     : `c.municipio_id = ANY($2::int[])`;
+
+  // Filtros server-side: viram WHERE sobre TODA a base (dentro do território/alvo),
+  // não só a página carregada. CNAE explícito dispensa a poda por divisões-alvo.
+  const f = args.filters ?? {};
+  let p = params.length; // último índice usado (=10)
+  const extra: string[] = [];
+
+  let cnaePredicate: string;
+  if (f.cnae && f.cnae.length > 0) {
+    params.push(f.cnae); cnaePredicate = `c.cnae_principal = ANY($${++p}::int[])`;
+  } else {
+    cnaePredicate = `(cardinality($1::int[]) = 0 OR c.cnae_divisao IN (SELECT divisao FROM prune))`;
+  }
+  if (f.uf && f.uf.length > 0) { params.push(f.uf); extra.push(`c.uf = ANY($${++p}::text[])`); }
+  if (f.porte) { params.push(f.porte); extra.push(`c.porte = $${++p}::porte_emp`); }
+  if (f.q) {
+    const digits = f.q.replace(/\D/g, '');
+    params.push(`%${f.q}%`); const a = ++p;
+    if (digits.length >= 2) {
+      params.push(`${digits}%`); const b = ++p;
+      extra.push(`(c.razao_social ILIKE $${a} OR c.nome_fantasia ILIKE $${a} OR c.cnpj LIKE $${b})`);
+    } else {
+      extra.push(`(c.razao_social ILIKE $${a} OR c.nome_fantasia ILIKE $${a})`);
+    }
+  }
+  const extraPredicates = extra.length ? `\n    AND ${extra.join('\n    AND ')}` : '';
 
   const text = `
 WITH divs AS (
@@ -77,12 +111,12 @@ cand AS (
   LEFT JOIN cnae_divisao_secao cds ON cds.divisao = c.cnae_divisao
   WHERE c.situacao_cadastral = 'ativa'
     AND ${territoryPredicate}
-    AND (cardinality($1::int[]) = 0 OR c.cnae_divisao IN (SELECT divisao FROM prune))
+    AND ${cnaePredicate}
     AND (EXISTS (SELECT 1 FROM enabled_regions er WHERE er.uf = c.uf)
          OR EXISTS (SELECT 1 FROM enabled_regions er WHERE er.regiao = c.regiao))
     AND NOT EXISTS (
       SELECT 1 FROM company_relationships r WHERE r.org_id = $3 AND r.company_id = c.id
-    )
+    )${extraPredicates}
 )
 SELECT
   id, cnpj, razao_social, nome_fantasia, cnae_principal, municipio_id, uf, porte,

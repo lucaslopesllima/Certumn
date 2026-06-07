@@ -55,11 +55,31 @@ export interface KanbanCard {
   data_contato: string | null; previsao_data: string | null;
 }
 
+export interface Socio {
+  identificador: number | null; nome: string | null; cnpj_cpf: string | null;
+  qualificacao: number | null; qualificacao_descricao: string | null;
+  data_entrada: string | null; faixa_etaria: number | null;
+  nome_representante: string | null; representante_legal: string | null;
+}
+
 export interface CompanyDetail {
   id: number; cnpj: string; razao_social: string; nome_fantasia: string | null;
   cnae_principal: number; cnae_descricao: string | null; cnae_secundarios: number[];
   uf: string; municipio_id: number | null; cidade: string | null; regiao: string;
   porte: string; capital_social: string; situacao_cadastral: string; source: string;
+  logradouro: string | null; numero: string | null; complemento: string | null;
+  bairro: string | null; cep: string | null;
+  telefone1: string | null; telefone2: string | null; email: string | null; fax: string | null;
+  data_inicio_atividade: string | null; matriz_filial: number | null;
+  natureza_juridica: number | null; natureza_descricao: string | null;
+  qualificacao_responsavel: number | null; qualificacao_descricao: string | null;
+  ente_federativo: string | null;
+  motivo_situacao: number | null; motivo_descricao: string | null;
+  data_situacao_cadastral: string | null; situacao_especial: string | null;
+  data_situacao_especial: string | null;
+  nome_cidade_exterior: string | null; pais: number | null; pais_nome: string | null;
+  opcao_simples: string | null; data_opcao_simples: string | null; data_exclusao_simples: string | null;
+  opcao_mei: string | null; data_opcao_mei: string | null; data_exclusao_mei: string | null;
   lat: number | null; lon: number | null; raw_data: Record<string, unknown> | null;
 }
 

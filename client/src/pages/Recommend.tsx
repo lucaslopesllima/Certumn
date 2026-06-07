@@ -8,6 +8,7 @@ import { Btn, Badge, Card, EmptyState, PageHeader, ScoreBar, Segmented, Spinner,
 import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
+import { Cnae } from '../lib/cnae.tsx';
 
 const MATCH_COLOR: Record<string, string> = {
   classe: '#039855', divisao: '#0284c7', secao: '#12b76a', nenhum: '#94a3b8',
@@ -19,12 +20,24 @@ const MATCH_TONE: Record<string, Tone> = {
   classe: 'success', divisao: 'info', secao: 'brand', nenhum: 'neutral',
 };
 
-function FitBounds({ recs }: { recs: Recommendation[] }): null {
+function FitBounds({ recs, focus }: { recs: Recommendation[]; focus: MapFocus | null }): null {
   const map = useMap();
   useEffect(() => {
+    if (focus) return;  // com foco ativo, quem manda é o FlyTo
     const pts = recs.filter((r) => r.lat && r.lon).map((r) => [r.lat, r.lon] as [number, number]);
     if (pts.length > 0) map.fitBounds(pts as LatLngBoundsExpression, { padding: [40, 40], maxZoom: 13 });
-  }, [recs, map]);
+  }, [recs, map, focus]);
+  return null;
+}
+
+type MapFocus = { id: string; lat: number; lon: number };
+
+// Centraliza/zoom na empresa focada (botão "Ver no mapa").
+function FlyTo({ focus }: { focus: MapFocus | null }): null {
+  const map = useMap();
+  useEffect(() => {
+    if (focus) map.setView([focus.lat, focus.lon], 15, { animate: true });
+  }, [focus, map]);
   return null;
 }
 
@@ -38,15 +51,27 @@ export function Recommend(): React.JSX.Element {
   const [view, setView] = useState<'lista' | 'mapa'>('lista');
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [viewing, setViewing] = useState<number | null>(null);
+  const [focus, setFocus] = useState<MapFocus | null>(null);
   const filter = useCompanyFilter('prospeccao');
   const LIMIT = 20;
+
+  // nº de filtros ativos. Regra: 0 = recomendação normal; >=2 = busca na base;
+  // exatamente 1 é bloqueado (1 filtro só varreria milhões — sobrecarga).
+  const nFiltros = [filter.fq.trim(), filter.fCnae.trim(), filter.fUf.trim(), filter.fPorte]
+    .filter(Boolean).length;
+  const filtroIncompleto = nFiltros === 1;
 
   const load = async (off: number): Promise<void> => {
     setLoading(true);
     setErr('');
     try {
+      const qs = new URLSearchParams({ limit: String(LIMIT), offset: String(off) });
+      if (filter.fq.trim()) qs.set('q', filter.fq.trim());
+      if (filter.fCnae.trim()) qs.set('cnae', filter.fCnae.trim());
+      if (filter.fUf.trim()) qs.set('uf', filter.fUf.trim());
+      if (filter.fPorte) qs.set('porte', filter.fPorte);
       const r = await api.get<{ results: Recommendation[]; page: { count: number } }>(
-        `/api/recommend?limit=${LIMIT}&offset=${off}`,
+        `/api/recommend?${qs.toString()}`,
       );
       setRecs((prev) => (off === 0 ? r.results : [...prev, ...r.results]));
       setDone(r.results.length < LIMIT);
@@ -58,7 +83,14 @@ export function Recommend(): React.JSX.Element {
     }
   };
 
-  useEffect(() => { void load(0); /* eslint-disable-next-line */ }, []);
+  // recarrega do servidor (página 0) ao mudar qualquer filtro — busca na BASE TODA,
+  // com debounce p/ não disparar a cada tecla. Roda também no mount.
+  useEffect(() => {
+    if (filtroIncompleto) return;  // exige 0 ou >=2 filtros — não consulta com 1 só
+    const t = setTimeout(() => { void load(0); }, 350);
+    return () => clearTimeout(t);
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte]);
 
   const addToFunnel = async (rec: Recommendation): Promise<void> => {
     try {
@@ -69,8 +101,14 @@ export function Recommend(): React.JSX.Element {
     }
   };
 
-  const visibleRecs = useMemo(() => filter.apply(recs), [filter.apply, recs]);
-  const oculto = recs.length - visibleRecs.length;
+  const verNoMapa = (rec: Recommendation): void => {
+    if (rec.lat == null || rec.lon == null) { alert('Empresa sem localização geográfica.'); return; }
+    setFocus({ id: rec.id, lat: rec.lat, lon: rec.lon });
+    setView('mapa');
+  };
+
+  // server já filtrou — nada de filtro client-side aqui.
+  const visibleRecs = recs;
 
   const center = useMemo<[number, number]>(() => {
     const first = visibleRecs.find((r) => r.lat && r.lon);
@@ -109,9 +147,9 @@ export function Recommend(): React.JSX.Element {
           actions={
             <div className="flex items-center gap-2">
               <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
-                Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
+                Filtros{filter.filtroAtivo ? ' · ativos' : ''}
               </Btn>
-              <Segmented value={view} onChange={setView} options={[
+              <Segmented value={view} onChange={(v) => { setFocus(null); setView(v); }} options={[
                 { value: 'lista', label: 'Lista', icon: 'list' },
                 { value: 'mapa', label: 'Mapa', icon: 'map' },
               ]} />
@@ -121,8 +159,17 @@ export function Recommend(): React.JSX.Element {
 
         {filtersOpen && <CompanyFilterBar f={filter} />}
 
+        {filtroIncompleto && (
+          <Card className="border-amber-200 bg-amber-50 p-3">
+            <p className="inline-flex items-center gap-2 text-sm text-amber-900">
+              <Icon name="search" size={15} />
+              Aplique <b>ao menos 2 filtros</b>.
+            </p>
+          </Card>
+        )}
+
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label={oculto > 0 ? 'Recomendações (filtradas)' : 'Recomendações'} value={kpi.n} icon="building" tone="brand" />
+          <StatCard label={filter.filtroAtivo ? 'Resultados (filtrados)' : 'Recomendações'} value={kpi.n} icon="building" tone="brand" />
           <StatCard label="Score médio" value={(kpi.avg * 100).toFixed(0)} sub="de 100" icon="trendingUp" tone="success" />
           <StatCard label="CNAE exato" value={kpi.exact} sub="match de classe" icon="target" tone="info" />
           <StatCard label="Mais próxima" value={`${kpi.near.toFixed(0)} km`} icon="mapPin" tone="warn" />
@@ -134,10 +181,15 @@ export function Recommend(): React.JSX.Element {
           <Card className="h-full overflow-hidden p-0">
             <MapContainer center={center} zoom={11} className="h-full w-full" scrollWheelZoom>
               <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-              <FitBounds recs={visibleRecs} />
-              {visibleRecs.filter((r) => r.lat && r.lon).map((r) => (
-                <CircleMarker key={r.id} center={[r.lat, r.lon]} radius={7}
-                  pathOptions={{ color: MATCH_COLOR[r.reason.cnae_match], fillOpacity: 0.7 }}>
+              <FitBounds recs={visibleRecs} focus={focus} />
+              <FlyTo focus={focus} />
+              {visibleRecs.filter((r) => r.lat && r.lon).map((r) => {
+                const isFocus = focus?.id === r.id;
+                return (
+                <CircleMarker key={r.id} center={[r.lat, r.lon]} radius={isFocus ? 11 : 7}
+                  ref={isFocus ? (m) => { m?.openPopup(); } : undefined}
+                  pathOptions={{ color: isFocus ? '#dc2626' : MATCH_COLOR[r.reason.cnae_match],
+                    weight: isFocus ? 3 : 1, fillOpacity: isFocus ? 0.9 : 0.7 }}>
                   <Popup>
                     <div className="space-y-1">
                       <p className="font-semibold">{r.razao_social}</p>
@@ -149,20 +201,22 @@ export function Recommend(): React.JSX.Element {
                     </div>
                   </Popup>
                 </CircleMarker>
-              ))}
+                );
+              })}
             </MapContainer>
           </Card>
         </div>
       ) : (
         <div className="min-h-0 flex-1 space-y-3 overflow-auto px-4 pb-4 sm:px-6 sm:pb-6">
           {visibleRecs.map((r) => (
-            <RecCard key={r.id} rec={r} added={added.has(r.id)} onAdd={() => addToFunnel(r)} onView={() => setViewing(Number(r.id))} />
+            <RecCard key={r.id} rec={r} added={added.has(r.id)} onAdd={() => addToFunnel(r)}
+              onView={() => setViewing(Number(r.id))} onViewMap={() => verNoMapa(r)} />
           ))}
           {!loading && recs.length > 0 && visibleRecs.length === 0 && (
             <p className="py-6 text-center text-sm text-ink-400">Nenhuma recomendação bate com os filtros.</p>
           )}
           {loading && <Spinner />}
-          {!loading && !done && (
+          {!loading && !done && !filtroIncompleto && (
             <Btn variant="ghost" onClick={() => load(offset)}
               className="w-full border border-ink-200 bg-white text-ink-600 hover:bg-ink-50">
               Carregar mais
@@ -180,7 +234,7 @@ export function Recommend(): React.JSX.Element {
   );
 }
 
-function RecCard({ rec, added, onAdd, onView }: { rec: Recommendation; added: boolean; onAdd: () => void; onView: () => void }): React.JSX.Element {
+function RecCard({ rec, added, onAdd, onView, onViewMap }: { rec: Recommendation; added: boolean; onAdd: () => void; onView: () => void; onViewMap: () => void }): React.JSX.Element {
   const c = rec.reason.componentes;
   const score = rec.score * 100;
   return (
@@ -211,7 +265,7 @@ function RecCard({ rec, added, onAdd, onView }: { rec: Recommendation; added: bo
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         <Badge tone={MATCH_TONE[rec.reason.cnae_match]}>{MATCH_LABEL[rec.reason.cnae_match]}</Badge>
-        <Badge tone="neutral">CNAE {rec.cnae_principal}</Badge>
+        <Badge tone="neutral"><Cnae code={rec.cnae_principal} /></Badge>
         <Badge tone="neutral"><Icon name="mapPin" size={12} />{rec.reason.distancia_km} km</Badge>
         <Badge tone="neutral">porte {rec.reason.porte}</Badge>
       </div>
@@ -222,10 +276,13 @@ function RecCard({ rec, added, onAdd, onView }: { rec: Recommendation; added: bo
         <ScoreBar label="Porte" value={c.porte} />
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         {added
           ? <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Adicionado ao funil</span>
           : <Btn size="sm" icon="plus" onClick={onAdd}>Adicionar ao funil</Btn>}
+        {rec.lat != null && rec.lon != null && (
+          <Btn size="sm" variant="soft" icon="map" onClick={onViewMap}>Ver no mapa</Btn>
+        )}
       </div>
     </Card>
   );

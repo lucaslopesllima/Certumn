@@ -34,6 +34,7 @@ echo ">> executando rotina de atualização…"
 exec docker run --rm \
   --network "$REDE" \
   -e DATABASE_URL="$DATABASE_URL" \
+  -e PYTHONUNBUFFERED=1 \
   -v "$PWD:/work" -w /work \
   "$PY_IMAGE" \
   bash -c 'pip install -q --disable-pip-version-check --root-user-action=ignore requests psycopg2-binary && python atualizar_cnpj.py "$@"' _ "$@"

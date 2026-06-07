@@ -1,6 +1,12 @@
 // ETL CLI — load Receita Federal open data into the GLOBAL companies pool.
 // Idempotent: UPSERT by cnpj with source='rfb'. The ONLY writer of rfb companies.
 //
+// ⚠️ LEGADO / parcial. O carregador canônico é o ../../atualizar_cnpj.py, que
+// popula TODOS os campos (endereço/contato, datas, natureza, Simples), carrega
+// sócios + tabelas de referência e inclui MEI. Este etl.ts ainda EXCLUI MEI e NÃO
+// preenche os campos das migrations 012/013 nem socios/refs. Use-o só p/ bootstrap
+// rápido de uma UF; para produção/atualização use atualizar_cnpj.py.
+//
 // --uf SP loads one state; --uf BR loads ALL of Brazil in a single pass (no UF
 // filter; região derived per-row from the estab UF; todas as 27 enabled_regions).
 //
@@ -134,7 +140,9 @@ async function main(): Promise<void> {
       CREATE UNLOGGED TABLE stg_emp (cnpj_base char(8) PRIMARY KEY, razao_social text,
         capital_social numeric(16,2), porte porte_emp);
       CREATE UNLOGGED TABLE stg_est (cnpj char(14), cnpj_base char(8), nome_fantasia text,
-        cnae_principal int, cnae_secundarios int[], municipio_rfb int, uf char(2), grp smallint);
+        cnae_principal int, cnae_secundarios int[], municipio_rfb int, uf char(2), grp smallint,
+        logradouro text, numero text, complemento text, bairro text, cep char(8),
+        telefone1 text, telefone2 text, email text);
       CREATE UNLOGGED TABLE stg_mei (cnpj_base char(8) PRIMARY KEY);
       CREATE UNLOGGED TABLE stg_mun (rfb int PRIMARY KEY, ibge int);
     `);
@@ -189,7 +197,8 @@ async function main(): Promise<void> {
     let estCount = 0;
     const NGRP = 25;  // buckets para fragmentar o UPSERT final (UPSERT por grupo)
     const estB = new Batcher(client, 'stg_est',
-      ['cnpj', 'cnpj_base', 'nome_fantasia', 'cnae_principal', 'cnae_secundarios', 'municipio_rfb', 'uf', 'grp'], args.batch);
+      ['cnpj', 'cnpj_base', 'nome_fantasia', 'cnae_principal', 'cnae_secundarios', 'municipio_rfb', 'uf', 'grp',
+        'logradouro', 'numero', 'complemento', 'bairro', 'cep', 'telefone1', 'telefone2', 'email'], args.batch);
     for (const f of estFiles) {
       console.log(`estabelecimentos: ${f}`);
       await streamCsv(f, async (c) => {
@@ -205,8 +214,17 @@ async function main(): Promise<void> {
         const cnaeSec = (c[12] ?? '').split(',').map((s) => parseInt(s, 10)).filter(Number.isFinite);
         const munRfb = parseInt(c[20] ?? '', 10);
         const grp = (Number(base.slice(0, 2)) || 0) % NGRP;
+        // endereço/contato (ESTABELE): c13 tipo_logr, c14 logr, c15 num, c16 compl,
+        // c17 bairro, c18 cep, c21 ddd1, c22 tel1, c23 ddd2, c24 tel2, c27 email
+        const g = (i: number): string => (c[i] ?? '').trim();
+        const logr = `${g(13)} ${g(14)}`.trim();
+        const cep = /^\d{8}$/.test(g(18)) ? g(18) : null;
+        const tel1 = g(22) ? g(21) + g(22) : null;
+        const tel2 = g(24) ? g(23) + g(24) : null;
+        const email = g(27).toLowerCase() || null;
         await estB.push([cnpj, base, c[4] || null, cnaeP, cnaeSec,
-          Number.isFinite(munRfb) ? munRfb : null, allBr ? ufRow : args.uf, grp]);
+          Number.isFinite(munRfb) ? munRfb : null, allBr ? ufRow : args.uf, grp,
+          logr || null, g(15) || null, g(16) || null, g(17) || null, cep, tel1, tel2, email]);
         estCount++;
       });
     }
@@ -229,7 +247,8 @@ async function main(): Promise<void> {
       const r = await client.query(`
         INSERT INTO companies
           (cnpj, razao_social, nome_fantasia, cnae_principal, cnae_secundarios,
-           municipio_id, uf, regiao, geom, porte, capital_social, situacao_cadastral, source, raw_data)
+           municipio_id, uf, regiao, geom, porte, capital_social, situacao_cadastral, source, raw_data,
+           logradouro, numero, complemento, bairro, cep, telefone1, telefone2, email)
         SELECT
           e.cnpj,
           COALESCE(emp.razao_social, ''),
@@ -244,7 +263,9 @@ async function main(): Promise<void> {
           COALESCE(emp.capital_social, 0),
           'ativa',
           'rfb',
-          NULL
+          NULL,
+          e.logradouro, e.numero, e.complemento, e.bairro, e.cep,
+          e.telefone1, e.telefone2, e.email
         FROM stg_est e
         LEFT JOIN stg_emp emp ON emp.cnpj_base = e.cnpj_base
         LEFT JOIN stg_mun map ON map.rfb = e.municipio_rfb
@@ -263,7 +284,15 @@ async function main(): Promise<void> {
           porte = EXCLUDED.porte,
           capital_social = EXCLUDED.capital_social,
           situacao_cadastral = 'ativa',
-          source = 'rfb'
+          source = 'rfb',
+          logradouro = EXCLUDED.logradouro,
+          numero = EXCLUDED.numero,
+          complemento = EXCLUDED.complemento,
+          bairro = EXCLUDED.bairro,
+          cep = EXCLUDED.cep,
+          telefone1 = EXCLUDED.telefone1,
+          telefone2 = EXCLUDED.telefone2,
+          email = EXCLUDED.email
         WHERE companies.source = 'rfb'
       `, [g]);
       upserted += r.rowCount ?? 0;
