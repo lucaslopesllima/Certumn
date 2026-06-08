@@ -120,6 +120,39 @@ export interface Activity {
   company_id: number | null; status: string; razao_social: string | null;
 }
 
+export interface Vehicle {
+  id: number; nome: string; placa: string | null;
+  combustivel: 'gasolina' | 'etanol' | 'diesel' | 'flex';
+  consumo_kml: string; tanque_litros: string | null; preco_litro: string | null; ativo: boolean;
+}
+
+// Empresa do funil selecionável para montar a rota (subset de GET /api/relationships).
+export interface FunnelCompany {
+  id: number; company_id: number; razao_social: string; nome_fantasia: string | null;
+  uf: string; municipio_id: number; lat: number | null; lon: number | null;
+}
+
+export interface RouteStop {
+  seq: number; company_id: number; razao_social: string; nome_fantasia: string | null;
+  uf: string; cidade: string | null; lat: number; lon: number;
+  leg_dist_km: number | null; leg_dur_min: number | null;
+}
+
+export interface OptimizeResult {
+  origem: { lat: number; lon: number };
+  stops: RouteStop[];
+  dist_km: number; dur_min: number;
+  preco_litro: number | null; litros: number | null; custo_total: number | null;
+  geometry: { coordinates: [number, number][] };
+  skipped: number[];
+}
+
+export interface SavedRoute {
+  id: number; nome: string; vehicle_id: number | null; veiculo: string | null;
+  dist_km: string | null; dur_min: string | null; litros: string | null;
+  custo_total: string | null; created_at: string; paradas: string;
+}
+
 export interface FinanceEntry {
   id: number;
   kind: 'pagar' | 'receber';

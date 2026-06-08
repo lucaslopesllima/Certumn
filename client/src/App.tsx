@@ -8,6 +8,7 @@ import { Agenda } from './pages/Agenda.tsx';
 import { Settings } from './pages/Settings.tsx';
 import { Account } from './pages/Account.tsx';
 import { Finance } from './pages/Finance.tsx';
+import { RoutePlanner } from './pages/Routes.tsx';
 import { Icon, type IconName } from './lib/icons.tsx';
 import { cn } from './lib/ui.tsx';
 import type { ReactNode } from 'react';
@@ -28,6 +29,7 @@ function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
 const NAV: { to: string; label: string; icon: IconName }[] = [
   { to: '/', label: 'Prospecção', icon: 'target' },
   { to: '/funil', label: 'Funil', icon: 'columns' },
+  { to: '/rotas', label: 'Rotas', icon: 'route' },
   { to: '/catalogo', label: 'Catálogo', icon: 'box' },
   { to: '/agenda', label: 'Agenda', icon: 'calendar' },
   { to: '/financeiro', label: 'Financeiro', icon: 'wallet' },
@@ -119,7 +121,7 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
       </div>
 
       {/* mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-6 border-t border-ink-200 bg-white/95 backdrop-blur sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-7 border-t border-ink-200 bg-white/95 backdrop-blur sm:hidden">
         {NAV.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'}
             className={({ isActive }) => cn(
@@ -140,6 +142,7 @@ export function App(): React.JSX.Element {
       <Route path="/" element={<RequireAuth><Shell><Recommend /></Shell></RequireAuth>} />
       <Route path="/perfil" element={<Navigate to="/config" replace />} />
       <Route path="/funil" element={<RequireAuth><Shell><Kanban /></Shell></RequireAuth>} />
+      <Route path="/rotas" element={<RequireAuth><Shell><RoutePlanner /></Shell></RequireAuth>} />
       <Route path="/catalogo" element={<RequireAuth><Shell><Catalog /></Shell></RequireAuth>} />
       <Route path="/agenda" element={<RequireAuth><Shell><Agenda /></Shell></RequireAuth>} />
       <Route path="/financeiro" element={<RequireAuth><Shell><Finance /></Shell></RequireAuth>} />
