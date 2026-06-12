@@ -310,6 +310,10 @@ async function main(): Promise<void> {
       );
     }
     await client.query('DROP TABLE IF EXISTS stg_emp; DROP TABLE IF EXISTS stg_est; DROP TABLE IF EXISTS stg_mei; DROP TABLE IF EXISTS stg_mun;');
+    // Estatísticas pós-carga: sem isso o planner segue com amostra antiga da
+    // tabela (milhões de linhas novas invisíveis p/ ele) até o autovacuum passar.
+    console.log('ANALYZE companies…');
+    await client.query('ANALYZE companies');
     console.log(`ETL concluído. enabled_regions += ${args.uf}.`);
   } finally {
     await client.end();

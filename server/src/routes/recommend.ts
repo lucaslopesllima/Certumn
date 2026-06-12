@@ -1,17 +1,44 @@
 import type { FastifyInstance } from 'fastify';
-import { one, withClient } from '../db.ts';
+import { one, query, withClient } from '../db.ts';
 import { requireAuth } from '../auth.ts';
 import { config } from '../config.ts';
 import { buildRecommendQuery, type RecommendProfile, type RecommendFilters } from '../sql/recommend.ts';
 
 const PORTES = new Set(['nao_informado', 'micro', 'pequeno', 'demais']);
 
+// cnae_divisao_secao é estática (~99 linhas, escrita só por seed) — cache em memória.
+let divisaoSecao: Map<number, string> | null = null;
+async function getDivisaoSecao(): Promise<Map<number, string>> {
+  if (!divisaoSecao) {
+    const rows = await query<{ divisao: number; secao: string }>(
+      'SELECT divisao, secao FROM cnae_divisao_secao',
+    );
+    divisaoSecao = new Map(rows.map((r) => [r.divisao, r.secao]));
+  }
+  return divisaoSecao;
+}
+
+// Tiers de fit calculados aqui (e não em CTE) p/ virarem = ANY($array) no SQL:
+// arrays indexáveis deixam o planner combinar índices na poda de candidatos.
+async function cnaeTiers(cnaesAlvo: number[]): Promise<{
+  divisoesAlvo: number[]; secoesAlvo: string[]; pruneDivisoes: number[];
+}> {
+  const map = await getDivisaoSecao();
+  const divisoesAlvo = [...new Set(cnaesAlvo.map((c) => Math.floor(c / 100000)))];
+  const secoesAlvo = [...new Set(divisoesAlvo.map((d) => map.get(d)).filter((s): s is string => !!s))];
+  const secSet = new Set(secoesAlvo);
+  const pruneDivisoes = [...map.entries()].filter(([, s]) => secSet.has(s)).map(([d]) => d);
+  return { divisoesAlvo, secoesAlvo, pruneDivisoes };
+}
+
 function parseFilters(q: { q?: string; cnae?: string; uf?: string; porte?: string }): RecommendFilters {
   const cnae = (q.cnae ?? '').split(/[,\s]+/).map((x) => parseInt(x, 10)).filter(Number.isFinite);
   const uf = (q.uf ?? '').split(/[,\s]+/).map((x) => x.trim().toUpperCase()).filter((x) => x.length === 2);
   const texto = (q.q ?? '').trim();
   return {
-    q: texto || undefined,
+    // <3 chars: o GIN trgm não indexa o padrão -> ILIKE '%x%' vira seq scan
+    // na base inteira a cada tecla. Ignora até o termo ficar utilizável.
+    q: texto.length >= 3 ? texto : undefined,
     cnae: cnae.length ? cnae : undefined,
     uf: uf.length ? uf : undefined,
     porte: q.porte && PORTES.has(q.porte) ? q.porte : undefined,
@@ -50,7 +77,8 @@ export function recommendRoutes(app: FastifyInstance): void {
       return reply.code(400).send({ error: 'defina o território (municípios) no perfil-alvo' });
     }
 
-    const { text, params } = buildRecommendQuery({ orgId, profile, limit, offset, filters });
+    const tiers = await cnaeTiers(profile.cnaes_alvo ?? []);
+    const { text, params } = buildRecommendQuery({ orgId, profile, limit, offset, filters, ...tiers });
 
     // Run in a tx on a single connection so SET LOCAL work_mem applies to the recommendation sort.
     const result = await withClient(async (client) => {

@@ -4,6 +4,32 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    # Tuning p/ base companies com milhões de linhas. Calibre pelo hardware da
+    # VPS via .env: PG_SHARED_BUFFERS ~25% da RAM, PG_EFFECTIVE_CACHE_SIZE ~75%.
+    # shm_size: default de 64MB do Docker limita hash/sort paralelo.
+    shm_size: ${PG_SHM_SIZE:-1g}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=${PG_SHARED_BUFFERS:-2GB}
+      - -c
+      - effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-6GB}
+      - -c
+      - work_mem=${PG_WORK_MEM:-32MB}
+      - -c
+      - maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-1GB}
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - jit=off
+      # autoprewarm: salva o conteúdo do buffer cache e recarrega após restart,
+      # evitando primeira busca fria (índices trgm/gist têm GBs).
+      - -c
+      - shared_preload_libraries=pg_prewarm
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}

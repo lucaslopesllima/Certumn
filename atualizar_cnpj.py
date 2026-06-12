@@ -655,6 +655,28 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
                            ON CONFLICT (uf) DO UPDATE SET regiao=EXCLUDED.regiao""", (u, r))
         cur.execute("DROP TABLE IF EXISTS stg_emp, stg_est, stg_simples, stg_mun;")
         conn.commit()
+
+        # 7) manutenção pós-carga.
+        # companies: CLUSTER reescreve a tabela na ordem por município (busca
+        # territorial lê páginas contíguas — ver migration 023), descartando de
+        # quebra os dead tuples do UPSERT. ~minutos, lock exclusivo — ok aqui,
+        # a carga já roda em janela offline. Se o índice da 023 ainda não
+        # existir (migrations não rodaram), cai no VACUUM simples.
+        # socios: DELETE+COPY mata a tabela inteira em dead tuples; VACUUM.
+        # VACUUM/CLUSTER+ANALYZE fora de transação -> autocommit temporário.
+        conn.autocommit = True
+        cur.execute("SELECT 1 FROM pg_indexes WHERE indexname='companies_municipio_full_idx'")
+        if cur.fetchone():
+            print("CLUSTER companies (ordem por município)…")
+            cur.execute("CLUSTER companies USING companies_municipio_full_idx")
+        else:
+            print("índice companies_municipio_full_idx ausente (rode as migrations); VACUUM simples…")
+            cur.execute("VACUUM companies")
+        print("ANALYZE companies…")
+        cur.execute("ANALYZE companies")
+        print("VACUUM ANALYZE socios…")
+        cur.execute("VACUUM ANALYZE socios")
+        conn.autocommit = False
         print("Atualização concluída.")
     finally:
         conn.close()
@@ -714,6 +736,43 @@ _UPSERT_SQL = f"""
     opcao_mei=EXCLUDED.opcao_mei, data_opcao_mei=EXCLUDED.data_opcao_mei,
     data_exclusao_mei=EXCLUDED.data_exclusao_mei
   WHERE companies.source='rfb'
+    -- Só reescreve linha que de fato mudou. Sem isso, TODA empresa ativa vira
+    -- dead tuple todo mês (a maioria não muda): carga lenta, bloat de milhões
+    -- de linhas e a ordem física do CLUSTER destruída a cada atualização.
+    -- geom fica fora da comparação: deriva do centroide do município, então
+    -- municipio_id cobre. situacao_cadastral compara com 'ativa' (reativação
+    -- de empresa baixada precisa atualizar).
+    AND (companies.razao_social, companies.nome_fantasia, companies.cnae_principal,
+         companies.cnae_secundarios, companies.municipio_id, companies.uf,
+         companies.regiao, companies.porte, companies.capital_social,
+         companies.situacao_cadastral,
+         companies.logradouro, companies.numero, companies.complemento,
+         companies.bairro, companies.cep, companies.telefone1, companies.telefone2,
+         companies.email, companies.data_inicio_atividade, companies.matriz_filial,
+         companies.natureza_juridica, companies.qualificacao_responsavel,
+         companies.ente_federativo, companies.motivo_situacao,
+         companies.data_situacao_cadastral, companies.situacao_especial,
+         companies.data_situacao_especial, companies.nome_cidade_exterior,
+         companies.pais, companies.fax,
+         companies.opcao_simples, companies.data_opcao_simples,
+         companies.data_exclusao_simples, companies.opcao_mei,
+         companies.data_opcao_mei, companies.data_exclusao_mei)
+        IS DISTINCT FROM
+        (EXCLUDED.razao_social, EXCLUDED.nome_fantasia, EXCLUDED.cnae_principal,
+         EXCLUDED.cnae_secundarios, EXCLUDED.municipio_id, EXCLUDED.uf,
+         EXCLUDED.regiao, EXCLUDED.porte, EXCLUDED.capital_social,
+         'ativa'::situacao_cad,
+         EXCLUDED.logradouro, EXCLUDED.numero, EXCLUDED.complemento,
+         EXCLUDED.bairro, EXCLUDED.cep, EXCLUDED.telefone1, EXCLUDED.telefone2,
+         EXCLUDED.email, EXCLUDED.data_inicio_atividade, EXCLUDED.matriz_filial,
+         EXCLUDED.natureza_juridica, EXCLUDED.qualificacao_responsavel,
+         EXCLUDED.ente_federativo, EXCLUDED.motivo_situacao,
+         EXCLUDED.data_situacao_cadastral, EXCLUDED.situacao_especial,
+         EXCLUDED.data_situacao_especial, EXCLUDED.nome_cidade_exterior,
+         EXCLUDED.pais, EXCLUDED.fax,
+         EXCLUDED.opcao_simples, EXCLUDED.data_opcao_simples,
+         EXCLUDED.data_exclusao_simples, EXCLUDED.opcao_mei,
+         EXCLUDED.data_opcao_mei, EXCLUDED.data_exclusao_mei)
 """
 
 

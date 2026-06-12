@@ -12,6 +12,32 @@
 services:
   db:
     image: postgis/postgis:16-3.4
+    # Base companies tem milhões de linhas — defaults do Postgres (shared_buffers
+    # 128MB, random_page_cost 4) assumem máquina minúscula com HD e arruínam as
+    # buscas. shm_size: o default de 64MB do Docker limita hash/sort paralelo.
+    shm_size: 1g
+    command:
+      - postgres
+      - -c
+      - shared_buffers=2GB
+      - -c
+      - effective_cache_size=6GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=512MB
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - effective_io_concurrency=200
+      - -c
+      - max_parallel_workers_per_gather=4
+      - -c
+      - jit=off
+      # autoprewarm: salva o conteúdo do buffer cache e recarrega após restart,
+      # evitando primeira busca fria (índices trgm/gist têm GBs).
+      - -c
+      - shared_preload_libraries=pg_prewarm
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres

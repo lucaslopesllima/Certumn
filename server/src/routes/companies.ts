@@ -51,7 +51,7 @@ export function companyRoutes(app: FastifyInstance): void {
               s.nome_representante, s.representante_legal
        FROM socios s
        LEFT JOIN rfb_qualificacao q ON q.codigo = s.qualificacao
-       WHERE s.cnpj_base = left((SELECT cnpj FROM companies WHERE id = $1), 8)
+       WHERE s.cnpj_base = left((SELECT cnpj FROM companies WHERE id = $1), 8)::char(8)
        ORDER BY s.nome`,
       [id],
     );

@@ -1,8 +1,10 @@
 // Builds the single recommendation SQL (no N+1). Two territory modes:
 //  - municipio: c.municipio_id = ANY(territorio)        -> partial btree companies_municipio_ativa_idx
 //  - radius:    ST_DWithin(geom, centroide, raio)        -> partial GIST companies_geom_ativa_idx
-// CNAE fit tiers (classe=1.0 / divisao=0.6 / secao=0.3) are derived in-SQL from cnaes_alvo.
-// Candidate pruning (cnae_divisao IN sections-of-target) keeps the scored set small and index-friendly.
+// CNAE fit tiers (classe=1.0 / divisao=0.6 / secao=0.3) come from arrays computed app-side
+// (divisoesAlvo/secoesAlvo/pruneDivisoes). Eram CTEs, mas CTE vira "hashed SubPlan" no
+// planner e a poda por divisão só rodava DEPOIS do fetch do heap (centenas de milhares de
+// páginas por busca). Como = ANY($array) o planner combina os índices (BitmapAnd geom/divisão).
 
 export interface RecommendProfile {
   cnaes_alvo: number[];
@@ -24,6 +26,10 @@ export interface RecommendArgs {
   limit: number;
   offset: number;
   filters?: RecommendFilters;
+  // derivados de cnaes_alvo + cnae_divisao_secao (calculados na rota, cacheados):
+  divisoesAlvo: number[];   // divisões dos CNAEs alvo (fit 0.6)
+  secoesAlvo: string[];     // seções dessas divisões (fit 0.3)
+  pruneDivisoes: number[];  // todas as divisões dessas seções (poda de candidatos)
 }
 
 const DEFAULT_NORM_M = 150_000; // proximity normalization in municipio mode (~150km)
@@ -41,9 +47,11 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   const wPorte = profile.pesos?.porte ?? 0.2;
 
   // $1 cnaes, $2 municipios, $3 orgId, $4 normMeters, $5 wCnae, $6 wProx, $7 wPorte,
-  // $8 capitalRef, $9 limit, $10 offset, $11+ filtros (server-side, sobre a base toda)
+  // $8 capitalRef, $9 limit, $10 offset, $11 divisoesAlvo, $12 secoesAlvo,
+  // $13 pruneDivisoes, $14+ filtros (server-side, sobre a base toda)
   const params: unknown[] = [
     cnaes, municipios, orgId, normMeters, wCnae, wProx, wPorte, CAPITAL_REF, limit, offset,
+    args.divisoesAlvo, args.secoesAlvo, args.pruneDivisoes,
   ];
 
   const territoryPredicate = radiusMode
@@ -53,14 +61,14 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   // Filtros server-side: viram WHERE sobre TODA a base (dentro do território/alvo),
   // não só a página carregada. CNAE explícito dispensa a poda por divisões-alvo.
   const f = args.filters ?? {};
-  let p = params.length; // último índice usado (=10)
+  let p = params.length; // último índice usado (=13)
   const extra: string[] = [];
 
   let cnaePredicate: string;
   if (f.cnae && f.cnae.length > 0) {
     params.push(f.cnae); cnaePredicate = `c.cnae_principal = ANY($${++p}::int[])`;
   } else {
-    cnaePredicate = `(cardinality($1::int[]) = 0 OR c.cnae_divisao IN (SELECT divisao FROM prune))`;
+    cnaePredicate = `(cardinality($1::int[]) = 0 OR c.cnae_divisao = ANY($13::smallint[]))`;
   }
   if (f.uf && f.uf.length > 0) { params.push(f.uf); extra.push(`c.uf = ANY($${++p}::text[])`); }
   if (f.porte) { params.push(f.porte); extra.push(`c.porte = $${++p}::porte_emp`); }
@@ -77,16 +85,7 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   const extraPredicates = extra.length ? `\n    AND ${extra.join('\n    AND ')}` : '';
 
   const text = `
-WITH divs AS (
-  SELECT DISTINCT (x / 100000)::smallint AS divisao FROM unnest($1::int[]) x
-),
-secs AS (
-  SELECT DISTINCT ds.secao FROM divs d JOIN cnae_divisao_secao ds ON ds.divisao = d.divisao
-),
-prune AS (
-  SELECT DISTINCT ds.divisao FROM secs s JOIN cnae_divisao_secao ds ON ds.secao = s.secao
-),
-centro AS (
+WITH centro AS (
   SELECT ST_Centroid(ST_Collect(geom::geometry))::geography AS g
   FROM municipios WHERE id = ANY($2::int[])
 ),
@@ -100,8 +99,8 @@ cand AS (
     CASE
       WHEN cardinality($1::int[]) = 0 THEN 0::numeric
       WHEN c.cnae_principal = ANY($1::int[]) THEN 1.0
-      WHEN c.cnae_divisao IN (SELECT divisao FROM divs) THEN 0.6
-      WHEN cds.secao IN (SELECT secao FROM secs) THEN 0.3
+      WHEN c.cnae_divisao = ANY($11::smallint[]) THEN 0.6
+      WHEN cds.secao = ANY($12::text[]) THEN 0.3
       ELSE 0::numeric
     END AS fit,
     (0.5 * (CASE c.porte WHEN 'demais' THEN 1.0 WHEN 'pequeno' THEN 0.7 WHEN 'micro' THEN 0.4 ELSE 0.2 END)
