@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
+import { audit, pick } from '../audit.ts';
 
 // Módulo financeiro: contas a pagar/receber, org-scoped. SQL parametrizado, sem ORM.
 // Vínculos opcionais: empresa prospect (companies), empresa representada
@@ -89,7 +90,9 @@ export function financeRoutes(app: FastifyInstance): void {
         b.status ?? null, b.categoria ?? null, b.notas ?? null,
         b.company_id ?? null, b.represented_id ?? null, b.activity_id ?? null, req.auth!.userId],
     );
-    const entry = await query(`${SELECT} WHERE f.id = $1`, [(rows[0] as { id: number }).id]);
+    const newId = (rows[0] as { id: number }).id;
+    await audit(req, 'finance', newId, 'create', pick(b, FIELDS));
+    const entry = await query(`${SELECT} WHERE f.id = $1`, [newId]);
     return { entry: entry[0] };
   });
 
@@ -131,6 +134,7 @@ export function financeRoutes(app: FastifyInstance): void {
       params,
     );
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
+    await audit(req, 'finance', id, 'update', pick(b, FIELDS));
     const entry = await query(`${SELECT} WHERE f.id = $1`, [id]);
     return { entry: entry[0] };
   });
@@ -143,6 +147,7 @@ export function financeRoutes(app: FastifyInstance): void {
     const { id } = req.params as { id: number };
     const rows = await query('DELETE FROM finance_entries WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
+    await audit(req, 'finance', id, 'delete');
     return { deleted: true };
   });
 }

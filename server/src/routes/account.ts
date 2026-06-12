@@ -111,7 +111,11 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!u || !(await verifyPassword(senha_atual, u.senha_hash))) {
       return reply.code(400).send({ error: 'senha atual incorreta' });
     }
-    await query('UPDATE users SET senha_hash = $1 WHERE id = $2', [await hashPassword(nova_senha), userId]);
+    // troca de senha também encerra o ciclo da senha provisória do primeiro login
+    await query(
+      'UPDATE users SET senha_hash = $1, must_change_password = false WHERE id = $2',
+      [await hashPassword(nova_senha), userId],
+    );
     return { ok: true };
   });
 }

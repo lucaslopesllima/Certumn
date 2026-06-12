@@ -11,6 +11,7 @@
     "dev": "node --watch src/index.ts",
     "migrate": "node scripts/migrate.ts",
     "etl": "node etl/etl.ts",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -22,6 +23,7 @@
   "devDependencies": {
     "@types/node": "22.10.5",
     "@types/pg": "8.11.10",
-    "typescript": "5.7.3"
+    "typescript": "5.7.3",
+    "vitest": "3.0.5"
   }
 }

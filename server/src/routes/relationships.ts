@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
+import { audit, pick } from '../audit.ts';
 
 // company_relationships is the tenant's REFERENCE into the global companies pool.
 // Creating/updating one NEVER writes the companies table.
@@ -186,6 +187,8 @@ export function relationshipRoutes(app: FastifyInstance): void {
          RETURNING ${RET_COLS}`,
         vals,
       );
+      await audit(req, 'relationship', (rows[0] as { id: number }).id, 'create',
+        { company_id: b.company_id, ...pick(b, EDITABLE) });
       return reply.code(201).send({ relationship: rows[0] });
     } catch (e: unknown) {
       if (e && typeof e === 'object' && (e as { code?: string }).code === '23505') {
@@ -241,6 +244,7 @@ export function relationshipRoutes(app: FastifyInstance): void {
 
     if (hasContatos) await syncContatos(id, orgId, b.contato_ids as number[]);
     if (hasCatalogo) await syncCatalogo(id, orgId, b.catalogo_ids as number[]);
+    await audit(req, 'relationship', id, 'update', pick(b, [...EDITABLE, 'contato_ids', 'catalogo_ids']));
     return { relationship: row };
   });
 
@@ -252,6 +256,7 @@ export function relationshipRoutes(app: FastifyInstance): void {
     const { id } = req.params as { id: number };
     const rows = await query('DELETE FROM company_relationships WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
+    await audit(req, 'relationship', id, 'delete');
     return { deleted: true };
   });
 

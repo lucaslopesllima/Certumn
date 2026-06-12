@@ -2,6 +2,7 @@ import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 import { SignJWT, jwtVerify } from 'jose';
 import { config } from './config.ts';
+import { one } from './db.ts';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 const scryptAsync = promisify(scrypt);
@@ -44,6 +45,8 @@ export async function verifyToken(token: string): Promise<AuthClaims> {
 }
 
 // Fastify preHandler: require a valid Bearer token, attach claims to request.auth.
+// Também derruba usuário desativado na hora — sem isso o JWT (TTL 7d) seguiria
+// válido muito depois do admin desligar o vendedor.
 export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
   const header = req.headers.authorization;
   if (!header || !header.startsWith('Bearer ')) {
@@ -53,6 +56,18 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
     req.auth = await verifyToken(header.slice(7));
   } catch {
     return reply.code(401).send({ error: 'invalid token' });
+  }
+  const u = await one<{ ativo: boolean }>('SELECT ativo FROM users WHERE id = $1', [req.auth.userId]);
+  if (!u || !u.ativo) {
+    req.auth = undefined;
+    return reply.code(401).send({ error: 'usuário desativado' });
+  }
+}
+
+// preHandler complementar (depois de requireAuth): só admin passa.
+export async function requireAdmin(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  if (req.auth?.role !== 'admin') {
+    return reply.code(403).send({ error: 'apenas administradores' });
   }
 }
 

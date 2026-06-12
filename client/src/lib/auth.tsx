@@ -4,9 +4,11 @@ import { api, setToken, getToken } from './api.ts';
 export interface User {
   id: number | string;
   email: string;
+  nome?: string | null;
   role: string;
   org_id: number | string;
   org_nome?: string;
+  must_change_password?: boolean;
 }
 
 interface AuthState {
@@ -14,6 +16,7 @@ interface AuthState {
   loading: boolean;
   login: (email: string, senha: string) => Promise<void>;
   register: (org_nome: string, email: string, senha: string) => Promise<void>;
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -43,13 +46,19 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setUser(r.user);
   };
 
+  // Recarrega o usuário do servidor (ex.: após trocar a senha provisória).
+  const refresh = async (): Promise<void> => {
+    const r = await api.get<{ user: User }>('/api/auth/me');
+    setUser(r.user);
+  };
+
   const logout = (): void => {
     setToken(null);
     setUser(null);
     location.href = '/login';
   };
 
-  return <AuthCtx.Provider value={{ user, loading, login, register, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, loading, login, register, refresh, logout }}>{children}</AuthCtx.Provider>;
 }
 
 export function useAuth(): AuthState {

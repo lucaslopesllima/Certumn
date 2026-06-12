@@ -9,12 +9,15 @@ import { Settings } from './pages/Settings.tsx';
 import { Account } from './pages/Account.tsx';
 import { Finance } from './pages/Finance.tsx';
 import { RoutePlanner } from './pages/Routes.tsx';
+import { Team } from './pages/Team.tsx';
+import { ChangePassword } from './pages/ChangePassword.tsx';
 import { Icon, type IconName } from './lib/icons.tsx';
 import { cn } from './lib/ui.tsx';
 import type { ReactNode } from 'react';
 
 function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
   const { user, loading } = useAuth();
+  const loc = useLocation();
   if (loading) {
     return (
       <div className="grid h-dvh place-items-center bg-ink-50 text-ink-400">
@@ -23,18 +26,35 @@ function RequireAuth({ children }: { children: ReactNode }): React.JSX.Element {
     );
   }
   if (!user) return <Navigate to="/login" replace />;
+  // senha provisória bloqueia tudo até a troca
+  if (user.must_change_password && loc.pathname !== '/trocar-senha') {
+    return <Navigate to="/trocar-senha" replace />;
+  }
   return <>{children}</>;
 }
 
-const NAV: { to: string; label: string; icon: IconName }[] = [
+function RequireAdmin({ children }: { children: ReactNode }): React.JSX.Element {
+  const { user } = useAuth();
+  if (user?.role !== 'admin') return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+const NAV: { to: string; label: string; icon: IconName; admin?: boolean }[] = [
   { to: '/', label: 'Prospecção', icon: 'target' },
   { to: '/funil', label: 'Funil', icon: 'columns' },
   { to: '/rotas', label: 'Rotas', icon: 'route' },
   { to: '/catalogo', label: 'Catálogo', icon: 'box' },
   { to: '/agenda', label: 'Agenda', icon: 'calendar' },
   { to: '/financeiro', label: 'Financeiro', icon: 'wallet' },
+  { to: '/equipe', label: 'Equipe', icon: 'users', admin: true },
   { to: '/config', label: 'Config', icon: 'settings' },
 ];
+
+// Itens visíveis para o papel do usuário logado (Equipe é só de admin).
+function useNav(): typeof NAV {
+  const { user } = useAuth();
+  return NAV.filter((n) => !n.admin || user?.role === 'admin');
+}
 
 function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
   return (
@@ -53,6 +73,7 @@ function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
 
 function Sidebar(): React.JSX.Element {
   const { user, logout } = useAuth();
+  const nav = useNav();
   return (
     <aside className="hidden w-60 shrink-0 flex-col bg-ink-900 px-3 py-4 sm:flex">
       <div className="px-2 pb-5">
@@ -60,7 +81,7 @@ function Sidebar(): React.JSX.Element {
       </div>
       <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">Menu</p>
       <nav className="flex flex-col gap-1">
-        {NAV.map((n) => (
+        {nav.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'}
             className={({ isActive }) => cn(
               'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
@@ -99,7 +120,8 @@ function Sidebar(): React.JSX.Element {
 
 function Shell({ children }: { children: ReactNode }): React.JSX.Element {
   const loc = useLocation();
-  const title = NAV.find((n) => n.to === loc.pathname)?.label ?? 'Prospecta';
+  const nav = useNav();
+  const title = nav.find((n) => n.to === loc.pathname)?.label ?? 'Prospecta';
   return (
     <div className="flex h-dvh bg-ink-50">
       <Sidebar />
@@ -121,8 +143,9 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
       </div>
 
       {/* mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-7 border-t border-ink-200 bg-white/95 backdrop-blur sm:hidden">
-        {NAV.map((n) => (
+      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid border-t border-ink-200 bg-white/95 backdrop-blur sm:hidden"
+        style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
+        {nav.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'}
             className={({ isActive }) => cn(
               'flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
@@ -146,6 +169,8 @@ export function App(): React.JSX.Element {
       <Route path="/catalogo" element={<RequireAuth><Shell><Catalog /></Shell></RequireAuth>} />
       <Route path="/agenda" element={<RequireAuth><Shell><Agenda /></Shell></RequireAuth>} />
       <Route path="/financeiro" element={<RequireAuth><Shell><Finance /></Shell></RequireAuth>} />
+      <Route path="/equipe" element={<RequireAuth><RequireAdmin><Shell><Team /></Shell></RequireAdmin></RequireAuth>} />
+      <Route path="/trocar-senha" element={<RequireAuth><ChangePassword /></RequireAuth>} />
       <Route path="/config" element={<RequireAuth><Shell><Settings /></Shell></RequireAuth>} />
       <Route path="/conta" element={<RequireAuth><Shell><Account /></Shell></RequireAuth>} />
       <Route path="*" element={<Navigate to="/" replace />} />

@@ -61,21 +61,31 @@ export function authRoutes(app: FastifyInstance): void {
     },
   }, async (req, reply) => {
     const { email, senha } = req.body as { email: string; senha: string };
-    const user = await one<{ id: number; org_id: number; senha_hash: string; role: string }>(
-      'SELECT id, org_id, senha_hash, role FROM users WHERE email = $1',
+    const user = await one<{
+      id: number; org_id: number; senha_hash: string; role: string;
+      nome: string | null; ativo: boolean; must_change_password: boolean;
+    }>(
+      'SELECT id, org_id, senha_hash, role, nome, ativo, must_change_password FROM users WHERE email = $1',
       [email.trim().toLowerCase()],
     );
     if (!user || !(await verifyPassword(senha, user.senha_hash))) {
       return reply.code(401).send({ error: 'credenciais inválidas' });
     }
+    if (!user.ativo) return reply.code(403).send({ error: 'usuário desativado' });
     const token = await signToken({ userId: user.id, orgId: user.org_id, role: user.role });
-    return { token, user: { id: user.id, email: email.trim().toLowerCase(), role: user.role, org_id: user.org_id } };
+    return {
+      token,
+      user: {
+        id: user.id, email: email.trim().toLowerCase(), role: user.role, org_id: user.org_id,
+        nome: user.nome, must_change_password: user.must_change_password,
+      },
+    };
   });
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async (req) => {
     const { userId, orgId } = req.auth!;
     const user = await one(
-      `SELECT u.id, u.email, u.role, o.nome AS org_nome, o.id AS org_id
+      `SELECT u.id, u.email, u.nome, u.role, u.must_change_password, o.nome AS org_nome, o.id AS org_id
        FROM users u JOIN organizations o ON o.id = u.org_id WHERE u.id = $1 AND u.org_id = $2`,
       [userId, orgId],
     );

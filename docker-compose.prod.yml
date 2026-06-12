@@ -60,5 +60,37 @@ services:
       - "${APP_PORT:-8080}:8080"
     restart: unless-stopped
 
+  # Backup diário às 02:30 (pg_dump custom format), retenção 14 dias em ./backups.
+  # Restaurar: pg_restore -h db -U postgres -d rs --clean ./backups/rs-AAAA-MM-DD.dump
+  backup:
+    image: postgis/postgis:16-3.4
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-rs}
+    volumes:
+      - ./backups:/backups
+    entrypoint:
+      - bash
+      - -c
+      - |
+        while true; do
+          now=$$(date +%s)
+          target=$$(date -d 'today 02:30' +%s)
+          [ "$$now" -ge "$$target" ] && target=$$(date -d 'tomorrow 02:30' +%s)
+          sleep $$(( target - now ))
+          ts=$$(date +%F)
+          if pg_dump -h db -Fc -f "/backups/rs-$$ts.dump"; then
+            echo "backup ok: rs-$$ts.dump"
+          else
+            echo "backup FALHOU: rs-$$ts.dump" >&2
+          fi
+          find /backups -name 'rs-*.dump' -mtime +14 -delete
+        done
+    restart: unless-stopped
+
 volumes:
   pgdata:
