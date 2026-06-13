@@ -58,6 +58,7 @@ export interface KanbanCard {
   cenario_id: number | null; cenario: string | null;
   acao_id: number | null; acao: string | null;
   data_contato: string | null; previsao_data: string | null;
+  motivo_descarte: string | null;
 }
 
 export interface Socio {

@@ -208,7 +208,16 @@ correto no mês.
 
 ---
 
-## Fase 4 — Dashboard + relatórios + alertas (2 sem)
+## Fase 4 — Dashboard + relatórios + alertas (2 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migration: 031_fase4_dashboard.sql
+> (organizations.inatividade_dias, company_relationships.motivo_descarte + stage_changed_at).
+> Backend: `GET /api/dashboard` (funil, vendas vs. meta, comissões, agenda, alertas de
+> inatividade/estagnação, ranking admin) e `routes/reports.ts` (`/sales`, `/abc`, `/coverage`,
+> `/descartes`), todos com escopo por vendedor (`?user_id`). Recommend passou para `/prospeccao`;
+> Dashboard ocupa `/`. Frontend: `pages/Dashboard.tsx`, `pages/Reports.tsx` (mapa de cobertura
+> no Leaflet), util `lib/export.ts` (CSV com BOM UTF-8) em Pedidos/Comissões/Relatórios, motivo
+> de descarte no modal do funil e seção Alertas no Config.
 
 Custo baixo, valor percebido alto. Dados já existem após Fases 1–3.
 

@@ -6,8 +6,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { App } from '../src/App.tsx';
 import { useAuth, type User } from '../src/lib/auth.tsx';
 
-vi.mock('../src/lib/auth.tsx', () => ({ useAuth: vi.fn() }));
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 // páginas lazy substituídas por marcadores — o alvo aqui é o roteamento
+vi.mock('../src/pages/Dashboard.tsx', () => ({ Dashboard: () => <div>PAGE-DASHBOARD</div> }));
+vi.mock('../src/pages/Reports.tsx', () => ({ Reports: () => <div>PAGE-RELATORIOS</div> }));
 vi.mock('../src/pages/Recommend.tsx', () => ({ Recommend: () => <div>PAGE-RECOMMEND</div> }));
 vi.mock('../src/pages/Kanban.tsx', () => ({ Kanban: () => <div>PAGE-KANBAN</div> }));
 vi.mock('../src/pages/Routes.tsx', () => ({ RoutePlanner: () => <div>PAGE-ROTAS</div> }));
@@ -55,15 +60,20 @@ describe('App routing', () => {
     expect(await screen.findByText('PAGE-TROCAR-SENHA')).toBeInTheDocument();
   });
 
-  it('admin navega para as páginas principais', async () => {
+  it('admin abre o dashboard na home e a prospecção em /prospeccao', async () => {
     mount('/');
+    expect(await screen.findByText('PAGE-DASHBOARD')).toBeInTheDocument();
+  });
+
+  it('rota /prospeccao renderiza a recomendação', async () => {
+    mount('/prospeccao');
     expect(await screen.findByText('PAGE-RECOMMEND')).toBeInTheDocument();
   });
 
   it('rep não acessa /equipe (volta para a home)', async () => {
     useAuthMock.mockReturnValue(auth(rep));
     mount('/equipe');
-    expect(await screen.findByText('PAGE-RECOMMEND')).toBeInTheDocument();
+    expect(await screen.findByText('PAGE-DASHBOARD')).toBeInTheDocument();
     expect(screen.queryByText('PAGE-EQUIPE')).not.toBeInTheDocument();
   });
 
@@ -76,7 +86,7 @@ describe('App routing', () => {
   it('menu de rep não tem Equipe; rota desconhecida cai na home', async () => {
     useAuthMock.mockReturnValue(auth(rep));
     mount('/nao-existe');
-    expect(await screen.findByText('PAGE-RECOMMEND')).toBeInTheDocument();
+    expect(await screen.findByText('PAGE-DASHBOARD')).toBeInTheDocument();
     expect(screen.queryByText('Equipe')).not.toBeInTheDocument();
   });
 

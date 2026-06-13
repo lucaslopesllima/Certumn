@@ -3,20 +3,24 @@ import { api } from '../lib/api.ts';
 import type { Brand, Contact, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
+import { useOptionalUser } from '../lib/auth.tsx';
 import { ProfileForm } from './Profile.tsx';
 
-type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes';
-const SECTIONS: { key: Section; label: string; icon: IconName; desc: string }[] = [
+type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'alertas';
+const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
   { key: 'perfil', label: 'Perfil-alvo', icon: 'compass', desc: 'Quem o motor deve priorizar' },
   { key: 'empresas', label: 'Empresas representadas', icon: 'building', desc: 'Representadas e suas marcas' },
   { key: 'contatos', label: 'Contatos', icon: 'users', desc: 'Pessoas para vincular na prospecção' },
   { key: 'cenarios', label: 'Cenários', icon: 'list', desc: 'Opções de "cenário atual"' },
   { key: 'acoes', label: 'Ações próximo nível', icon: 'target', desc: 'Opções de ação para avançar' },
   { key: 'funil', label: 'Funil', icon: 'columns', desc: 'Fases do seu pipeline de vendas' },
+  { key: 'alertas', label: 'Alertas', icon: 'bell', desc: 'Inatividade no dashboard', admin: true },
 ];
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
 export function Settings(): React.JSX.Element {
+  const user = useOptionalUser();
+  const sections = SECTIONS.filter((s) => !s.admin || user?.role === 'admin');
   const [section, setSection] = useState<Section>('perfil');
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -24,7 +28,7 @@ export function Settings(): React.JSX.Element {
       <div className="flex flex-col gap-4 sm:flex-row">
         {/* sub-nav */}
         <nav className="flex gap-2 overflow-x-auto sm:w-56 sm:flex-col sm:gap-1">
-          {SECTIONS.map((s) => {
+          {sections.map((s) => {
             const on = section === s.key;
             return (
               <button key={s.key} onClick={() => setSection(s.key)}
@@ -52,9 +56,50 @@ export function Settings(): React.JSX.Element {
               desc='Opções do dropdown "Ação para próximo nível" na prospecção.' placeholder="Nova ação (ex.: Enviar proposta)" />
           )}
           {section === 'funil' && <FunilEditor inputCls={inputCls} />}
+          {section === 'alertas' && <AlertasEditor inputCls={inputCls} />}
         </div>
       </div>
     </div>
+  );
+}
+
+// Config dos alertas de inatividade do dashboard (org-scoped, admin only no backend).
+function AlertasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
+  const [dias, setDias] = useState<number | ''>('');
+  const [loading, setLoading] = useState(true);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void api.get<{ org: { inatividade_dias: number } }>('/api/account')
+      .then((r) => setDias(r.org.inatividade_dias))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (): Promise<void> => {
+    if (dias === '' || dias < 1) return;
+    await api.patch('/api/account', { inatividade_dias: Number(dias) });
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
+  if (loading) return <Spinner />;
+  return (
+    <Card className="max-w-lg p-4">
+      <h3 className="text-sm font-semibold text-ink-900">Alertas de inatividade</h3>
+      <p className="mt-0.5 text-xs text-ink-400">
+        Prospects sem contato por mais que este número de dias aparecem como alerta no dashboard.
+      </p>
+      <label className="mt-4 block">
+        <span className="mb-1 block text-xs font-medium text-ink-500">Dias sem contato</span>
+        <input type="number" min={1} max={365} value={dias}
+          onChange={(e) => setDias(e.target.value === '' ? '' : Number(e.target.value))}
+          className={cn(inputCls, 'w-32')} />
+      </label>
+      <div className="mt-4 flex items-center gap-3">
+        <Btn icon="check" onClick={() => void save()}>Salvar</Btn>
+        {saved && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
+      </div>
+    </Card>
   );
 }
 

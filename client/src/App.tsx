@@ -1,5 +1,5 @@
 import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
-import { Suspense, lazy, type ReactNode } from 'react';
+import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from './lib/auth.tsx';
 import { Icon, type IconName } from './lib/icons.tsx';
 import { cn } from './lib/ui.tsx';
@@ -7,7 +7,9 @@ import { cn } from './lib/ui.tsx';
 // Code splitting por rota: Leaflet e as páginas pesadas ficam fora do bundle
 // inicial — quem abre o Login não baixa o mapa.
 const Login = lazy(() => import('./pages/Login.tsx').then((m) => ({ default: m.Login })));
+const Dashboard = lazy(() => import('./pages/Dashboard.tsx').then((m) => ({ default: m.Dashboard })));
 const Recommend = lazy(() => import('./pages/Recommend.tsx').then((m) => ({ default: m.Recommend })));
+const Reports = lazy(() => import('./pages/Reports.tsx').then((m) => ({ default: m.Reports })));
 const Kanban = lazy(() => import('./pages/Kanban.tsx').then((m) => ({ default: m.Kanban })));
 const Catalog = lazy(() => import('./pages/Catalog.tsx').then((m) => ({ default: m.Catalog })));
 const Agenda = lazy(() => import('./pages/Agenda.tsx').then((m) => ({ default: m.Agenda })));
@@ -48,10 +50,12 @@ function RequireAdmin({ children }: { children: ReactNode }): React.JSX.Element 
 }
 
 const NAV: { to: string; label: string; icon: IconName; admin?: boolean }[] = [
-  { to: '/', label: 'Prospecção', icon: 'target' },
+  { to: '/', label: 'Dashboard', icon: 'gauge' },
+  { to: '/prospeccao', label: 'Prospecção', icon: 'target' },
   { to: '/funil', label: 'Funil', icon: 'columns' },
   { to: '/pedidos', label: 'Pedidos', icon: 'list' },
   { to: '/comissoes', label: 'Comissões', icon: 'percent' },
+  { to: '/relatorios', label: 'Relatórios', icon: 'barChart' },
   { to: '/transportadoras', label: 'Transportadoras', icon: 'car' },
   { to: '/rotas', label: 'Rotas', icon: 'route' },
   { to: '/catalogo', label: 'Catálogo', icon: 'box' },
@@ -82,26 +86,46 @@ function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
   );
 }
 
+const SIDEBAR_KEY = 'rs_sidebar_collapsed';
+
+// Sidebar recolhível: alterna entre largura cheia (ícone + rótulo) e modo
+// compacto só com ícones. O estado persiste em localStorage entre sessões.
 function Sidebar(): React.JSX.Element {
   const { user, logout } = useAuth();
   const nav = useNav();
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try { return localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(SIDEBAR_KEY, collapsed ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [collapsed]);
+
+  const inicial = (user?.org_nome ?? user?.email ?? '?').charAt(0).toUpperCase();
+
   return (
-    <aside className="hidden w-60 shrink-0 flex-col bg-ink-900 px-3 py-4 sm:flex">
-      <div className="px-2 pb-5">
-        <Brand />
+    <aside className={cn('hidden shrink-0 flex-col bg-ink-900 py-4 transition-[width,padding] duration-300 ease-in-out sm:flex',
+      collapsed ? 'w-16 px-2' : 'w-60 px-3')}>
+      <div className={cn('flex items-center pb-5', collapsed ? 'justify-center' : 'justify-between px-2')}>
+        {!collapsed && <Brand />}
+        <button onClick={() => setCollapsed((v) => !v)} aria-label={collapsed ? 'Expandir menu' : 'Recolher menu'}
+          className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-white/10 hover:text-white">
+          {/* seta acompanha o menu: aponta p/ dentro (recolher) aberto, p/ fora (expandir) fechado */}
+          <Icon name="chevronRight" size={18} className={cn('transition-transform duration-300 ease-in-out', !collapsed && 'rotate-180')} />
+        </button>
       </div>
-      <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">Menu</p>
+      {!collapsed && <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-ink-500">Menu</p>}
       <nav className="flex flex-col gap-1">
         {nav.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.to === '/'}
+          <NavLink key={n.to} to={n.to} end={n.to === '/'} title={collapsed ? n.label : undefined}
             className={({ isActive }) => cn(
               'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+              collapsed && 'justify-center px-0',
               isActive ? 'bg-white/10 text-white' : 'text-ink-300 hover:bg-white/5 hover:text-white')}>
             {({ isActive }) => (
               <>
                 {isActive && <span className="absolute left-0 top-1/2 h-5 -translate-y-1/2 rounded-r-full bg-brand-400" style={{ width: 3 }} />}
                 <Icon name={n.icon} size={19} className={isActive ? 'text-brand-300' : 'text-ink-400 group-hover:text-ink-200'} />
-                {n.label}
+                {!collapsed && n.label}
               </>
             )}
           </NavLink>
@@ -109,21 +133,34 @@ function Sidebar(): React.JSX.Element {
       </nav>
 
       <div className="mt-auto border-t border-white/10 pt-3">
-        <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
-          <NavLink to="/conta" title="Meu perfil" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 transition-colors hover:bg-white/5">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-500/20 text-sm font-bold text-brand-200">
-              {(user?.org_nome ?? user?.email ?? '?').charAt(0).toUpperCase()}
-            </span>
-            <div className="min-w-0 flex-1">
-              <p className="truncate text-xs font-semibold text-white">{user?.org_nome ?? 'Minha conta'}</p>
-              <p className="truncate text-[11px] text-ink-400">{user?.email}</p>
-            </div>
-          </NavLink>
-          <button onClick={logout} aria-label="Sair"
-            className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-white/10 hover:text-white">
-            <Icon name="logout" size={17} />
-          </button>
-        </div>
+        {collapsed ? (
+          <div className="flex flex-col items-center gap-2">
+            <NavLink to="/conta" title={user?.org_nome ?? 'Meu perfil'}
+              className="grid h-9 w-9 place-items-center rounded-full bg-brand-500/20 text-sm font-bold text-brand-200 transition-colors hover:bg-brand-500/30">
+              {inicial}
+            </NavLink>
+            <button onClick={logout} aria-label="Sair"
+              className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-white/10 hover:text-white">
+              <Icon name="logout" size={17} />
+            </button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2.5 rounded-xl px-2 py-2">
+            <NavLink to="/conta" title="Meu perfil" className="flex min-w-0 flex-1 items-center gap-2.5 rounded-lg p-1 transition-colors hover:bg-white/5">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-500/20 text-sm font-bold text-brand-200">
+                {inicial}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-white">{user?.org_nome ?? 'Minha conta'}</p>
+                <p className="truncate text-[11px] text-ink-400">{user?.email}</p>
+              </div>
+            </NavLink>
+            <button onClick={logout} aria-label="Sair"
+              className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-white/10 hover:text-white">
+              <Icon name="logout" size={17} />
+            </button>
+          </div>
+        )}
       </div>
     </aside>
   );
@@ -174,11 +211,13 @@ export function App(): React.JSX.Element {
     <Suspense fallback={<FullScreenSpinner />}>
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<RequireAuth><Shell><Recommend /></Shell></RequireAuth>} />
+      <Route path="/" element={<RequireAuth><Shell><Dashboard /></Shell></RequireAuth>} />
+      <Route path="/prospeccao" element={<RequireAuth><Shell><Recommend /></Shell></RequireAuth>} />
       <Route path="/perfil" element={<Navigate to="/config" replace />} />
       <Route path="/funil" element={<RequireAuth><Shell><Kanban /></Shell></RequireAuth>} />
       <Route path="/pedidos" element={<RequireAuth><Shell><Orders /></Shell></RequireAuth>} />
       <Route path="/comissoes" element={<RequireAuth><Shell><Commissions /></Shell></RequireAuth>} />
+      <Route path="/relatorios" element={<RequireAuth><Shell><Reports /></Shell></RequireAuth>} />
       <Route path="/transportadoras" element={<RequireAuth><Shell><Carriers /></Shell></RequireAuth>} />
       <Route path="/rotas" element={<RequireAuth><Shell><RoutePlanner /></Shell></RequireAuth>} />
       <Route path="/catalogo" element={<RequireAuth><Shell><Catalog /></Shell></RequireAuth>} />

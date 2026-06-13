@@ -14,13 +14,14 @@ import { scopeOwner, canWriteOwned, invalidOwnerAssignment } from '../scope.ts';
 const EDITABLE = [
   'stage_id', 'status', 'valor_estimado', 'notas', 'owner_user_id',
   'represented_id', 'marca_id', 'cenario_id', 'acao_id',
-  'data_contato', 'previsao_data',
+  'data_contato', 'previsao_data', 'motivo_descarte',
 ] as const;
 
 // Columns returned to the client. Dates cast to text so pg keeps 'YYYY-MM-DD' (no TZ shift).
 const REL_COLS = `r.id, r.company_id, r.stage_id, r.status, r.valor_estimado, r.notas,
   r.represented_id, r.marca_id, r.cenario_id, r.acao_id,
-  r.data_contato::text AS data_contato, r.previsao_data::text AS previsao_data`;
+  r.data_contato::text AS data_contato, r.previsao_data::text AS previsao_data,
+  r.motivo_descarte`;
 
 // Joined labels for the dropdown values + lista de contatos (N:N) agregada como JSON.
 const REL_LABELS = `rc.nome AS representada, mb.nome AS marca,
@@ -56,6 +57,7 @@ const EDITABLE_SCHEMA = {
   acao_id: { type: ['integer', 'null'] },
   data_contato: { type: ['string', 'null'] },
   previsao_data: { type: ['string', 'null'] },
+  motivo_descarte: { type: ['string', 'null'] },
   contato_ids: { type: 'array', items: { type: 'integer' } },
   catalogo_ids: { type: 'array', items: { type: 'integer' } },
 } as const;
@@ -63,7 +65,7 @@ const EDITABLE_SCHEMA = {
 // RETURNING list (no table alias — used in INSERT/UPDATE), dates cast to text.
 const RET_COLS = `id, company_id, stage_id, status, valor_estimado, notas, owner_user_id,
   represented_id, marca_id, cenario_id, acao_id,
-  data_contato::text AS data_contato, previsao_data::text AS previsao_data`;
+  data_contato::text AS data_contato, previsao_data::text AS previsao_data, motivo_descarte`;
 
 // Sincroniza os contatos da prospecção (N:N). Valida que rel e contatos são da org.
 // Recebe o client da transação do PATCH — DELETE+INSERT são atômicos com o UPDATE.
@@ -229,8 +231,8 @@ export function relationshipRoutes(app: FastifyInstance): void {
     const hasCatalogo = Array.isArray(b.catalogo_ids);
 
     // RBAC de carteira: rep só edita o próprio registro e não o repassa a outro.
-    const current = await one<{ owner_user_id: string | null }>(
-      'SELECT owner_user_id FROM company_relationships WHERE id = $1 AND org_id = $2', [id, orgId],
+    const current = await one<{ owner_user_id: string | null; stage_id: string | null }>(
+      'SELECT owner_user_id, stage_id FROM company_relationships WHERE id = $1 AND org_id = $2', [id, orgId],
     );
     if (!current) return reply.code(404).send({ error: 'não encontrado' });
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
@@ -252,6 +254,9 @@ export function relationshipRoutes(app: FastifyInstance): void {
         sets.push(k === 'status' ? `${k} = $${params.length}::rel_status` : `${k} = $${params.length}`);
       }
     }
+    // Mudou de stage -> reinicia o relógio de "parado no stage" (alerta do dashboard).
+    const curStage = current.stage_id === null ? null : Number(current.stage_id);
+    if ('stage_id' in b && (b.stage_id ?? null) !== curStage) sets.push('stage_changed_at = now()');
     if (sets.length === 0 && !hasContatos && !hasCatalogo) return reply.code(400).send({ error: 'nada para atualizar' });
 
     // UPDATE + syncs numa transação só: falha no meio não deixa estado parcial.

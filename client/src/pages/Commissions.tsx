@@ -7,6 +7,7 @@ import type {
 } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
+import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, todayStr } from '../lib/format.ts';
 
@@ -118,8 +119,16 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
         <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
+        <Btn variant="ghost" size="sm" icon="download" className="ml-auto" disabled={entries.length === 0}
+          onClick={() => downloadCsv(`comissoes-${competencia}`,
+            ['Pedido', 'NF', 'Cliente', 'Representada', 'Vendedor', 'Previsto', 'Recebido', 'Status'],
+            entries.map((e) => [e.order_numero, e.nf_numero ?? '', e.company_nome, e.represented_nome,
+              e.vendedor_nome ?? e.vendedor_email ?? '', Number(e.valor_previsto).toFixed(2),
+              e.valor_recebido == null ? '' : Number(e.valor_recebido).toFixed(2), e.status]))}>
+          Exportar
+        </Btn>
         {admin && (
-          <Btn variant="ghost" size="sm" icon="arrowDown" className="ml-auto" onClick={() => setReconciling(true)}>
+          <Btn variant="ghost" size="sm" icon="arrowDown" onClick={() => setReconciling(true)}>
             Conciliar CSV
           </Btn>
         )}

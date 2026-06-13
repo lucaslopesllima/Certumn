@@ -218,7 +218,7 @@ interface EditPatch {
   stage_id: number | null; status: string; valor_estimado: number | null; notas: string | null;
   represented_id: number | null; marca_id: number | null; contato_ids: number[]; catalogo_ids: number[];
   cenario_id: number | null; acao_id: number | null;
-  data_contato: string | null; previsao_data: string | null;
+  data_contato: string | null; previsao_data: string | null; motivo_descarte: string | null;
 }
 
 const txt = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -248,6 +248,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
   const [acaoId, setAcaoId] = useState<number | null>(card.acao_id);
   const [dataContato, setDataContato] = useState<string>(card.data_contato ?? '');
   const [previsaoData, setPrevisaoData] = useState<string>(card.previsao_data ?? '');
+  const [motivoDescarte, setMotivoDescarte] = useState<string>(card.motivo_descarte ?? '');
   const [notas, setNotas] = useState<string>(card.notas ?? '');
   const [busy, setBusy] = useState(false);
 
@@ -299,6 +300,8 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
         acao_id: acaoId,
         data_contato: dataContato === '' ? null : dataContato,
         previsao_data: previsaoData === '' ? null : previsaoData,
+        // motivo só faz sentido em descartado; nos demais status limpa o campo.
+        motivo_descarte: status === 'descartado' ? txt(motivoDescarte) : null,
         notas: txt(notas),
       });
     } finally { setBusy(false); }
@@ -340,6 +343,12 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
                   {STATUS_OPTS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </select>
               </Field>
+              {status === 'descartado' && (
+                <Field label="Motivo do descarte">
+                  <input value={motivoDescarte} onChange={(e) => setMotivoDescarte(e.target.value)}
+                    placeholder="ex.: Preço alto, sem fit, concorrente" className={inputCls} />
+                </Field>
+              )}
               <Field label="Representada">
                 <select value={representadaId ?? ''}
                   onChange={(e) => { setRepresentadaId(numOrNull(e.target.value)); setMarcaId(null); }}

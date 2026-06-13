@@ -7,6 +7,7 @@ import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderSta
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, todayStr } from '../lib/format.ts';
+import { downloadCsv } from '../lib/export.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -116,6 +117,11 @@ export function Orders(): React.JSX.Element {
     catch { setOrders(before); alert('Não foi possível excluir o pedido.'); }
   };
 
+  const exportar = (): void => downloadCsv('pedidos',
+    ['Número', 'Cliente', 'Representada', 'Vendedor', 'Status', 'NF', 'Total', 'Criado em'],
+    filtered.map((o) => [o.numero, o.company_nome, o.represented_nome, o.owner_nome ?? o.owner_email ?? '',
+      STATUS_META[o.status].label, o.nf_numero ?? '', Number(o.total).toFixed(2), fmtDate(o.created_at)]));
+
   const openEdit = async (o: Order): Promise<void> => {
     const r = await api.get<{ order: Order }>(`/api/orders/${o.id}`);
     setEditing(r.order);
@@ -131,6 +137,7 @@ export function Orders(): React.JSX.Element {
       <PageHeader title="Pedidos" subtitle="Cotações e pedidos de venda por representada"
         actions={
           <div className="flex gap-2">
+            <Btn variant="ghost" icon="download" onClick={exportar} disabled={filtered.length === 0}>Exportar</Btn>
             {user?.role === 'admin' && (
               <Btn variant="ghost" icon="arrowDown" onClick={() => setImporting(true)}>Importar NF</Btn>
             )}

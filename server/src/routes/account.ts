@@ -5,7 +5,7 @@ import { geocodeAddr } from '../geocode.ts';
 
 const ADDR_FIELDS = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'];
 
-const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf';
+const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf, inatividade_dias';
 const ORG_FIELDS = ['nome', 'cnpj', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'] as const;
 
 // Perfil do representante: dados da org (endereço/cnpj/telefone) + usuário (email) + senha.
@@ -35,6 +35,7 @@ export function accountRoutes(app: FastifyInstance): void {
           cidade: { type: ['string', 'null'] },
           uf: { type: ['string', 'null'] },
           email: { type: 'string', minLength: 3 },
+          inatividade_dias: { type: 'integer', minimum: 1, maximum: 365 },
         },
       },
     },
@@ -42,6 +43,12 @@ export function accountRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const userId = req.auth!.userId;
     const b = req.body as Record<string, unknown>;
+
+    // Config de alertas é política da org: só admin altera.
+    if (b.inatividade_dias !== undefined) {
+      if (req.auth!.role !== 'admin') return reply.code(403).send({ error: 'apenas administradores' });
+      await query('UPDATE organizations SET inatividade_dias = $1 WHERE id = $2', [b.inatividade_dias, orgId]);
+    }
 
     // email (login) — único
     if (typeof b.email === 'string') {

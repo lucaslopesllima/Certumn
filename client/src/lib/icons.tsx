@@ -34,6 +34,11 @@ const PATHS: Record<string, string> = {
   fuel: 'M3 22h12M5 22V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v17M4 11h10m1-2 3 3v6a1.5 1.5 0 0 0 3 0V8l-3-3',
   trash: 'M4 7h16M9 7V4h6v3m-7 0v13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V7M10 11v6M14 11v6',
   percent: 'M19 5 5 19M6.75 9.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Zm10.5 10.5a2.75 2.75 0 1 0 0-5.5 2.75 2.75 0 0 0 0 5.5Z',
+  gauge: 'M12 14a2 2 0 0 0 1.4-3.4L17 7M5 18a9 9 0 1 1 14 0H5Z',
+  barChart: 'M4 20V10m6 10V4m6 16v-7M4 20h16',
+  bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
+  download: 'M12 3v12m0 0 4-4m-4 4-4-4M4 19h16',
+  menu: 'M4 6h16M4 12h16M4 18h16',
 };
 
 export type IconName = keyof typeof PATHS;
