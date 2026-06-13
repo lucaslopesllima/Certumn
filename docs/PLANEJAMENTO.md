@@ -236,6 +236,7 @@ Custo baixo, valor percebido alto. Dados já existem após Fases 1–3.
 
 **Critério de aceite**: dashboard carrega < 1s; alertas apontam clientes reais sem contato;
 export CSV abre no Excel com acentuação correta (BOM UTF-8).
+Ajustar as contas que nao estão salvando a data de vencimento
 
 ---
 
