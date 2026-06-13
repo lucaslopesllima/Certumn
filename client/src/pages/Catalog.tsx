@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl } from '../lib/format.ts';
+import { PriceTables } from './PriceTables.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -27,6 +28,8 @@ export function Catalog(): React.JSX.Element {
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<number | 'new' | null>(null);
+  const [tab, setTab] = useState<'itens' | 'tabelas'>('itens');
+  const [addingTable, setAddingTable] = useState(false);
 
   const load = async (): Promise<void> => {
     const [c, r] = await Promise.all([
@@ -69,9 +72,20 @@ export function Catalog(): React.JSX.Element {
   return (
     <div className="space-y-4 p-4 sm:p-6">
       <PageHeader title="Catálogo" subtitle="Produtos e serviços que você oferece. Vincule na prospecção."
-        actions={editing !== 'new' && <Btn icon="plus" onClick={() => setEditing('new')}>Novo item</Btn>} />
+        actions={tab === 'itens'
+          ? (editing !== 'new' && <Btn icon="plus" onClick={() => setEditing('new')}>Novo item</Btn>)
+          : (!addingTable && <Btn icon="plus" onClick={() => setAddingTable(true)}>Nova tabela</Btn>)} />
 
-      {loading ? <Spinner /> : (
+      <Segmented value={tab} onChange={setTab} options={[
+        { value: 'itens', label: 'Itens', icon: 'box' },
+        { value: 'tabelas', label: 'Tabelas de preço', icon: 'layers' },
+      ]} />
+
+      {tab === 'tabelas' ? (
+        <Card className="p-4">
+          <PriceTables reps={reps} catalog={list} adding={addingTable} onCloseAdd={() => setAddingTable(false)} />
+        </Card>
+      ) : loading ? <Spinner /> : (
         <Card className="p-4">
           {editing === 'new' && (
             <div className="mb-4"><ItemForm reps={reps} initial={EMPTY} onSave={create} onCancel={() => setEditing(null)} /></div>

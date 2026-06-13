@@ -34,7 +34,10 @@ export async function makeCompany(opts: {
   municipioId?: number; lat?: number; lon?: number; cnae?: number; uf?: string;
   regiao?: string; porte?: string; capital?: number; razao?: string; fantasia?: string;
 } = {}): Promise<number> {
-  const cnpj = `${run % 1000}${String(++seq).padStart(4, '0')}`.padStart(14, '9').slice(-14);
+  // 8 dígitos do timestamp + 5 de sequência: módulos de arquivos diferentes
+  // (run próprio cada um) não colidem — com %1000 bastava carregar dois
+  // arquivos em ms congruentes para duplicar cnpj.
+  const cnpj = `${run % 100_000_000}${String(++seq).padStart(5, '0')}`.padStart(14, '9').slice(-14);
   const geom = opts.lat != null && opts.lon != null
     ? `ST_SetSRID(ST_MakePoint(${opts.lon}, ${opts.lat}), 4326)::geography` : 'NULL';
   const c = await one<{ id: number }>(

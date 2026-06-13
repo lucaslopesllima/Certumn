@@ -19,6 +19,10 @@ import { vehicleRoutes } from './routes/vehicles.ts';
 import { routePlanRoutes } from './routes/routes.ts';
 import { userRoutes } from './routes/users.ts';
 import { auditRoutes } from './routes/audit.ts';
+import { priceTableRoutes } from './routes/priceTables.ts';
+import { orderRoutes } from './routes/orders.ts';
+import { carrierRoutes } from './routes/carriers.ts';
+import { commissionRoutes } from './routes/commissions.ts';
 
 // Monta a app com todas as rotas de API, sem listen e sem estáticos —
 // index.ts (produção) adiciona o resto; os testes usam app.inject().
@@ -53,6 +57,10 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
   routePlanRoutes(app);
   userRoutes(app);
   auditRoutes(app);
+  priceTableRoutes(app);
+  orderRoutes(app);
+  carrierRoutes(app);
+  commissionRoutes(app);
 
   return app;
 }

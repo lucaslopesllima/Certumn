@@ -172,6 +172,12 @@ export function Kanban(): React.JSX.Element {
                         <span className="truncate">{[c.cidade, c.uf].filter(Boolean).join(' · ')}</span>
                       </span>
                     </div>
+                    {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
+                    <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
+                      title="Novo pedido"
+                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+                      <Icon name="plus" size={13} /> Novo pedido
+                    </a>
                   </div>
                 ))}
                 {colCards.length === 0 && (

@@ -57,7 +57,11 @@ linha em `audit_log`; `npm test` verde; backup gera arquivo diário.
 
 ---
 
-## Fase 1 — Pedidos de venda + tabelas de preço (3–4 sem)
+## Fase 1 — Pedidos de venda + tabelas de preço (3–4 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migrations: 026_price_tables.sql,
+> 027_orders.sql. Filtros de vendedor/período já existem na API (`owner_user_id`, `from`, `to`);
+> a UI expõe status + representada (vendedor entra na Fase 3).
 
 Maior lacuna. Transforma o sistema em ERP.
 
@@ -116,7 +120,12 @@ edita pedido próprio em rascunho.
 
 ---
 
-## Fase 2 — Comissionamento + conciliação (2–3 sem)
+## Fase 2 — Comissionamento + conciliação (2–3 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migration: 029_commissions.sql.
+> A resolução de regra é POR ITEM do pedido (produto > cliente > vendedor > geral) e o
+> lançamento (1 por pedido, UNIQUE(order_id)) guarda snapshot do percentual/split efetivos.
+> Frete fica fora da base de comissão. Re-baixa atualiza o mesmo espelho no financeiro.
 
 Coração do negócio de representação. Diferencial competitivo.
 
@@ -309,7 +318,7 @@ notificações relevantes.
 
 ## Convenções para todas as fases
 
-1. **Migrations**: numeração sequencial contínua (próxima livre: 025), idempotentes,
+1. **Migrations**: numeração sequencial contínua (próxima livre: 030), idempotentes,
    rodadas pelo runner existente (`scripts/migrate.ts`).
 2. **Tenant**: toda tabela nova tem `org_id` + índice `(org_id, ...)`; toda query filtra org.
 3. **Ownership**: toda entidade operacional nova tem `owner_user_id`/`user_id`.

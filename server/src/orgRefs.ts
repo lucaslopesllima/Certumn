@@ -5,11 +5,16 @@ import { one } from './db.ts';
 // outro. company_id fica de fora: companies é a base global, sem org.
 const REF_TABLES = {
   owner_user_id: 'users',
+  user_id: 'users',
   represented_id: 'represented_companies',
   activity_id: 'activities',
   marca_id: 'represented_brands',
   cenario_id: 'funnel_scenarios',
   acao_id: 'funnel_actions',
+  relationship_id: 'company_relationships',
+  price_table_id: 'price_tables',
+  catalog_item_id: 'catalog_items',
+  carrier_id: 'carriers',
 } as const;
 
 export type OrgRefField = keyof typeof REF_TABLES;

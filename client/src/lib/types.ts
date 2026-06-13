@@ -153,6 +153,67 @@ export interface SavedRoute {
   custo_total: string | null; created_at: string; paradas: string;
 }
 
+export interface PriceTableItem {
+  id: number; catalog_item_id: number; preco: string; desconto_max_pct: string | null;
+  catalog_nome: string; codigo: string | null;
+}
+export interface PriceTable {
+  id: number; represented_id: number; nome: string;
+  vigencia_inicio: string; vigencia_fim: string | null; ativo: boolean;
+  created_at: string; represented_nome: string; itens: number;
+  items?: PriceTableItem[];
+}
+
+export interface Carrier {
+  id: number; nome: string; cnpj: string | null; telefone: string | null;
+  email: string | null; contato: string | null; observacoes: string | null; ativo: boolean;
+}
+
+export type OrderStatus = 'cotacao' | 'rascunho' | 'enviado' | 'faturado' | 'entregue' | 'cancelado';
+export interface OrderItem {
+  id: number; catalog_item_id: number | null; descricao_snapshot: string;
+  qtd: string; preco_unit: string; desconto_pct: string; ipi_pct: string; st_pct: string; total: string;
+}
+export interface Order {
+  id: number; numero: number; relationship_id: number | null; company_id: number;
+  represented_id: number; owner_user_id: number | null; price_table_id: number | null;
+  status: OrderStatus; validade: string | null;
+  condicao_pagamento: string | null; transportadora: string | null;
+  carrier_id: number | null; carrier_nome: string | null;
+  frete: string; observacoes: string | null; total: string;
+  nf_numero: string | null; emitido_em: string | null; faturado_em: string | null;
+  created_at: string; updated_at: string;
+  company_nome: string; company_cnpj: string; represented_nome: string;
+  owner_email: string | null; owner_nome: string | null;
+  items?: OrderItem[];
+}
+
+export type CommissionStatus = 'prevista' | 'recebida' | 'divergente' | 'cancelada';
+export interface CommissionEntry {
+  id: number; order_id: number; user_id: number | null; represented_id: number;
+  competencia: string; valor_previsto: string; valor_recebido: string | null;
+  percent_aplicado: string; vendedor_split_pct: string;
+  status: CommissionStatus; recebida_em: string | null; observacao: string | null;
+  finance_entry_id: number | null; created_at: string;
+  order_numero: number; nf_numero: string | null; order_total: string;
+  company_nome: string; represented_nome: string;
+  vendedor_nome: string | null; vendedor_email: string | null;
+  valor_vendedor: string;
+}
+
+export interface CommissionRule {
+  id: number; represented_id: number; catalog_item_id: number | null;
+  company_id: number | null; user_id: number | null;
+  percent: string; vendedor_split_pct: string;
+  vigencia_inicio: string; vigencia_fim: string | null; ativo: boolean; created_at: string;
+  represented_nome: string; catalog_nome: string | null; company_nome: string | null;
+  user_nome: string | null; user_email: string | null;
+}
+
+export interface OrgUser {
+  id: number; nome: string | null; email: string; role: string; ativo: boolean;
+}
+
 export interface FinanceEntry {
   id: number;
   kind: 'pagar' | 'receber';

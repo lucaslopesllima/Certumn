@@ -16,6 +16,9 @@ const Account = lazy(() => import('./pages/Account.tsx').then((m) => ({ default:
 const Finance = lazy(() => import('./pages/Finance.tsx').then((m) => ({ default: m.Finance })));
 const RoutePlanner = lazy(() => import('./pages/Routes.tsx').then((m) => ({ default: m.RoutePlanner })));
 const Team = lazy(() => import('./pages/Team.tsx').then((m) => ({ default: m.Team })));
+const Orders = lazy(() => import('./pages/Orders.tsx').then((m) => ({ default: m.Orders })));
+const Carriers = lazy(() => import('./pages/Carriers.tsx').then((m) => ({ default: m.Carriers })));
+const Commissions = lazy(() => import('./pages/Commissions.tsx').then((m) => ({ default: m.Commissions })));
 const ChangePassword = lazy(() => import('./pages/ChangePassword.tsx').then((m) => ({ default: m.ChangePassword })));
 
 function FullScreenSpinner(): React.JSX.Element {
@@ -47,6 +50,9 @@ function RequireAdmin({ children }: { children: ReactNode }): React.JSX.Element 
 const NAV: { to: string; label: string; icon: IconName; admin?: boolean }[] = [
   { to: '/', label: 'Prospecção', icon: 'target' },
   { to: '/funil', label: 'Funil', icon: 'columns' },
+  { to: '/pedidos', label: 'Pedidos', icon: 'list' },
+  { to: '/comissoes', label: 'Comissões', icon: 'percent' },
+  { to: '/transportadoras', label: 'Transportadoras', icon: 'car' },
   { to: '/rotas', label: 'Rotas', icon: 'route' },
   { to: '/catalogo', label: 'Catálogo', icon: 'box' },
   { to: '/agenda', label: 'Agenda', icon: 'calendar' },
@@ -171,6 +177,9 @@ export function App(): React.JSX.Element {
       <Route path="/" element={<RequireAuth><Shell><Recommend /></Shell></RequireAuth>} />
       <Route path="/perfil" element={<Navigate to="/config" replace />} />
       <Route path="/funil" element={<RequireAuth><Shell><Kanban /></Shell></RequireAuth>} />
+      <Route path="/pedidos" element={<RequireAuth><Shell><Orders /></Shell></RequireAuth>} />
+      <Route path="/comissoes" element={<RequireAuth><Shell><Commissions /></Shell></RequireAuth>} />
+      <Route path="/transportadoras" element={<RequireAuth><Shell><Carriers /></Shell></RequireAuth>} />
       <Route path="/rotas" element={<RequireAuth><Shell><RoutePlanner /></Shell></RequireAuth>} />
       <Route path="/catalogo" element={<RequireAuth><Shell><Catalog /></Shell></RequireAuth>} />
       <Route path="/agenda" element={<RequireAuth><Shell><Agenda /></Shell></RequireAuth>} />
