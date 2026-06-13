@@ -149,6 +149,20 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
     }
   };
 
+  // Fase 6.1 — lança a despesa de viagem (combustível) da rota no financeiro.
+  const lancarCusto = async (r: SavedRoute): Promise<void> => {
+    const sugestao = r.custo_total != null ? String(Number(r.custo_total)) : '';
+    const raw = window.prompt('Valor da despesa de viagem (R$):', sugestao);
+    if (raw === null) return;
+    const valor = raw.trim() === '' ? undefined : Number(raw.replace(',', '.'));
+    try {
+      await api.post(`/api/routes/${r.id}/expense`, valor != null ? { valor } : {});
+      window.alert('Despesa de viagem lançada no Financeiro.');
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : 'Falha ao lançar a despesa.');
+    }
+  };
+
   const mapPts: [number, number][] = result
     ? [[result.origem.lat, result.origem.lon], ...result.stops.map((s) => [s.lat, s.lon] as [number, number])]
     : [];
@@ -297,6 +311,10 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                   <button onClick={() => void reuse(r)} aria-label="Reusar rota" title="Reusar (re-otimizar)"
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
                     <Icon name="compass" size={15} />
+                  </button>
+                  <button onClick={() => void lancarCusto(r)} aria-label="Lançar despesa de viagem" title="Lançar custo no Financeiro"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
+                    <Icon name="wallet" size={15} />
                   </button>
                   <button onClick={() => void toggleTemplate(r)} aria-label="Marcar como template" title={r.template ? 'Desmarcar template' : 'Marcar como template'}
                     className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-ink-100',

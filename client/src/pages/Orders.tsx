@@ -127,6 +127,20 @@ export function Orders(): React.JSX.Element {
     setEditing(r.order);
   };
 
+  // Abre o HTML do pedido/cotação numa aba e dispara a impressão (→ PDF). O HTML
+  // vem do servidor (papel timbrado da org); evita gerador de PDF no bundle.
+  const printOrder = async (o: Order): Promise<void> => {
+    try {
+      const { html } = await api.get<{ html: string }>(`/api/orders/${o.id}/print`);
+      const w = window.open('', '_blank');
+      if (!w) { alert('Permita pop-ups para gerar a impressão.'); return; }
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      w.print();
+    } catch (e) { alert(e instanceof Error ? e.message : 'Não foi possível gerar a impressão.'); }
+  };
+
   const closeModal = (): void => {
     setAdding(false); setEditing(null);
     if (prefill) setParams({}, { replace: true });
@@ -174,7 +188,7 @@ export function Orders(): React.JSX.Element {
         <div className="min-h-0 flex-1 space-y-2 overflow-auto">
           {filtered.map((o) => (
             <Row key={o.id} o={o} showOwner={user?.role === 'admin'} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
-              onTransition={(to) => void transition(o, to)} />
+              onTransition={(to) => void transition(o, to)} onPrint={() => void printOrder(o)} />
           ))}
         </div>
       )}
@@ -192,8 +206,9 @@ export function Orders(): React.JSX.Element {
   );
 }
 
-function Row({ o, showOwner, onEdit, onRemove, onTransition }: {
-  o: Order; showOwner: boolean; onEdit: () => void; onRemove: () => void; onTransition: (to: OrderStatus) => void;
+function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
+  o: Order; showOwner: boolean; onEdit: () => void; onRemove: () => void;
+  onTransition: (to: OrderStatus) => void; onPrint: () => void;
 }): React.JSX.Element {
   const meta = STATUS_META[o.status];
   const next = NEXT[o.status];
@@ -221,6 +236,8 @@ function Row({ o, showOwner, onEdit, onRemove, onTransition }: {
         <Badge tone={meta.tone}>{meta.label}</Badge>
       </div>
       <div className="flex shrink-0 items-center gap-1">
+        <button onClick={onPrint} title="Imprimir / PDF"
+          className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-brand-50 hover:text-brand-600"><Icon name="download" size={16} /></button>
         {next && (
           <Btn variant="ghost" className="px-2 py-1 text-xs" onClick={() => onTransition(next.to)}>{next.label}</Btn>
         )}

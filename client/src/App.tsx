@@ -1,6 +1,8 @@
-import { NavLink, Navigate, Route, Routes, useLocation } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { Suspense, lazy, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from './lib/auth.tsx';
+import { api } from './lib/api.ts';
+import type { Notification } from './lib/types.ts';
 import { Icon, type IconName } from './lib/icons.tsx';
 import { cn } from './lib/ui.tsx';
 
@@ -166,6 +168,79 @@ function Sidebar(): React.JSX.Element {
   );
 }
 
+// Destino de cada tipo de notificação ao clicar.
+const NOTIF_DEST: Record<Notification['tipo'], string> = {
+  vencimento: '/financeiro', agenda: '/agenda', comissao: '/comissoes', parado: '/funil',
+};
+
+// Sino de notificações (Fase 6.2). Materializadas no fetch pelo servidor; aqui
+// só exibe, conta as não lidas e marca como lido. Repesca a cada 60s.
+export function NotificationBell({ variant }: { variant: 'light' | 'dark' }): React.JSX.Element {
+  const [items, setItems] = useState<Notification[]>([]);
+  const [unread, setUnread] = useState(0);
+  const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const load = (): void => {
+    void api.get<{ notifications: Notification[]; nao_lidas: number }>('/api/notifications')
+      .then((r) => { setItems(r.notifications); setUnread(r.nao_lidas); }).catch(() => undefined);
+  };
+  useEffect(() => { load(); const t = setInterval(load, 60_000); return () => clearInterval(t); }, []);
+
+  const onClick = async (n: Notification): Promise<void> => {
+    if (!n.lida) await api.patch(`/api/notifications/${n.id}/read`).catch(() => undefined);
+    setOpen(false);
+    load();
+    navigate(NOTIF_DEST[n.tipo] ?? '/');
+  };
+  const markAll = async (): Promise<void> => {
+    await api.post('/api/notifications/read-all').catch(() => undefined);
+    load();
+  };
+
+  return (
+    <div className="relative">
+      <button onClick={() => setOpen((o) => !o)} aria-label="Notificações"
+        className={cn('relative grid h-8 w-8 place-items-center rounded-lg transition',
+          variant === 'dark' ? 'text-ink-300 hover:bg-white/10 hover:text-white' : 'text-ink-400 hover:bg-ink-100 hover:text-ink-700')}>
+        <Icon name="bell" size={18} />
+        {unread > 0 && (
+          <span className="absolute -right-0.5 -top-0.5 grid h-4 min-w-4 place-items-center rounded-full bg-rose-500 px-1 text-[10px] font-bold text-white">
+            {unread > 9 ? '9+' : unread}
+          </span>
+        )}
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[1500]" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-10 z-[1600] w-80 max-w-[calc(100vw-2rem)] overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-pop">
+            <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
+              <span className="text-sm font-bold text-ink-800">Notificações</span>
+              {unread > 0 && (
+                <button onClick={() => void markAll()} className="text-xs font-semibold text-brand-600 hover:underline">
+                  Marcar todas
+                </button>
+              )}
+            </div>
+            <div className="max-h-96 overflow-auto">
+              {items.length === 0 ? (
+                <p className="px-3 py-6 text-center text-sm text-ink-400">Nada por aqui.</p>
+              ) : items.map((n) => (
+                <button key={n.id} onClick={() => void onClick(n)}
+                  className={cn('flex w-full items-start gap-2.5 border-b border-ink-50 px-3 py-2.5 text-left transition hover:bg-ink-50',
+                    !n.lida && 'bg-brand-50/40')}>
+                  <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', n.lida ? 'bg-ink-200' : 'bg-brand-500')} />
+                  <span className="min-w-0 flex-1 text-xs text-ink-700">{n.titulo}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }): React.JSX.Element {
   const loc = useLocation();
   const nav = useNav();
@@ -178,13 +253,19 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
         {/* mobile top bar */}
         <header className="flex items-center justify-between bg-ink-900 px-4 py-3 sm:hidden">
           <Brand />
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-ink-300">{title}</span>
+            <NotificationBell variant="dark" />
             <NavLink to="/conta" aria-label="Meu perfil"
               className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-white/10 hover:text-white">
               <Icon name="users" size={18} />
             </NavLink>
           </div>
+        </header>
+
+        {/* desktop top bar: só o sino, alinhado à direita */}
+        <header className="hidden items-center justify-end border-b border-ink-200 bg-white px-6 py-2 sm:flex">
+          <NotificationBell variant="light" />
         </header>
 
         <main className="min-h-0 flex-1 overflow-auto pb-20 sm:pb-0">{children}</main>

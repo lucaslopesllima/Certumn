@@ -17,6 +17,8 @@ const REF_TABLES = {
   price_table_id: 'price_tables',
   catalog_item_id: 'catalog_items',
   carrier_id: 'carriers',
+  route_id: 'routes',
+  categoria_id: 'finance_categories',
 } as const;
 
 export type OrgRefField = keyof typeof REF_TABLES;

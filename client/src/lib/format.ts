@@ -13,3 +13,12 @@ export const fmtDate = (iso: string): string =>
   new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
 
 export const todayStr = (): string => new Date().toISOString().slice(0, 10);
+
+// link wa.me (WhatsApp click-to-chat). Assume DDI Brasil (55) quando ausente.
+// Retorna null se não houver dígitos suficientes p/ um telefone válido.
+export const waLink = (tel: string | null | undefined): string | null => {
+  if (!tel) return null;
+  const d = tel.replace(/\D/g, '');
+  if (d.length < 10) return null;
+  return `https://wa.me/${d.length <= 11 ? `55${d}` : d}`;
+};

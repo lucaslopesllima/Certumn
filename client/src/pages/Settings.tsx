@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
-import type { Brand, Contact, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
+import type { Brand, CompanyHit, Contact, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser } from '../lib/auth.tsx';
+import { CompanySearch } from '../lib/companySearch.tsx';
 import { ProfileForm } from './Profile.tsx';
 
 type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'alertas';
@@ -323,8 +324,17 @@ function EmpresaForm({ inputCls, initial, onSave, onCancel }: {
     try { await onSave(f); } finally { setBusy(false); }
   };
 
+  // Autopreenche a partir da base de empresas (RFB).
+  const fillFrom = (c: CompanyHit): void => setF((p) => ({
+    ...p,
+    nome: c.nome_fantasia || c.razao_social,
+    cnpj: c.cnpj ?? p.cnpj,
+    contato: p.contato || c.telefone1 || c.email || '',
+  }));
+
   return (
     <form onSubmit={submit} className="space-y-2.5">
+      <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
       <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da empresa / marca *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
         <input value={f.segmento} onChange={set('segmento')} placeholder="Segmento (ex.: Calçados)" className={inputCls} />

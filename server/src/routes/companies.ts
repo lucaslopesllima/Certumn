@@ -6,6 +6,36 @@ import { geocodeAddr } from '../geocode.ts';
 // Read-only lookup into the global companies pool (mesma fonte do recommend/funil).
 // Retorna TODOS os campos da empresa (com códigos RFB decodificados) + quadro societário.
 export function companyRoutes(app: FastifyInstance): void {
+  // Busca rápida na base global (CNPJ ou razão/fantasia) para autopreencher
+  // cadastros (transportadoras, representadas, etc.). q só com dígitos vira
+  // prefixo de CNPJ (índice pattern_ops); senão ILIKE trigram em razão/fantasia.
+  app.get('/api/companies/search', {
+    preHandler: requireAuth,
+    schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 2 } } } },
+  }, async (req) => {
+    const { q } = req.query as { q: string };
+    const digits = q.replace(/\D/g, '');
+    const SELECT = `
+      SELECT c.id, c.cnpj, c.razao_social, c.nome_fantasia, c.telefone1, c.telefone2, c.email,
+             c.logradouro, c.numero, c.bairro, c.cep, c.uf, m.nome AS cidade
+      FROM companies c LEFT JOIN municipios m ON m.id = c.municipio_id`;
+    // CNPJ quando o termo é majoritariamente numérico (≥4 dígitos).
+    if (digits.length >= 4 && digits.length >= q.replace(/\s/g, '').length - 2) {
+      const companies = await query(
+        `${SELECT} WHERE c.cnpj LIKE $1 ORDER BY c.cnpj LIMIT 10`,
+        [`${digits}%`],
+      );
+      return { companies };
+    }
+    const companies = await query(
+      `${SELECT}
+       WHERE c.razao_social ILIKE '%' || $1 || '%' OR c.nome_fantasia ILIKE '%' || $1 || '%'
+       ORDER BY c.razao_social LIMIT 10`,
+      [q.trim()],
+    );
+    return { companies };
+  });
+
   app.get('/api/companies/:id', {
     preHandler: requireAuth,
     schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } },

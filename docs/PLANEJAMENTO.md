@@ -170,7 +170,11 @@ conciliação CSV marca recebidas e aponta divergência; lançamento espelhado n
 
 ---
 
-## Fase 3 — Multi-vendedor de verdade (2–3 sem)
+## Fase 3 — Multi-vendedor de verdade (2–3 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migration: 030_fase3_multi_vendedor.sql.
+> Escopo por carteira via `scope.ts` (scopeOwner/canWriteOwned), transferência de carteira, perfil/meta
+> por vendedor. Filtros por vendedor expostos na UI (`SellerFilter`).
 
 Depende da Fase 0 (gestão de usuários). Paralelizável com Fases 1–2.
 
@@ -294,7 +298,24 @@ offline e o registro sincroniza ao voltar o sinal; rota do dia gerada da agenda 
 
 ---
 
-## Fase 6 — Financeiro avançado + comunicação (2–3 sem)
+## Fase 6 — Financeiro avançado + comunicação (2–3 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migration: 033_fase6_financeiro_comunicacao.sql
+> (finance_entries += route_id/recorrencia/recorrencia_fim/recorrencia_origem_id/recorrencia_competencia;
+> tabela notifications). O "user_id (despesa de quem)" do roadmap usa o owner_user_id já existente.
+> Backend: `recurrence.ts` (materializador mensal idempotente, roda no boot + `POST /api/finance/recurrences/run`),
+> `GET /api/finance/cashflow` e `/dre`, `POST /api/routes/:id/expense` (despesa de viagem, idempotente por rota),
+> `GET /api/orders/:id/print` (HTML timbrado → window.print, sem lib de PDF) e `routes/notifications.ts`
+> (avisos materializados no fetch: vencimento D-1, compromisso em 1h, comissão divergente, negócio parado;
+> upsert preservando `lida`). Frontend: Financeiro com abas Lançamentos/Fluxo de caixa/DRE + recorrência no
+> modal, botão "Imprimir/PDF" no pedido, "Lançar custo" nas rotas salvas, sino de notificações no header e
+> link wa.me (WhatsApp) nos telefones da empresa. Sem dependência nova (PDF via HTML+print).
+>
+> Extra (migration 034_finance_categories.sql): cadastro leve de categorias
+> (`finance_categories`: nome + `grupo_dre` + kind) e `finance_entries.categoria_id`.
+> O DRE agrupa as despesas pelo `grupo_dre` da categoria vinculada (cai no texto livre
+> `categoria` quando não há vínculo). CRUD em `/api/finance/categories`; no front, dropdown
+> de categoria no modal + tela de gestão (botão "Categorias").
 
 ### 6.1 Financeiro
 - **Migration**: `finance_entries` ganha `route_id FK NULL`,
@@ -341,7 +362,7 @@ notificações relevantes.
 
 ## Convenções para todas as fases
 
-1. **Migrations**: numeração sequencial contínua (próxima livre: 033), idempotentes,
+1. **Migrations**: numeração sequencial contínua (próxima livre: 035), idempotentes,
    rodadas pelo runner existente (`scripts/migrate.ts`).
 2. **Tenant**: toda tabela nova tem `org_id` + índice `(org_id, ...)`; toda query filtra org.
 3. **Ownership**: toda entidade operacional nova tem `owner_user_id`/`user_id`.
@@ -351,7 +372,15 @@ notificações relevantes.
 7. **Branchs**: `feature/<fase>-<tema>`; merge em `main` ao fim de cada item aceito.
 
 
-Correções
-Ajustar as contas que nao estão salvando a data de vencimento
-Permitir editar vendedor, campo nome,pode ser direto na tabela da tela equipe
-Todos os campos de envolvem cadastro de empresa, devem usar a base de cadastro de empresa para automatizar o cadastro, de transportadoras e etc
+## Correções ✅ APLICADAS (jun/2026)
+
+1. **Data de vencimento não salvava** — causa raiz: o pg devolvia colunas `date`
+   como `Date` (meia-noite local → ISO com fuso ao virar JSON), quebrando inputs
+   `type=date` e `fmtDate`. Corrigido globalmente em `db.ts` com
+   `pg.types.setTypeParser(1082, v => v)` (DATE volta como string `YYYY-MM-DD`).
+2. **Editar nome do vendedor na tela Equipe** — célula "Nome" agora editável
+   inline (clica → input → Enter/blur salva; Esc cancela) via `PATCH /api/users/:id`.
+3. **Cadastros usam a base de empresas (RFB)** — novo `GET /api/companies/search`
+   (CNPJ por prefixo ou razão/fantasia por trigram) + componente reutilizável
+   `lib/companySearch.tsx`. Wired em Transportadoras e Empresas representadas
+   (autopreenche nome/CNPJ/telefone/e-mail). Reaproveitável em outros cadastros.

@@ -74,7 +74,7 @@ function Usuarios(): React.JSX.Element {
     } finally { setBusy(false); }
   };
 
-  const patch = async (id: number, body: Partial<Pick<OrgUser, 'role' | 'ativo'>>): Promise<void> => {
+  const patch = async (id: number, body: Partial<Pick<OrgUser, 'role' | 'ativo' | 'nome'>>): Promise<void> => {
     setErr('');
     try {
       await api.patch(`/api/users/${id}`, body);
@@ -150,7 +150,7 @@ function Usuarios(): React.JSX.Element {
                 return (
                   <tr key={u.id} className={cn('border-b border-ink-50 last:border-0', !u.ativo && 'opacity-60')}>
                     <td className="px-4 py-3 font-medium text-ink-900">
-                      {u.nome ?? '—'}{self && <span className="ml-1.5 text-xs font-normal text-ink-400">(você)</span>}
+                      <NameCell u={u} self={self} onSave={(nome) => patch(u.id, { nome })} />
                     </td>
                     <td className="px-4 py-3 text-ink-600">{u.email}</td>
                     <td className="px-4 py-3">
@@ -199,6 +199,41 @@ function Usuarios(): React.JSX.Element {
           onClose={() => setTransfer(null)} onDone={() => { setTransfer(null); }} />
       )}
     </div>
+  );
+}
+
+// Nome do usuário editável direto na tabela: clica → input → Enter/blur salva,
+// Esc cancela. Só dispara o PATCH se o nome mudou.
+function NameCell({ u, self, onSave }: { u: OrgUser; self: boolean; onSave: (nome: string) => Promise<void> }): React.JSX.Element {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(u.nome ?? '');
+  useEffect(() => { setVal(u.nome ?? ''); }, [u.nome]);
+
+  const commit = async (): Promise<void> => {
+    setEditing(false);
+    const t = val.trim();
+    if (t && t !== (u.nome ?? '')) await onSave(t);
+    else setVal(u.nome ?? '');
+  };
+
+  if (editing) {
+    return (
+      <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => void commit()}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') void commit();
+          if (e.key === 'Escape') { setVal(u.nome ?? ''); setEditing(false); }
+        }}
+        aria-label={`Editar nome de ${u.email}`}
+        className="w-40 rounded-lg border border-brand-300 bg-white px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-brand-200" />
+    );
+  }
+  return (
+    <button onClick={() => setEditing(true)} title="Editar nome"
+      className="group inline-flex items-center gap-1.5 text-left hover:text-brand-600">
+      {u.nome ?? '—'}
+      {self && <span className="text-xs font-normal text-ink-400">(você)</span>}
+      <Icon name="pencil" size={13} className="text-ink-300 opacity-0 transition-opacity group-hover:opacity-100" />
+    </button>
   );
 }
 

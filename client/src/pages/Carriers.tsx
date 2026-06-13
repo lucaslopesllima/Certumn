@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
-import type { Carrier } from '../lib/types.ts';
+import type { Carrier, CompanyHit } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
+import { CompanySearch } from '../lib/companySearch.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -122,8 +123,19 @@ function CarrierForm({ initial, onSave, onCancel }: {
     try { await onSave(f); } finally { setBusy(false); }
   };
 
+  // Autopreenche o formulário a partir de uma empresa da base RFB. Mantém os
+  // campos já digitados que a empresa não fornece.
+  const fillFrom = (c: CompanyHit): void => setF((p) => ({
+    ...p,
+    nome: c.nome_fantasia || c.razao_social,
+    cnpj: c.cnpj ?? p.cnpj,
+    telefone: c.telefone1 ?? c.telefone2 ?? p.telefone,
+    email: c.email ?? p.email,
+  }));
+
   return (
     <form onSubmit={submit} className="space-y-2.5">
+      <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
       <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da transportadora *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-3">
         <input value={f.cnpj} onChange={set('cnpj')} placeholder="CNPJ" className={inputCls} />

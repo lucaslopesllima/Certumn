@@ -26,6 +26,7 @@ import { commissionRoutes } from './routes/commissions.ts';
 import { goalRoutes } from './routes/goals.ts';
 import { dashboardRoutes } from './routes/dashboard.ts';
 import { reportRoutes } from './routes/reports.ts';
+import { notificationRoutes } from './routes/notifications.ts';
 
 // Monta a app com todas as rotas de API, sem listen e sem estáticos —
 // index.ts (produção) adiciona o resto; os testes usam app.inject().
@@ -67,6 +68,7 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
   goalRoutes(app);
   dashboardRoutes(app);
   reportRoutes(app);
+  notificationRoutes(app);
 
   return app;
 }

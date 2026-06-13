@@ -243,13 +243,57 @@ export interface FinanceEntry {
   liquidacao_data: string | null;
   status: 'pendente' | 'liquidado' | 'cancelado';
   categoria: string | null;
+  categoria_id: number | null;
   notas: string | null;
   company_id: number | null;
   represented_id: number | null;
   activity_id: number | null;
   owner_user_id: number | null;
+  route_id: number | null;
+  recorrencia: string | null;
+  recorrencia_fim: string | null;
+  recorrencia_origem_id: number | null;
   created_at: string;
   company_nome: string | null;
   represented_nome: string | null;
   activity_titulo: string | null;
+  route_nome: string | null;
+  categoria_nome: string | null;
+  categoria_grupo_dre: string | null;
+}
+
+// Resultado da busca na base global de empresas (RFB) p/ autopreencher cadastros.
+export interface CompanyHit {
+  id: number;
+  cnpj: string;
+  razao_social: string;
+  nome_fantasia: string | null;
+  telefone1: string | null;
+  telefone2: string | null;
+  email: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cep: string | null;
+  uf: string;
+  cidade: string | null;
+}
+
+export interface FinanceCategory {
+  id: number;
+  nome: string;
+  grupo_dre: string;
+  kind: 'pagar' | 'receber' | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+export interface Notification {
+  id: number;
+  tipo: 'vencimento' | 'agenda' | 'comissao' | 'parado';
+  chave: string;
+  titulo: string;
+  payload: Record<string, unknown>;
+  lida: boolean;
+  created_at: string;
 }

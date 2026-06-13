@@ -545,6 +545,42 @@ export function routePlanRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ created: created.length, ids: created });
   });
 
+  // Lançar despesa de viagem (Fase 6.1): cria um finance_entry pagar/viagem com
+  // o custo de combustível da rota. Idempotente por rota — segunda chamada
+  // devolve 409 com o lançamento existente (evita duplicar o custo).
+  app.post('/api/routes/:id/expense', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: { type: 'object', properties: { vencimento: { type: 'string' }, valor: { type: 'number', minimum: 0 } } },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const b = req.body as { vencimento?: string; valor?: number };
+    const route = await one<{ owner_user_id: string | null; nome: string; custo_total: string | null }>(
+      'SELECT owner_user_id, nome, custo_total FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(403).send({ error: 'rota de outro vendedor' });
+    }
+    const existing = await one<{ id: string }>('SELECT id FROM finance_entries WHERE route_id = $1 AND org_id = $2', [id, orgId]);
+    if (existing) return reply.code(409).send({ error: 'despesa desta rota já lançada', finance_id: Number(existing.id) });
+
+    const valor = b.valor ?? (route.custo_total != null ? Number(route.custo_total) : null);
+    if (valor == null || valor <= 0) return reply.code(400).send({ error: 'rota sem custo calculado; informe um valor' });
+    const owner = route.owner_user_id != null ? Number(route.owner_user_id) : req.auth!.userId;
+    const rows = await query<{ id: string }>(
+      `INSERT INTO finance_entries
+         (org_id, kind, descricao, valor, vencimento, status, categoria, route_id, owner_user_id)
+       VALUES ($1, 'pagar', $2, $3, COALESCE($4::date, current_date), 'pendente', 'viagem', $5, $6)
+       RETURNING id`,
+      [orgId, `Viagem: ${route.nome}`, valor, b.vencimento ?? null, id, owner],
+    );
+    return reply.code(201).send({ finance_id: Number(rows[0]!.id) });
+  });
+
   app.delete('/api/routes/:id', {
     preHandler: requireAuth,
     schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } },

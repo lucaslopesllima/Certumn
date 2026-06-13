@@ -2,8 +2,17 @@ import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
 import { config } from './config.ts';
 import { buildApp } from './app.ts';
+import { materializeRecurrences } from './recurrence.ts';
 
 const app = await buildApp();
+
+// Materializa lançamentos financeiros recorrentes decorridos (Fase 6.1). Roda
+// no boot; idempotente, então deploys repetidos não duplicam. Falha aqui não
+// derruba o servidor — só registra.
+materializeRecurrences().then(
+  (n) => { if (n > 0) app.log.info(`recorrências financeiras: ${n} lançamento(s) materializado(s)`); },
+  (e) => app.log.error({ err: e }, 'falha ao materializar recorrências'),
+);
 
 // Serve the built React app (Dockerfile sets CLIENT_DIR). SPA fallback for client routes.
 if (config.clientDir && existsSync(config.clientDir)) {

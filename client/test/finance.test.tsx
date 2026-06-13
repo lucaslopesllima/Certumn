@@ -15,12 +15,15 @@ const entry = (over: Record<string, unknown>): Record<string, unknown> => ({
   id: 1, kind: 'receber', descricao: 'Comissão X', valor: '1000', vencimento: '2099-12-31',
   liquidacao_data: null, status: 'pendente', categoria: null, notas: null,
   company_id: null, represented_id: null, activity_id: null, owner_user_id: 1,
-  created_at: '', company_nome: null, represented_nome: null, activity_titulo: null, ...over,
+  categoria_id: null, route_id: null, recorrencia: null, recorrencia_fim: null, recorrencia_origem_id: null,
+  created_at: '', company_nome: null, represented_nome: null, activity_titulo: null,
+  route_nome: null, categoria_nome: null, categoria_grupo_dre: null, ...over,
 });
 
 beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.patch).mockReset();
+  vi.mocked(m.post).mockReset();
   vi.stubGlobal('alert', vi.fn());
   m.get.mockImplementation(async (p: string) => {
     if (p === '/api/finance') {
@@ -31,6 +34,18 @@ beforeEach(() => {
         entry({ id: 4, kind: 'pagar', valor: '999', status: 'cancelado', descricao: 'Cancelada' }),
       ] };
     }
+    if (p.startsWith('/api/finance/cashflow')) {
+      return { months: 3, semanas: [
+        { semana: '2099-01-05', receber: 800, pagar: 300, comissao_prevista: 50, saldo: 550 },
+      ] };
+    }
+    if (p.startsWith('/api/finance/dre')) {
+      return { ano: 2099, meses: Array.from({ length: 12 }, (_, i) => ({
+        mes: i + 1, receita: i === 0 ? 1000 : 0, despesa: i === 0 ? 400 : 0,
+        resultado: i === 0 ? 600 : 0, despesas_por_categoria: i === 0 ? { viagem: 400 } : {},
+      })) };
+    }
+    if (p === '/api/finance/categories') return { categories: [] };
     if (p === '/api/kanban') return { cards: [] };
     if (p === '/api/represented') return { empresas: [] };
     return { activities: [] };
@@ -72,6 +87,33 @@ describe('Finance', () => {
     m.patch.mockResolvedValueOnce({});
     await userEvent.click(screen.getAllByTitle('Marcar liquidado')[0]!);
     expect(m.patch).toHaveBeenLastCalledWith('/api/finance/1', expect.objectContaining({ status: 'liquidado' }));
+  });
+
+  it('view Fluxo de caixa lista semanas com saldo projetado', async () => {
+    render(<Finance />);
+    await screen.findByText('Comissão X');
+    await userEvent.click(screen.getByRole('button', { name: /Fluxo de caixa/ }));
+    expect(await screen.findByText('Saldo projetado')).toBeInTheDocument();
+    expect(screen.getByText(/Semana de/)).toBeInTheDocument();
+    expect(m.get).toHaveBeenCalledWith(expect.stringContaining('/api/finance/cashflow'), expect.anything());
+  });
+
+  it('view DRE mostra receita, despesa e categoria', async () => {
+    render(<Finance />);
+    await screen.findByText('Comissão X');
+    await userEvent.click(screen.getByRole('button', { name: /^DRE$/ }));
+    expect(await screen.findByText('Resultado')).toBeInTheDocument();
+    expect(screen.getByText(/viagem:/)).toBeInTheDocument();
+  });
+
+  it('gerencia categorias: adiciona pelo modal', async () => {
+    m.post.mockResolvedValue({ category: { id: 9, nome: 'Frete', grupo_dre: 'Operacional', kind: null, ativo: true } });
+    render(<Finance />);
+    await screen.findByText('Comissão X');
+    await userEvent.click(screen.getByRole('button', { name: /Categorias/ }));
+    await userEvent.type(screen.getByPlaceholderText('Nome *'), 'Frete');
+    await userEvent.click(screen.getByRole('button', { name: /Adicionar/ }));
+    expect(m.post).toHaveBeenCalledWith('/api/finance/categories', expect.objectContaining({ nome: 'Frete' }));
   });
 
   it('lançamento vencido ganha badge Vencido', async () => {

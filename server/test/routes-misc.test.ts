@@ -122,6 +122,27 @@ describe('companies', () => {
 
     expect((await inj(a, 'GET', '/api/companies/999999999/geocode')).statusCode).toBe(404);
   });
+
+  it('search: por CNPJ (prefixo) e por razão social', async () => {
+    // uf/cnae fora da janela do recommend (região não habilitada) p/ não poluir
+    // o pool e empurrar o alvo daquele teste para fora do limit.
+    const cid = await makeCompany({ uf: 'AC', regiao: 'N', cnae: 1111111, razao: 'Transportes Zeta Ltda' });
+    const cnpj = (await one<{ cnpj: string }>('SELECT cnpj FROM companies WHERE id = $1', [cid]))!.cnpj;
+
+    // por CNPJ (prefixo de dígitos)
+    const byCnpj = await inj(a, 'GET', `/api/companies/search?q=${cnpj.slice(0, 8)}`);
+    expect(byCnpj.statusCode).toBe(200);
+    expect((byCnpj.json() as { companies: { id: number }[] }).companies.some((c) => Number(c.id) === cid)).toBe(true);
+
+    // por razão social (trigram ILIKE)
+    const byNome = await inj(a, 'GET', '/api/companies/search?q=Zeta Ltda');
+    const hit = (byNome.json() as { companies: { id: number; cnpj: string; razao_social: string }[] }).companies.find((c) => Number(c.id) === cid);
+    expect(hit).toBeDefined();
+    expect(hit!.razao_social).toBe('Transportes Zeta Ltda');
+
+    // q < 2 chars → 400 (schema)
+    expect((await inj(a, 'GET', '/api/companies/search?q=a')).statusCode).toBe(400);
+  });
 });
 
 describe('account', () => {

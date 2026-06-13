@@ -179,6 +179,99 @@ interface OrderRow {
 const findOrder = (id: number, orgId: number): Promise<OrderRow | null> =>
   one<OrderRow>('SELECT id, status, owner_user_id, price_table_id, frete, numero FROM orders WHERE id = $1 AND org_id = $2', [id, orgId]);
 
+// Escapa para interpolar com segurança no HTML do print (sem libs de template).
+const esc = (v: unknown): string => String(v ?? '')
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+const brl = (n: unknown): string =>
+  Number(n ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const STATUS_LABEL: Record<string, string> = {
+  cotacao: 'Cotação', rascunho: 'Rascunho', enviado: 'Pedido', faturado: 'Pedido faturado',
+  entregue: 'Pedido entregue', cancelado: 'Cancelado',
+};
+
+interface OrgHeader {
+  nome: string; cnpj: string | null; telefone: string | null;
+  logradouro: string | null; numero: string | null; bairro: string | null;
+  cidade: string | null; uf: string | null; cep: string | null;
+}
+
+// Monta o HTML do pedido/cotação (papel timbrado da org + itens + condições).
+// Dependency-free: o client abre numa aba e usa window.print() → PDF.
+function orderHtml(org: OrgHeader, order: Record<string, unknown>, items: Record<string, unknown>[]): string {
+  const isCotacao = order.status === 'cotacao';
+  const titulo = isCotacao ? 'Cotação' : (STATUS_LABEL[String(order.status)] ?? 'Pedido');
+  const endereco = [org.logradouro, org.numero, org.bairro, org.cidade && `${org.cidade}/${org.uf ?? ''}`, org.cep]
+    .filter(Boolean).map(esc).join(', ');
+  const rows = items.map((it, i) => `
+      <tr>
+        <td class="c">${i + 1}</td>
+        <td>${esc(it.descricao_snapshot)}</td>
+        <td class="r">${esc(it.qtd)}</td>
+        <td class="r">${brl(it.preco_unit)}</td>
+        <td class="r">${Number(it.desconto_pct ?? 0)}%</td>
+        <td class="r">${brl(it.total)}</td>
+      </tr>`).join('');
+  const validade = order.validade ? `<p><strong>Validade:</strong> ${esc(order.validade)}</p>` : '';
+  return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+<title>${titulo} nº ${esc(order.numero)}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font: 13px/1.5 system-ui, sans-serif; color: #1a1a2e; margin: 32px; }
+  header { display: flex; justify-content: space-between; align-items: flex-start;
+           border-bottom: 2px solid #4f46e5; padding-bottom: 16px; margin-bottom: 24px; }
+  .org h1 { margin: 0 0 4px; font-size: 18px; }
+  .org p { margin: 1px 0; font-size: 11px; color: #555; }
+  .doc { text-align: right; }
+  .doc h2 { margin: 0; font-size: 20px; color: #4f46e5; }
+  .doc p { margin: 2px 0; font-size: 12px; }
+  .meta { display: flex; gap: 32px; margin-bottom: 20px; font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+  th, td { padding: 7px 9px; border-bottom: 1px solid #e5e7eb; }
+  th { background: #f3f4f6; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
+  td.r, th.r { text-align: right; } td.c, th.c { text-align: center; width: 28px; }
+  tfoot td { font-weight: 700; font-size: 15px; border-top: 2px solid #4f46e5; border-bottom: none; }
+  .cond { font-size: 12px; color: #444; }
+  @media print { body { margin: 0; } @page { margin: 16mm; } }
+</style></head><body>
+<header>
+  <div class="org">
+    <h1>${esc(org.nome)}</h1>
+    ${org.cnpj ? `<p>CNPJ: ${esc(org.cnpj)}</p>` : ''}
+    ${endereco ? `<p>${endereco}</p>` : ''}
+    ${org.telefone ? `<p>Tel: ${esc(org.telefone)}</p>` : ''}
+  </div>
+  <div class="doc">
+    <h2>${titulo}</h2>
+    <p>Nº ${esc(order.numero)}</p>
+    ${validade}
+  </div>
+</header>
+<div class="meta">
+  <div>
+    <strong>Cliente</strong><br>${esc(order.company_nome)}<br>
+    <span style="color:#666">${esc(order.company_cnpj)}</span>
+  </div>
+  <div><strong>Representada</strong><br>${esc(order.represented_nome)}</div>
+  <div><strong>Vendedor</strong><br>${esc(order.owner_nome ?? order.owner_email ?? '—')}</div>
+</div>
+<table>
+  <thead><tr><th class="c">#</th><th>Descrição</th><th class="r">Qtd</th>
+    <th class="r">Preço</th><th class="r">Desc.</th><th class="r">Total</th></tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr><td colspan="5" class="r">Total${Number(order.frete ?? 0) > 0 ? ` (frete ${brl(order.frete)})` : ''}</td>
+    <td class="r">${brl(order.total)}</td></tr></tfoot>
+</table>
+<div class="cond">
+  ${order.condicao_pagamento ? `<p><strong>Pagamento:</strong> ${esc(order.condicao_pagamento)}</p>` : ''}
+  ${order.transportadora || order.carrier_nome ? `<p><strong>Transporte:</strong> ${esc(order.carrier_nome ?? order.transportadora)}</p>` : ''}
+  ${order.nf_numero ? `<p><strong>NF:</strong> ${esc(order.nf_numero)}</p>` : ''}
+  ${order.observacoes ? `<p><strong>Observações:</strong> ${esc(order.observacoes)}</p>` : ''}
+</div>
+</body></html>`;
+}
+
 export function orderRoutes(app: FastifyInstance): void {
   app.get('/api/orders', {
     preHandler: requireAuth,
@@ -224,6 +317,27 @@ export function orderRoutes(app: FastifyInstance): void {
       return reply.code(404).send({ error: 'não encontrado' });
     }
     return { order: await fullOrder(id) };
+  });
+
+  // HTML do pedido/cotação para impressão/PDF (Fase 6.2). Devolve { html } e o
+  // client abre numa aba + window.print(); evita dependência de gerador de PDF.
+  app.get('/api/orders/:id/print', {
+    preHandler: requireAuth,
+    schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const order = await findOrder(id, orgId);
+    if (!order) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWrite(req, order.owner_user_id === null ? null : Number(order.owner_user_id))) {
+      return reply.code(404).send({ error: 'não encontrado' });
+    }
+    const org = await one<OrgHeader>(
+      `SELECT nome, cnpj, telefone, logradouro, numero, bairro, cidade, uf, cep
+       FROM organizations WHERE id = $1`, [orgId],
+    );
+    const full = await fullOrder(id);
+    return { html: orderHtml(org!, full, (full.items as Record<string, unknown>[]) ?? []) };
   });
 
   app.post('/api/orders', {
