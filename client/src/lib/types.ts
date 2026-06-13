@@ -23,6 +23,7 @@ export interface Recommendation {
 
 export interface Profile {
   org_id: string;
+  user_id: number | null;
   cnaes_alvo: number[];
   territorio_municipios: number[];
   territorio_raio_km: number | null;
@@ -45,6 +46,7 @@ export interface RepresentedCompany {
 }
 export interface KanbanCard {
   id: number; company_id: number; stage_id: number | null; status: string;
+  owner_user_id: number | null;
   valor_estimado: string | null; notas: string | null; razao_social: string; nome_fantasia: string | null;
   uf: string; municipio_id: number; cidade: string | null;
   cnpj: string; cnae_principal: number; porte: string; capital_social: string;
@@ -212,6 +214,19 @@ export interface CommissionRule {
 
 export interface OrgUser {
   id: number; nome: string | null; email: string; role: string; ativo: boolean;
+  must_change_password?: boolean;
+}
+
+export interface Goal {
+  id: number; user_id: number; represented_id: number | null;
+  competencia: string; valor_meta: string; created_at: string;
+  vendedor_nome: string | null; vendedor_email: string | null; represented_nome: string | null;
+}
+
+export interface GoalProgress {
+  id: number; user_id: number; represented_id: number | null; competencia: string;
+  valor_meta: string; realizado: number; pct: number | null;
+  vendedor_nome: string | null; vendedor_email: string | null; represented_nome: string | null;
 }
 
 export interface FinanceEntry {

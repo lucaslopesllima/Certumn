@@ -1,9 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type pg from 'pg';
 import { one, query, withClient } from '../db.ts';
-import { requireAuth } from '../auth.ts';
+import { requireAuth, requireAdmin } from '../auth.ts';
 import { audit, pick } from '../audit.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
+import { scopeOwner, canWriteOwned, invalidOwnerAssignment } from '../scope.ts';
 
 // company_relationships is the tenant's REFERENCE into the global companies pool.
 // Creating/updating one NEVER writes the companies table.
@@ -114,6 +115,7 @@ export function relationshipRoutes(app: FastifyInstance): void {
           stage_id: { type: 'integer' },
           status: { type: 'string' },
           q: { type: 'string' },
+          owner_user_id: { type: 'integer' },
           limit: { type: 'integer', minimum: 1, maximum: 200, default: 100 },
           offset: { type: 'integer', minimum: 0, default: 0 },
         },
@@ -121,11 +123,12 @@ export function relationshipRoutes(app: FastifyInstance): void {
     },
   }, async (req) => {
     const orgId = req.auth!.orgId;
-    const { stage_id, status, q, limit = 100, offset = 0 } = req.query as {
-      stage_id?: number; status?: string; q?: string; limit?: number; offset?: number;
+    const { stage_id, status, q, owner_user_id, limit = 100, offset = 0 } = req.query as {
+      stage_id?: number; status?: string; q?: string; owner_user_id?: number; limit?: number; offset?: number;
     };
     const where: string[] = ['r.org_id = $1'];
     const params: unknown[] = [orgId];
+    scopeOwner(req, where, params, 'r.owner_user_id', owner_user_id);
     if (stage_id !== undefined) { params.push(stage_id); where.push(`r.stage_id = $${params.length}`); }
     if (status) { params.push(status); where.push(`r.status = $${params.length}::rel_status`); }
     if (q) { params.push(`%${q}%`); where.push(`(c.razao_social ILIKE $${params.length} OR c.nome_fantasia ILIKE $${params.length})`); }
@@ -163,6 +166,10 @@ export function relationshipRoutes(app: FastifyInstance): void {
 
     const company = await one('SELECT id FROM companies WHERE id = $1', [b.company_id]);
     if (!company) return reply.code(404).send({ error: 'empresa não existe na base' });
+
+    if (invalidOwnerAssignment(req, b)) {
+      return reply.code(403).send({ error: 'vendedor não atribui carteira a outro usuário' });
+    }
 
     const badRef = await invalidOrgRef(orgId, b,
       ['owner_user_id', 'represented_id', 'marca_id', 'cenario_id', 'acao_id']);
@@ -220,6 +227,18 @@ export function relationshipRoutes(app: FastifyInstance): void {
 
     const hasContatos = Array.isArray(b.contato_ids);
     const hasCatalogo = Array.isArray(b.catalogo_ids);
+
+    // RBAC de carteira: rep só edita o próprio registro e não o repassa a outro.
+    const current = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM company_relationships WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!current) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
+      return reply.code(403).send({ error: 'registro de outro vendedor' });
+    }
+    if (invalidOwnerAssignment(req, b)) {
+      return reply.code(403).send({ error: 'vendedor não atribui carteira a outro usuário' });
+    }
 
     const badRef = await invalidOrgRef(orgId, b,
       ['owner_user_id', 'represented_id', 'marca_id', 'cenario_id', 'acao_id']);
@@ -280,27 +299,87 @@ export function relationshipRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
+    const current = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM company_relationships WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!current) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
+      return reply.code(403).send({ error: 'registro de outro vendedor' });
+    }
     const rows = await query('DELETE FROM company_relationships WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
     await audit(req, 'relationship', id, 'delete');
     return { deleted: true };
   });
 
-  // Kanban board: stages + cards (relationships) grouped by stage.
-  app.get('/api/kanban', { preHandler: requireAuth }, async (req) => {
+  // Transferência de carteira (Fase 3): em lote (ids) ou total (sem ids —
+  // desligamento de vendedor). Admin only; auditada com a contagem e os ids.
+  app.post('/api/relationships/transfer', {
+    preHandler: [requireAuth, requireAdmin],
+    schema: {
+      body: {
+        type: 'object',
+        required: ['from_user_id', 'to_user_id'],
+        properties: {
+          from_user_id: { type: 'integer' },
+          to_user_id: { type: 'integer' },
+          ids: { type: 'array', items: { type: 'integer' }, minItems: 1 },
+        },
+      },
+    },
+  }, async (req, reply) => {
     const orgId = req.auth!.orgId;
+    const b = req.body as { from_user_id: number; to_user_id: number; ids?: number[] };
+    if (b.from_user_id === b.to_user_id) {
+      return reply.code(400).send({ error: 'origem e destino são o mesmo usuário' });
+    }
+    const badRef = await invalidOrgRef(orgId, b, ['from_user_id', 'to_user_id']);
+    if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
+
+    const params: unknown[] = [b.to_user_id, orgId, b.from_user_id];
+    let filtroIds = '';
+    if (b.ids) { params.push(b.ids); filtroIds = ` AND id = ANY($${params.length}::bigint[])`; }
+    const rows = await query<{ id: string }>(
+      `UPDATE company_relationships SET owner_user_id = $1, updated_at = now()
+       WHERE org_id = $2 AND owner_user_id = $3${filtroIds}
+       RETURNING id`,
+      params,
+    );
+    const ids = rows.map((r) => Number(r.id));
+    await audit(req, 'relationship', 0, 'transfer', {
+      from_user_id: b.from_user_id, to_user_id: b.to_user_id, count: ids.length, ids,
+    });
+    return { transferred: ids.length, ids };
+  });
+
+  // Kanban board: stages + cards (relationships) grouped by stage.
+  // Rep vê só a própria carteira; admin vê tudo + filtro por vendedor.
+  app.get('/api/kanban', {
+    preHandler: requireAuth,
+    schema: {
+      querystring: {
+        type: 'object',
+        properties: { owner_user_id: { type: 'integer' } },
+      },
+    },
+  }, async (req) => {
+    const orgId = req.auth!.orgId;
+    const { owner_user_id } = req.query as { owner_user_id?: number };
     const stages = await query('SELECT id, nome, ordem FROM stages WHERE org_id = $1 ORDER BY ordem', [orgId]);
+    const where: string[] = ['r.org_id = $1'];
+    const params: unknown[] = [orgId];
+    scopeOwner(req, where, params, 'r.owner_user_id', owner_user_id);
     const cards = await query(
-      `SELECT ${REL_COLS}, ${REL_LABELS},
+      `SELECT ${REL_COLS}, r.owner_user_id, ${REL_LABELS},
               c.razao_social, c.nome_fantasia, c.uf, c.municipio_id, m.nome AS cidade,
               c.cnpj, c.cnae_principal, c.porte, c.capital_social
        FROM company_relationships r
        JOIN companies c ON c.id = r.company_id
        LEFT JOIN municipios m ON m.id = c.municipio_id
        ${REL_JOINS}
-       WHERE r.org_id = $1
+       WHERE ${where.join(' AND ')}
        ORDER BY r.updated_at DESC`,
-      [orgId],
+      params,
     );
     return { stages, cards };
   });

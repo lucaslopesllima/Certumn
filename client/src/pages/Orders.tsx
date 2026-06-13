@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderStatus, PriceTable, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
@@ -35,6 +36,8 @@ export function Orders(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<'todos' | OrderStatus>('todos');
   const [representedId, setRepresentedId] = useState<'todos' | number>('todos');
+  const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const [editing, setEditing] = useState<Order | null>(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -79,7 +82,8 @@ export function Orders(): React.JSX.Element {
   const filtered = useMemo(() => orders.filter((o) =>
     (status === 'todos' || o.status === status)
     && (representedId === 'todos' || o.represented_id === representedId)
-  ), [orders, status, representedId]);
+    && (ownerId === 'todos' || o.owner_user_id === ownerId)
+  ), [orders, status, representedId, ownerId]);
 
   const kpis = useMemo(() => {
     let aberto = 0, faturado = 0;
@@ -152,6 +156,7 @@ export function Orders(): React.JSX.Element {
           <option value="todos">Todas as representadas</option>
           {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
+        <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
       </Card>
 
       {loading ? (
@@ -161,7 +166,7 @@ export function Orders(): React.JSX.Element {
       ) : (
         <div className="min-h-0 flex-1 space-y-2 overflow-auto">
           {filtered.map((o) => (
-            <Row key={o.id} o={o} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
+            <Row key={o.id} o={o} showOwner={user?.role === 'admin'} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
               onTransition={(to) => void transition(o, to)} />
           ))}
         </div>
@@ -180,8 +185,8 @@ export function Orders(): React.JSX.Element {
   );
 }
 
-function Row({ o, onEdit, onRemove, onTransition }: {
-  o: Order; onEdit: () => void; onRemove: () => void; onTransition: (to: OrderStatus) => void;
+function Row({ o, showOwner, onEdit, onRemove, onTransition }: {
+  o: Order; showOwner: boolean; onEdit: () => void; onRemove: () => void; onTransition: (to: OrderStatus) => void;
 }): React.JSX.Element {
   const meta = STATUS_META[o.status];
   const next = NEXT[o.status];
@@ -199,6 +204,7 @@ function Row({ o, onEdit, onRemove, onTransition }: {
             {o.carrier_nome ?? o.transportadora ? ` · ${o.carrier_nome ?? o.transportadora}` : ''}
             {o.nf_numero ? ` · NF ${o.nf_numero}` : ''}
             {o.status === 'cotacao' && o.validade ? ` · válida até ${fmtDate(o.validade)}` : ''}
+            {showOwner && (o.owner_nome || o.owner_email) ? ` · ${o.owner_nome ?? o.owner_email}` : ''}
             {` · ${fmtDate(o.created_at)}`}
           </p>
         </div>

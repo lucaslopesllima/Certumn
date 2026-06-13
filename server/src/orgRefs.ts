@@ -6,6 +6,8 @@ import { one } from './db.ts';
 const REF_TABLES = {
   owner_user_id: 'users',
   user_id: 'users',
+  from_user_id: 'users',
+  to_user_id: 'users',
   represented_id: 'represented_companies',
   activity_id: 'activities',
   marca_id: 'represented_brands',

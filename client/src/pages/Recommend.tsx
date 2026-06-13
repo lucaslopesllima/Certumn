@@ -9,6 +9,7 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { Cnae } from '../lib/cnae.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 
 const MATCH_COLOR: Record<string, string> = {
   classe: '#039855', divisao: '#0284c7', secao: '#12b76a', nenhum: '#94a3b8',
@@ -115,6 +116,9 @@ export function Recommend(): React.JSX.Element {
   const [done, setDone] = useState(false);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<'lista' | 'mapa'>('lista');
+  // simulação de vendedor (admin): vê a recomendação com o território/CNAEs do vendedor.
+  const [simUser, setSimUser] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const [filtersOpen, setFiltersOpen] = useState(() => {
     try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1'; } catch { return false; }
   });
@@ -210,6 +214,7 @@ export function Recommend(): React.JSX.Element {
       if (filter.fCnae.trim()) qs.set('cnae', filter.fCnae.trim());
       if (filter.fUf.trim()) qs.set('uf', filter.fUf.trim());
       if (filter.fPorte) qs.set('porte', filter.fPorte);
+      if (simUser !== 'todos') qs.set('user_id', String(simUser));
       const r = await api.get<{ results: Recommendation[]; page: { count: number } }>(
         `/api/recommend?${qs.toString()}`, { signal: ac.signal },
       );
@@ -236,7 +241,7 @@ export function Recommend(): React.JSX.Element {
     const t = setTimeout(() => { void load(0); }, 350);
     return () => clearTimeout(t);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte]);
+  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte, simUser]);
 
   // No mapa, plota só o que já está carregado na lista — sem auto-paginar.
 
@@ -326,6 +331,7 @@ export function Recommend(): React.JSX.Element {
           subtitle={semFiltro ? 'Selecione um filtro para buscar empresas' : `${recs.length} resultado(s) · ranqueados por fit`}
           actions={
             <div className="flex items-center gap-2">
+              <SellerFilter value={simUser} onChange={setSimUser} sellers={sellers} />
               {view === 'lista' && (
                 <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
                   Filtros{filter.filtroAtivo ? ' · ativos' : ''}

@@ -6,6 +6,7 @@ import type {
   KanbanCard, OrgUser, RepresentedCompany,
 } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, todayStr } from '../lib/format.ts';
 
@@ -51,6 +52,8 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
   const [competencia, setCompetencia] = useState(todayStr().slice(0, 7));
   const [representedId, setRepresentedId] = useState<'todas' | number>('todas');
   const [status, setStatus] = useState<'todos' | CommissionStatus>('todos');
+  const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const [entries, setEntries] = useState<CommissionEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [settling, setSettling] = useState<CommissionEntry | null>(null);
@@ -61,12 +64,13 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
     const qs = new URLSearchParams({ competencia });
     if (representedId !== 'todas') qs.set('represented_id', String(representedId));
     if (status !== 'todos') qs.set('status', status);
+    if (ownerId !== 'todos') qs.set('user_id', String(ownerId));
     try {
       const r = await api.get<{ entries: CommissionEntry[] }>(`/api/commissions?${qs.toString()}`);
       setEntries(r.entries);
     } finally { setLoading(false); }
   };
-  useEffect(() => { void load(); }, [competencia, representedId, status]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { void load(); }, [competencia, representedId, status, ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const kpis = useMemo(() => {
     let previsto = 0, recebido = 0, divergentes = 0;
@@ -113,6 +117,7 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
           <option value="todos">Todos os status</option>
           {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
         </select>
+        <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
         {admin && (
           <Btn variant="ghost" size="sm" icon="arrowDown" className="ml-auto" onClick={() => setReconciling(true)}>
             Conciliar CSV

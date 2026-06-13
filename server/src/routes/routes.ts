@@ -3,6 +3,7 @@ import { one, query, withClient } from '../db.ts';
 import { requireAuth } from '../auth.ts';
 import { geocodeAddr } from '../geocode.ts';
 import { fuelEstimate } from '../fuel.ts';
+import { scopeOwner, canWriteOwned } from '../scope.ts';
 
 // Planejador de rota. Empresas selecionadas (do funil) -> melhor ordem de visita
 // (TSP via OSRM /trip público) -> distância/duração ida-e-volta -> custo de combustível
@@ -264,9 +265,9 @@ export function routePlanRoutes(app: FastifyInstance): void {
       await c.query('BEGIN');
       try {
         const r = await c.query(
-          `INSERT INTO routes (org_id, vehicle_id, nome, origem_lat, origem_lon, dist_km, dur_min, preco_litro, litros, custo_total, geometry)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-          [orgId, b.vehicle_id ?? null, b.nome, b.origem_lat, b.origem_lon,
+          `INSERT INTO routes (org_id, owner_user_id, vehicle_id, nome, origem_lat, origem_lon, dist_km, dur_min, preco_litro, litros, custo_total, geometry)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING id`,
+          [orgId, req.auth!.userId, b.vehicle_id ?? null, b.nome, b.origem_lat, b.origem_lon,
             b.dist_km ?? null, b.dur_min ?? null, b.preco_litro ?? null, b.litros ?? null, b.custo_total ?? null,
             b.geometry != null ? JSON.stringify(b.geometry) : null],
         );
@@ -288,15 +289,23 @@ export function routePlanRoutes(app: FastifyInstance): void {
     return reply.code(201).send({ route });
   });
 
-  // Lista as rotas salvas da org.
-  app.get('/api/routes', { preHandler: requireAuth }, async (req) => {
+  // Lista as rotas salvas da org. Rep vê as próprias + as compartilhadas
+  // (owner NULL, criadas antes da Fase 3); admin tudo + filtro por vendedor.
+  app.get('/api/routes', {
+    preHandler: requireAuth,
+    schema: { querystring: { type: 'object', properties: { owner_user_id: { type: 'integer' } } } },
+  }, async (req) => {
     const orgId = req.auth!.orgId;
+    const { owner_user_id } = req.query as { owner_user_id?: number };
+    const where: string[] = ['r.org_id = $1'];
+    const params: unknown[] = [orgId];
+    scopeOwner(req, where, params, 'r.owner_user_id', owner_user_id, { nullVisible: true });
     const routes = await query(
-      `SELECT r.id, r.nome, r.vehicle_id, v.nome AS veiculo, r.dist_km, r.dur_min,
+      `SELECT r.id, r.nome, r.owner_user_id, r.vehicle_id, v.nome AS veiculo, r.dist_km, r.dur_min,
               r.litros, r.custo_total, r.created_at,
               (SELECT count(*) FROM route_stops s WHERE s.route_id = r.id) AS paradas
        FROM routes r LEFT JOIN vehicles v ON v.id = r.vehicle_id
-       WHERE r.org_id = $1 ORDER BY r.created_at DESC`, [orgId],
+       WHERE ${where.join(' AND ')} ORDER BY r.created_at DESC`, params,
     );
     return { routes };
   });
@@ -308,13 +317,16 @@ export function routePlanRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
-    const route = await one(
-      `SELECT r.id, r.nome, r.vehicle_id, v.nome AS veiculo, r.origem_lat, r.origem_lon,
+    const route = await one<Record<string, unknown> & { owner_user_id: string | null }>(
+      `SELECT r.id, r.nome, r.owner_user_id, r.vehicle_id, v.nome AS veiculo, r.origem_lat, r.origem_lon,
               r.dist_km, r.dur_min, r.preco_litro, r.litros, r.custo_total, r.geometry, r.created_at
        FROM routes r LEFT JOIN vehicles v ON v.id = r.vehicle_id
        WHERE r.id = $1 AND r.org_id = $2`, [id, orgId],
     );
     if (!route) return reply.code(404).send({ error: 'rota não encontrada' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(404).send({ error: 'rota não encontrada' });
+    }
     const stops = await query(
       `SELECT s.seq, s.company_id, s.lat, s.lon, s.leg_dist_km, s.leg_dur_min,
               c.razao_social, c.nome_fantasia, c.uf, m.nome AS cidade
@@ -332,6 +344,13 @@ export function routePlanRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
+    const route = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(403).send({ error: 'rota de outro vendedor' });
+    }
     const rows = await query('DELETE FROM routes WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
     return { deleted: true };

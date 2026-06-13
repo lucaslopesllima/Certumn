@@ -23,6 +23,7 @@ import { priceTableRoutes } from './routes/priceTables.ts';
 import { orderRoutes } from './routes/orders.ts';
 import { carrierRoutes } from './routes/carriers.ts';
 import { commissionRoutes } from './routes/commissions.ts';
+import { goalRoutes } from './routes/goals.ts';
 
 // Monta a app com todas as rotas de API, sem listen e sem estáticos —
 // index.ts (produção) adiciona o resto; os testes usam app.inject().
@@ -61,6 +62,7 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
   orderRoutes(app);
   carrierRoutes(app);
   commissionRoutes(app);
+  goalRoutes(app);
 
   return app;
 }

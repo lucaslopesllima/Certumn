@@ -1,16 +1,10 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
-import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
-
-interface OrgUser {
-  id: number;
-  nome: string | null;
-  email: string;
-  role: 'admin' | 'rep';
-  ativo: boolean;
-  must_change_password: boolean;
-}
+import type { GoalProgress, OrgUser, RepresentedCompany } from '../lib/types.ts';
+import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
+import { Icon } from '../lib/icons.tsx';
+import { brl, todayStr } from '../lib/format.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -24,18 +18,37 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 export function Team(): React.JSX.Element {
+  const [tab, setTab] = useState<'usuarios' | 'metas'>('usuarios');
+  return (
+    <div className="space-y-5 p-4 sm:p-6">
+      <PageHeader
+        title="Equipe"
+        subtitle="Vendedores, administradores e metas da sua organização."
+        actions={
+          <Segmented value={tab} onChange={setTab} options={[
+            { value: 'usuarios', label: 'Usuários', icon: 'users' },
+            { value: 'metas', label: 'Metas', icon: 'target' },
+          ]} />
+        }
+      />
+      {tab === 'usuarios' ? <Usuarios /> : <Metas />}
+    </div>
+  );
+}
+
+function Usuarios(): React.JSX.Element {
   const { user: me } = useAuth();
   const [users, setUsers] = useState<OrgUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
 
-  // form de criação
   const [showForm, setShowForm] = useState(false);
   const [nome, setNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [role, setRole] = useState<'rep' | 'admin'>('rep');
   const [busy, setBusy] = useState(false);
+  const [transfer, setTransfer] = useState<OrgUser | null>(null);
 
   const load = async (): Promise<void> => {
     try {
@@ -83,15 +96,13 @@ export function Team(): React.JSX.Element {
     }
   };
 
-  if (loading) return <div className="p-6"><Spinner /></div>;
+  if (loading) return <Spinner />;
 
   return (
-    <div className="space-y-5 p-4 sm:p-6">
-      <PageHeader
-        title="Equipe"
-        subtitle="Vendedores e administradores da sua organização."
-        actions={<Btn icon="plus" onClick={() => setShowForm((v) => !v)}>Novo usuário</Btn>}
-      />
+    <div className="space-y-5">
+      <div className="flex justify-end">
+        <Btn icon="plus" onClick={() => setShowForm((v) => !v)}>Novo usuário</Btn>
+      </div>
 
       {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
 
@@ -162,6 +173,9 @@ export function Team(): React.JSX.Element {
                     <td className="px-4 py-3 text-right">
                       <span className="inline-flex gap-1.5">
                         {!self && (
+                          <Btn size="sm" variant="ghost" onClick={() => setTransfer(u)}>Transferir carteira</Btn>
+                        )}
+                        {!self && (
                           <Btn size="sm" variant="ghost" onClick={() => void resetPwd(u)}>Redefinir senha</Btn>
                         )}
                         {!self && (
@@ -179,6 +193,191 @@ export function Team(): React.JSX.Element {
           </table>
         )}
       </Card>
+
+      {transfer && (
+        <TransferModal from={transfer} users={users.filter((u) => u.id !== transfer.id)}
+          onClose={() => setTransfer(null)} onDone={() => { setTransfer(null); }} />
+      )}
+    </div>
+  );
+}
+
+// Transferência total da carteira de um vendedor para outro (desligamento ou
+// realocação). A API move todos os relationships do vendedor de origem.
+function TransferModal({ from, users, onClose, onDone }: {
+  from: OrgUser; users: OrgUser[]; onClose: () => void; onDone: () => void;
+}): React.JSX.Element {
+  const [toId, setToId] = useState<number | ''>('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [result, setResult] = useState<number | null>(null);
+
+  const submit = async (): Promise<void> => {
+    if (toId === '') return;
+    setBusy(true); setErr('');
+    try {
+      const r = await api.post<{ transferred: number }>('/api/relationships/transfer', {
+        from_user_id: from.id, to_user_id: toId,
+      });
+      setResult(r.transferred);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Não foi possível transferir.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[2000] grid place-items-center bg-ink-950/40 p-4" onClick={onClose}>
+      <Card className="w-full max-w-md p-4 shadow-pop">
+        <div onClick={(e) => e.stopPropagation()}>
+          <div className="mb-3 flex items-center justify-between">
+            <h3 className="text-sm font-bold text-ink-900">Transferir carteira</h3>
+            <button onClick={onClose} aria-label="Fechar" className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100">
+              <Icon name="x" size={17} />
+            </button>
+          </div>
+          {result !== null ? (
+            <div className="space-y-3">
+              <p className="text-sm text-ink-700">{result} registro(s) transferido(s) de {from.nome ?? from.email}.</p>
+              <div className="flex justify-end"><Btn onClick={onDone}>Concluir</Btn></div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-xs text-ink-400">
+                Move toda a carteira (funil) de <strong>{from.nome ?? from.email}</strong> para outro vendedor.
+              </p>
+              <Field label="Transferir para">
+                <select value={toId} onChange={(e) => setToId(e.target.value === '' ? '' : Number(e.target.value))} className={inputCls}>
+                  <option value="">Escolha o vendedor…</option>
+                  {users.map((u) => <option key={u.id} value={u.id}>{u.nome ?? u.email}</option>)}
+                </select>
+              </Field>
+              {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
+              <div className="flex justify-end gap-2">
+                <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
+                <Btn icon="check" disabled={busy || toId === ''} onClick={() => void submit()}>{busy ? '…' : 'Transferir'}</Btn>
+              </div>
+            </div>
+          )}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function Metas(): React.JSX.Element {
+  const [competencia, setCompetencia] = useState(todayStr().slice(0, 7));
+  const [progress, setProgress] = useState<GoalProgress[]>([]);
+  const [users, setUsers] = useState<OrgUser[]>([]);
+  const [reps, setReps] = useState<RepresentedCompany[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+
+  // form nova meta
+  const [userId, setUserId] = useState<number | ''>('');
+  const [representedId, setRepresentedId] = useState<number | ''>('');
+  const [valor, setValor] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const load = async (): Promise<void> => {
+    setLoading(true); setErr('');
+    try {
+      const r = await api.get<{ progress: GoalProgress[] }>(`/api/goals/progress?competencia=${competencia}`);
+      setProgress(r.progress);
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Erro ao carregar metas');
+    } finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, [competencia]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    void api.get<{ users: OrgUser[] }>('/api/users').then((r) => setUsers(r.users.filter((u) => u.ativo))).catch(() => undefined);
+    void api.get<{ empresas: RepresentedCompany[] }>('/api/represented').then((r) => setReps(r.empresas.filter((e) => e.ativo))).catch(() => undefined);
+  }, []);
+
+  const create = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (userId === '' || valor.trim() === '') return;
+    setBusy(true); setErr('');
+    try {
+      await api.post('/api/goals', {
+        user_id: userId,
+        represented_id: representedId === '' ? null : representedId,
+        competencia,
+        valor_meta: Number(valor),
+      });
+      setUserId(''); setRepresentedId(''); setValor('');
+      await load();
+    } catch (e2) {
+      setErr(e2 instanceof ApiError ? e2.message : 'Erro ao criar meta');
+    } finally { setBusy(false); }
+  };
+
+  const remove = async (id: number): Promise<void> => {
+    if (!confirm('Excluir esta meta?')) return;
+    try { await api.del(`/api/goals/${id}`); await load(); }
+    catch (e) { setErr(e instanceof ApiError ? e.message : 'Erro ao excluir meta'); }
+  };
+
+  return (
+    <div className="space-y-5">
+      <Card className="flex flex-wrap items-end gap-3 p-4">
+        <Field label="Competência">
+          <input type="month" value={competencia} onChange={(e) => setCompetencia(e.target.value)} className={cn(inputCls, 'w-44')} />
+        </Field>
+        <form onSubmit={create} className="flex flex-wrap items-end gap-3">
+          <Field label="Vendedor">
+            <select value={userId} onChange={(e) => setUserId(e.target.value === '' ? '' : Number(e.target.value))} required className={cn(inputCls, 'w-48')}>
+              <option value="">Escolha…</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.nome ?? u.email}</option>)}
+            </select>
+          </Field>
+          <Field label="Representada (opcional)">
+            <select value={representedId} onChange={(e) => setRepresentedId(e.target.value === '' ? '' : Number(e.target.value))} className={cn(inputCls, 'w-48')}>
+              <option value="">Todas (meta global)</option>
+              {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            </select>
+          </Field>
+          <Field label="Meta (R$)">
+            <input type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} required className={cn(inputCls, 'w-36')} />
+          </Field>
+          <Btn icon="plus" type="submit" disabled={busy}>{busy ? '…' : 'Definir meta'}</Btn>
+        </form>
+      </Card>
+
+      {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
+
+      {loading ? (
+        <Spinner />
+      ) : progress.length === 0 ? (
+        <EmptyState icon="target" title="Sem metas no mês" hint="Defina a meta de um vendedor para o mês selecionado." />
+      ) : (
+        <div className="space-y-2">
+          {progress.map((g) => {
+            const pct = g.pct ?? 0;
+            const tone = pct >= 100 ? 'bg-emerald-500' : pct >= 60 ? 'bg-amber-500' : 'bg-brand-500';
+            return (
+              <Card key={g.id} className="p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink-900">{g.vendedor_nome ?? g.vendedor_email}</p>
+                    <p className="truncate text-xs text-ink-400">{g.represented_nome ?? 'Meta global'}</p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <div className="text-right">
+                      <p className="tabnums text-sm font-bold text-ink-900">{brl(g.realizado)} <span className="font-normal text-ink-400">/ {brl(Number(g.valor_meta))}</span></p>
+                      <p className="tabnums text-xs font-semibold text-ink-500">{g.pct ?? 0}%</p>
+                    </div>
+                    <button onClick={() => void remove(g.id)} aria-label="Excluir meta"
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={15} /></button>
+                  </div>
+                </div>
+                <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-100">
+                  <div className={cn('h-full rounded-full transition-all', tone)} style={{ width: `${Math.min(100, pct)}%` }} />
+                </div>
+              </Card>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

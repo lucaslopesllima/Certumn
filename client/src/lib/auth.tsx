@@ -68,3 +68,9 @@ export function useAuth(): AuthState {
   if (!ctx) throw new Error('useAuth fora do AuthProvider');
   return ctx;
 }
+
+// Variante que não lança quando renderizado fora do AuthProvider (ex.: páginas
+// montadas isoladas em testes). Devolve só o usuário, ou null.
+export function useOptionalUser(): User | null {
+  return useContext(AuthCtx)?.user ?? null;
+}

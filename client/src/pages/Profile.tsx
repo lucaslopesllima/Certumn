@@ -4,6 +4,8 @@ import type { CnaeGrupo, CnaeItem, Municipio, Profile as TProfile } from '../lib
 import { Btn, Card, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { Cnae, seedCnae } from '../lib/cnae.tsx';
+import { useOptionalUser } from '../lib/auth.tsx';
+import { useSellers, sellerLabel } from '../lib/sellers.tsx';
 
 const DIV_LABEL = (secao: string): string =>
   secao === 'C' ? 'Indústria / Fabricação' : secao === 'G' ? 'Comércio' : `Seção ${secao}`;
@@ -19,6 +21,11 @@ function SectionTitle({ title, hint }: { title: string; hint?: string }): React.
 }
 
 export function ProfileForm(): React.JSX.Element {
+  const user = useOptionalUser();
+  const sellers = useSellers();
+  // escopo do perfil em edição (admin): null = perfil padrão da org, ou um vendedor.
+  // rep edita sempre o próprio (backend ignora o escopo do payload).
+  const [scopeUser, setScopeUser] = useState<number | null>(null);
   const [cnaes, setCnaes] = useState<CnaeItem[]>([]);          // selected, with labels
   const [selMun, setSelMun] = useState<Municipio[]>([]);       // selected municipios (full objects → chip labels)
   const [raio, setRaio] = useState<number | ''>('');
@@ -46,12 +53,19 @@ export function ProfileForm(): React.JSX.Element {
   const [ufs, setUfs] = useState<{ uf: string; total: number }[]>([]);
 
   useEffect(() => {
+    let cancelled = false;
     (async () => {
+      setLoading(true);
+      const qs = user?.role === 'admin' && scopeUser !== null ? `?user_id=${scopeUser}` : '';
       const [p, u] = await Promise.all([
-        api.get<{ profile: TProfile | null }>('/api/profile'),
+        api.get<{ profile: TProfile | null }>(`/api/profile${qs}`),
         api.get<{ ufs: { uf: string; total: number }[] }>('/api/municipios/ufs'),
       ]);
+      if (cancelled) return;
       setUfs(u.ufs);
+      // limpa estado anterior ao trocar de escopo
+      setCnaes([]); setSelMun([]); setRaio(''); setPesos({ cnae: 0.5, proximidade: 0.3, porte: 0.2 });
+      setOrigemEndereco(''); setOrigemLat(null); setOrigemLon(null);
       if (p.profile) {
         setRaio(p.profile.territorio_raio_km ?? '');
         if (p.profile.pesos) setPesos({ ...{ cnae: 0.5, proximidade: 0.3, porte: 0.2 }, ...p.profile.pesos });
@@ -61,17 +75,18 @@ export function ProfileForm(): React.JSX.Element {
         const codes = p.profile.cnaes_alvo ?? [];
         if (codes.length) {
           const r = await api.get<{ labels: CnaeItem[] }>(`/api/cnae/labels?codes=${codes.join(',')}`);
-          setCnaes(r.labels);
+          if (!cancelled) setCnaes(r.labels);
         }
         const mids = p.profile.territorio_municipios ?? [];
         if (mids.length) {
           const mr = await api.get<{ municipios: Municipio[] }>(`/api/municipios/labels?ids=${mids.join(',')}`);
-          setSelMun(mr.municipios);
+          if (!cancelled) setSelMun(mr.municipios);
         }
       }
-      setLoading(false);
+      if (!cancelled) setLoading(false);
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [scopeUser, user?.role]);
 
   // pré-popula o cache de descrições dos CNAEs selecionados (chips traduzem na hora)
   useEffect(() => { for (const c of cnaes) seedCnae(c.codigo, c.descricao); }, [cnaes]);
@@ -132,6 +147,7 @@ export function ProfileForm(): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     await api.put('/api/profile', {
+      user_id: user?.role === 'admin' ? scopeUser : undefined,
       cnaes_alvo: cnaes.map((c) => c.codigo),
       territorio_municipios: selMun.map((m) => m.id),
       territorio_raio_km: raio === '' ? null : Number(raio),
@@ -155,6 +171,22 @@ export function ProfileForm(): React.JSX.Element {
 
   return (
     <div className="space-y-5">
+      {user?.role === 'admin' && sellers.length > 1 && (
+        <Card className="flex flex-wrap items-center gap-2 p-3">
+          <span className="text-xs font-semibold text-ink-600">Perfil-alvo de:</span>
+          <select value={scopeUser ?? 'org'}
+            onChange={(e) => setScopeUser(e.target.value === 'org' ? null : Number(e.target.value))}
+            className={cn(inputCls, 'w-auto')}>
+            <option value="org">Padrão da organização</option>
+            {sellers.map((u) => <option key={u.id} value={u.id}>{sellerLabel(u)}</option>)}
+          </select>
+          <span className="text-xs text-ink-400">
+            {scopeUser === null
+              ? 'Usado por vendedores sem perfil próprio.'
+              : 'Sobrescreve o padrão para este vendedor na recomendação.'}
+          </span>
+        </Card>
+      )}
       <div className="grid gap-5 xl:grid-cols-2">
       {/* CNAE search */}
       <Card className="p-4">

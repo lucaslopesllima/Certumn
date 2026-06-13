@@ -3,6 +3,7 @@ import { query, one, withClient } from '../db.ts';
 import { requireAuth, requireAdmin } from '../auth.ts';
 import { audit, pick } from '../audit.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
+import { scopeOwner } from '../scope.ts';
 import { createCommissionForOrder, cancelCommissionForOrder } from '../commissions.ts';
 
 // Pedidos de venda (Fase 1). Cotação = pedido com status='cotacao' + validade;
@@ -198,9 +199,9 @@ export function orderRoutes(app: FastifyInstance): void {
     const q = req.query as { status?: string; represented_id?: number; owner_user_id?: number; from?: string; to?: string };
     const where: string[] = ['o.org_id = $1'];
     const params: unknown[] = [orgId];
+    scopeOwner(req, where, params, 'o.owner_user_id', q.owner_user_id);
     if (q.status) { params.push(q.status); where.push(`o.status = $${params.length}::order_status`); }
     if (q.represented_id !== undefined) { params.push(q.represented_id); where.push(`o.represented_id = $${params.length}`); }
-    if (q.owner_user_id !== undefined) { params.push(q.owner_user_id); where.push(`o.owner_user_id = $${params.length}`); }
     if (q.from) { params.push(q.from); where.push(`o.created_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); where.push(`o.created_at < ($${params.length}::date + 1)`); }
     const orders = await query(
@@ -218,6 +219,10 @@ export function orderRoutes(app: FastifyInstance): void {
     const { id } = req.params as { id: number };
     const order = await findOrder(id, orgId);
     if (!order) return reply.code(404).send({ error: 'não encontrado' });
+    // rep não lê pedido de outro vendedor (404 não vaza existência).
+    if (!canWrite(req, order.owner_user_id === null ? null : Number(order.owner_user_id))) {
+      return reply.code(404).send({ error: 'não encontrado' });
+    }
     return { order: await fullOrder(id) };
   });
 

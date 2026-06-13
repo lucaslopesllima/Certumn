@@ -3,6 +3,7 @@ import { query, one } from '../db.ts';
 import { requireAuth, requireAdmin } from '../auth.ts';
 import { audit, pick } from '../audit.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
+import { scopeOwner } from '../scope.ts';
 
 // Comissionamento (Fase 2): extrato de comissões previstas/recebidas, baixa
 // individual e conciliação CSV em lote, e CRUD das regras. A geração do
@@ -117,14 +118,17 @@ export function commissionRoutes(app: FastifyInstance): void {
           represented_id: { type: 'integer' },
           status: { type: 'string', enum: ['prevista', 'recebida', 'divergente', 'cancelada'] },
           order_id: { type: 'integer' },
+          user_id: { type: 'integer' },
         },
       },
     },
   }, async (req) => {
     const orgId = req.auth!.orgId;
-    const q = req.query as { competencia?: string; represented_id?: number; status?: string; order_id?: number };
+    const q = req.query as { competencia?: string; represented_id?: number; status?: string; order_id?: number; user_id?: number };
     const where: string[] = ['e.org_id = $1'];
     const params: unknown[] = [orgId];
+    // rep vê só a comissão própria; admin tudo + filtro por vendedor.
+    scopeOwner(req, where, params, 'e.user_id', q.user_id);
     if (q.competencia) { params.push(`${q.competencia}-01`); where.push(`e.competencia = $${params.length}::date`); }
     if (q.represented_id !== undefined) { params.push(q.represented_id); where.push(`e.represented_id = $${params.length}`); }
     if (q.status) { params.push(q.status); where.push(`e.status = $${params.length}::commission_status`); }

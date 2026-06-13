@@ -11,7 +11,10 @@ vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), put: vi.fn(), del: vi.fn() } };
 });
-vi.mock('../src/lib/auth.tsx', () => ({ useAuth: vi.fn() }));
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
 const useAuthMock = vi.mocked(useAuth);
 

@@ -236,7 +236,10 @@ Custo baixo, valor percebido alto. Dados já existem após Fases 1–3.
 
 **Critério de aceite**: dashboard carrega < 1s; alertas apontam clientes reais sem contato;
 export CSV abre no Excel com acentuação correta (BOM UTF-8).
-Ajustar as contas que nao estão salvando a data de vencimento
+
+
+
+
 
 ---
 
@@ -327,3 +330,9 @@ notificações relevantes.
 5. **Testes**: endpoint novo = teste de fluxo + teste de isolamento (org e vendedor).
 6. **Sem dependência nova sem justificativa** — manter filosofia do stack enxuto.
 7. **Branchs**: `feature/<fase>-<tema>`; merge em `main` ao fim de cada item aceito.
+
+
+Correções
+Ajustar as contas que nao estão salvando a data de vencimento
+Permitir editar vendedor, campo nome,pode ser direto na tabela da tela equipe
+Todos os campos de envolvem cadastro de empresa, devem usar a base de cadastro de empresa para automatizar o cadastro, de transportadoras e etc

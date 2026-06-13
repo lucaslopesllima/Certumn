@@ -4,6 +4,7 @@ import type { Brand, CatalogItem, Contact, KanbanCard, NamedItem, RepresentedCom
 import { Badge, Btn, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
 import { brl0 as brl } from '../lib/format.ts';
@@ -32,6 +33,8 @@ export function Kanban(): React.JSX.Element {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const filter = useCompanyFilter('funil');
 
   const load = async (): Promise<void> => {
@@ -74,7 +77,10 @@ export function Kanban(): React.JSX.Element {
     try { await api.del(`/api/relationships/${id}`); } catch { void load(); }
   };
 
-  const visibleCards = useMemo(() => filter.apply(cards), [filter.apply, cards]);
+  const visibleCards = useMemo(
+    () => filter.apply(cards).filter((c) => ownerId === 'todos' || c.owner_user_id === ownerId),
+    [filter.apply, cards, ownerId],
+  );
 
   if (loading) return <div className="p-6"><Spinner /></div>;
 
@@ -93,9 +99,12 @@ export function Kanban(): React.JSX.Element {
       <div className="space-y-4 p-4 sm:p-6">
         <PageHeader title="Funil de vendas" subtitle="Arraste os cards entre as etapas."
           actions={
-            <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
-              Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
-            </Btn>
+            <div className="flex items-center gap-2">
+              <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
+              <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
+                Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
+              </Btn>
+            </div>
           } />
 
         {filtersOpen && <CompanyFilterBar f={filter} />}
