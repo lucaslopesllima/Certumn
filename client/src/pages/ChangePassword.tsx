@@ -2,8 +2,20 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ApiError, setToken } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
-import { Btn, Card } from '../lib/ui.tsx';
+import { Btn, Card, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
+
+// regra visível em tempo real (✓/○) — usuário não descobre o requisito só ao errar
+function Rule({ ok, children }: { ok: boolean; children: React.ReactNode }): React.JSX.Element {
+  return (
+    <li className={cn('flex items-center gap-1.5 text-xs', ok ? 'text-emerald-600' : 'text-ink-400')}>
+      <span className={cn('grid h-4 w-4 place-items-center rounded-full', ok ? 'bg-emerald-100' : 'bg-ink-100')}>
+        <Icon name={ok ? 'check' : 'x'} size={11} />
+      </span>
+      {children}
+    </li>
+  );
+}
 
 const inputCls = 'mt-1 w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -48,7 +60,7 @@ export function ChangePassword(): React.JSX.Element {
         <form onSubmit={submit} className="mt-5 space-y-3">
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Senha provisória</span>
-            <input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} required className={inputCls} />
+            <input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} required autoFocus className={inputCls} />
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Nova senha</span>
@@ -58,6 +70,10 @@ export function ChangePassword(): React.JSX.Element {
             <span className="text-xs font-semibold text-ink-600">Confirmar nova senha</span>
             <input type="password" value={conf} onChange={(e) => setConf(e.target.value)} required className={inputCls} />
           </label>
+          <ul className="space-y-1">
+            <Rule ok={nova.length >= 6}>Ao menos 6 caracteres</Rule>
+            <Rule ok={nova.length > 0 && nova === conf}>As senhas conferem</Rule>
+          </ul>
           {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
           <Btn type="submit" disabled={busy} className="w-full">{busy ? '…' : 'Salvar e continuar'}</Btn>
           <button type="button" onClick={logout} className="w-full text-center text-xs text-ink-400 hover:text-ink-600">

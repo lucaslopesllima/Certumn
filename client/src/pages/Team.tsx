@@ -5,6 +5,7 @@ import type { GoalProgress, OrgUser, RepresentedCompany } from '../lib/types.ts'
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, todayStr } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -49,6 +50,7 @@ function Usuarios(): React.JSX.Element {
   const [role, setRole] = useState<'rep' | 'admin'>('rep');
   const [busy, setBusy] = useState(false);
   const [transfer, setTransfer] = useState<OrgUser | null>(null);
+  const [resetting, setResetting] = useState<OrgUser | null>(null);
 
   const load = async (): Promise<void> => {
     try {
@@ -69,8 +71,10 @@ function Usuarios(): React.JSX.Element {
       await api.post('/api/users', { nome: nome.trim(), email: email.trim(), senha, role });
       setNome(''); setEmail(''); setSenha(''); setRole('rep'); setShowForm(false);
       await load();
+      toast.success('Usuário criado.');
     } catch (e2) {
-      setErr(e2 instanceof ApiError ? e2.message : 'Erro ao criar usuário');
+      const msg = e2 instanceof ApiError ? e2.message : 'Erro ao criar usuário';
+      setErr(msg); toast.error(msg);
     } finally { setBusy(false); }
   };
 
@@ -84,15 +88,15 @@ function Usuarios(): React.JSX.Element {
     }
   };
 
-  const resetPwd = async (u: OrgUser): Promise<void> => {
-    const senha2 = window.prompt(`Nova senha provisória para ${u.nome ?? u.email} (mín. 6 caracteres):`);
-    if (!senha2) return;
+  const resetPwd = async (u: OrgUser, senha2: string): Promise<void> => {
     setErr('');
     try {
       await api.post(`/api/users/${u.id}/password`, { senha: senha2 });
       await load();
+      setResetting(null);
+      toast.success(`Senha provisória definida para ${u.nome ?? u.email}.`);
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : 'Erro ao redefinir senha');
+      toast.error(e instanceof ApiError ? e.message : 'Erro ao redefinir senha');
     }
   };
 
@@ -115,7 +119,12 @@ function Usuarios(): React.JSX.Element {
           <form onSubmit={create} className="mt-4 grid gap-3 sm:grid-cols-2">
             <Field label="Nome"><input value={nome} onChange={(e) => setNome(e.target.value)} required className={inputCls} /></Field>
             <Field label="E-mail"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputCls} /></Field>
-            <Field label="Senha provisória"><input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} required minLength={6} className={inputCls} /></Field>
+            <Field label="Senha provisória">
+              <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} required minLength={6} className={inputCls} />
+              <span className={cn('mt-1 block text-[11px]', senha.length === 0 ? 'text-ink-400' : senha.length >= 6 ? 'text-emerald-600' : 'text-amber-600')}>
+                Mínimo 6 caracteres{senha.length > 0 && senha.length < 6 ? ` (faltam ${6 - senha.length})` : ''}
+              </span>
+            </Field>
             <Field label="Papel">
               <select value={role} onChange={(e) => setRole(e.target.value as 'rep' | 'admin')} className={inputCls}>
                 <option value="rep">Vendedor</option>
@@ -176,7 +185,7 @@ function Usuarios(): React.JSX.Element {
                           <Btn size="sm" variant="ghost" onClick={() => setTransfer(u)}>Transferir carteira</Btn>
                         )}
                         {!self && (
-                          <Btn size="sm" variant="ghost" onClick={() => void resetPwd(u)}>Redefinir senha</Btn>
+                          <Btn size="sm" variant="ghost" onClick={() => setResetting(u)}>Redefinir senha</Btn>
                         )}
                         {!self && (
                           <Btn size="sm" variant={u.ativo ? 'danger' : 'soft'}
@@ -198,6 +207,39 @@ function Usuarios(): React.JSX.Element {
         <TransferModal from={transfer} users={users.filter((u) => u.id !== transfer.id)}
           onClose={() => setTransfer(null)} onDone={() => { setTransfer(null); }} />
       )}
+      {resetting && (
+        <ResetPwdModal user={resetting} onClose={() => setResetting(null)}
+          onConfirm={(senha2) => void resetPwd(resetting, senha2)} />
+      )}
+    </div>
+  );
+}
+
+// Redefinir senha provisória — substitui o window.prompt nativo por modal com
+// regra visível e validação antes de enviar.
+function ResetPwdModal({ user, onClose, onConfirm }: { user: OrgUser; onClose: () => void; onConfirm: (senha: string) => void }): React.JSX.Element {
+  const [senha, setSenha] = useState('');
+  const ok = senha.length >= 6;
+  const submit = (e: React.FormEvent): void => { e.preventDefault(); if (ok) onConfirm(senha); };
+  return (
+    <div className="fixed inset-0 z-[2000] grid place-items-center bg-ink-950/40 p-4" onClick={onClose}>
+      <Card className="w-full max-w-sm p-4 shadow-pop">
+        <div onClick={(e) => e.stopPropagation()}>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Redefinir senha</h3>
+          <p className="mb-3 text-xs text-ink-400">Nova senha provisória para {user.nome ?? user.email}. O usuário troca no próximo acesso.</p>
+          <form onSubmit={submit} className="space-y-3">
+            <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus minLength={6}
+              placeholder="Nova senha provisória" className={inputCls} />
+            <span className={cn('block text-[11px]', senha.length === 0 ? 'text-ink-400' : ok ? 'text-emerald-600' : 'text-amber-600')}>
+              Mínimo 6 caracteres{senha.length > 0 && !ok ? ` (faltam ${6 - senha.length})` : ''}
+            </span>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
+              <Btn icon="check" type="submit" disabled={!ok}>Redefinir</Btn>
+            </div>
+          </form>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -341,15 +383,17 @@ function Metas(): React.JSX.Element {
       });
       setUserId(''); setRepresentedId(''); setValor('');
       await load();
+      toast.success('Meta definida.');
     } catch (e2) {
-      setErr(e2 instanceof ApiError ? e2.message : 'Erro ao criar meta');
+      const msg = e2 instanceof ApiError ? e2.message : 'Erro ao criar meta';
+      setErr(msg); toast.error(msg);
     } finally { setBusy(false); }
   };
 
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir esta meta?')) return;
-    try { await api.del(`/api/goals/${id}`); await load(); }
-    catch (e) { setErr(e instanceof ApiError ? e.message : 'Erro ao excluir meta'); }
+    try { await api.del(`/api/goals/${id}`); await load(); toast.success('Meta excluída.'); }
+    catch (e) { toast.error(e instanceof ApiError ? e.message : 'Erro ao excluir meta'); }
   };
 
   return (

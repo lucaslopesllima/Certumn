@@ -9,7 +9,8 @@ import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard,
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
-import { brl, fmtDate, todayStr } from '../lib/format.ts';
+import { brl, csvNum, fmtDate, todayStr } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -98,9 +99,9 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
   return (
     <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="Previsto no mês" value={brl(kpis.previsto)} icon="trendingUp" tone="info" />
-        <StatCard label="Recebido" value={brl(kpis.recebido)} icon="check" tone="success" />
-        <StatCard label="Divergências" value={String(kpis.divergentes)} icon="x"
+        <StatCard label="Recebido no mês" value={brl(kpis.recebido)} sub={`previsto ${brl(kpis.previsto)}`} icon="check" tone="success" />
+        <StatCard label="A receber" value={brl(Math.max(0, kpis.previsto - kpis.recebido))} sub="previsto ainda não pago" icon="trendingUp" tone="info" />
+        <StatCard label="Divergências" value={String(kpis.divergentes)} sub={kpis.divergentes > 0 ? 'revisar baixas' : 'tudo certo'} icon="alertTriangle"
           tone={kpis.divergentes > 0 ? 'danger' : 'neutral'} />
       </div>
 
@@ -123,8 +124,8 @@ function Extrato({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }
           onClick={() => downloadCsv(`comissoes-${competencia}`,
             ['Pedido', 'NF', 'Cliente', 'Representada', 'Vendedor', 'Previsto', 'Recebido', 'Status'],
             entries.map((e) => [e.order_numero, e.nf_numero ?? '', e.company_nome, e.represented_nome,
-              e.vendedor_nome ?? e.vendedor_email ?? '', Number(e.valor_previsto).toFixed(2),
-              e.valor_recebido == null ? '' : Number(e.valor_recebido).toFixed(2), e.status]))}>
+              e.vendedor_nome ?? e.vendedor_email ?? '', csvNum(e.valor_previsto),
+              e.valor_recebido == null ? '' : csvNum(e.valor_recebido), e.status]))}>
           Exportar
         </Btn>
         {admin && (
@@ -227,9 +228,10 @@ function SettleModal({ entry, onClose, onSaved }: {
       await api.patch(`/api/commissions/${entry.id}/settle`, {
         valor_recebido: Number(valor), recebida_em: data, observacao: observacao.trim() || null,
       });
+      toast.success('Baixa registrada.');
       onSaved();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível dar baixa.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível dar baixa.');
     } finally { setBusy(false); }
   };
 
@@ -287,7 +289,7 @@ function ReconcileModal({ onClose, onDone }: { onClose: () => void; onDone: () =
       );
       setResult(r);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível conciliar.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível conciliar.');
     } finally { setBusy(false); }
   };
 
@@ -372,8 +374,8 @@ function Rules({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }):
     if (!confirm('Excluir esta regra de comissão?')) return;
     const before = rules;
     setRules((xs) => xs.filter((x) => x.id !== r.id));
-    try { await api.del(`/api/commission-rules/${r.id}`); }
-    catch { setRules(before); alert('Não foi possível excluir a regra.'); }
+    try { await api.del(`/api/commission-rules/${r.id}`); toast.success('Regra excluída.'); }
+    catch { setRules(before); toast.error('Não foi possível excluir a regra.'); }
   };
 
   if (loading) return <Spinner />;
@@ -454,8 +456,8 @@ function RuleForm({ reps, catalog, companies, users, rule, onClose, onSaved }: {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (representedId === '' || percent.trim() === '' || !inicio) return;
-    if (alvo !== 'geral' && alvoId === '') { alert('Escolha o alvo da regra.'); return; }
+    if (representedId === '' || percent.trim() === '' || !inicio) { toast.error('Preencha representada, comissão % e início de vigência.'); return; }
+    if (alvo !== 'geral' && alvoId === '') { toast.error('Escolha o alvo da regra.'); return; }
     setBusy(true);
     const body = {
       represented_id: Number(representedId),
@@ -469,9 +471,10 @@ function RuleForm({ reps, catalog, companies, users, rule, onClose, onSaved }: {
     try {
       if (rule) await api.patch(`/api/commission-rules/${rule.id}`, body);
       else await api.post('/api/commission-rules', body);
+      toast.success(rule ? 'Regra salva.' : 'Regra criada.');
       onSaved();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível salvar a regra.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível salvar a regra.');
     } finally { setBusy(false); }
   };
 

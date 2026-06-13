@@ -4,6 +4,7 @@ import type { CatalogItem, PriceTable, RepresentedCompany } from '../lib/types.t
 import { Badge, Btn, Card, EmptyState, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -30,8 +31,8 @@ export function PriceTables({ reps, catalog, adding, onCloseAdd }: {
     if (!confirm('Excluir esta tabela de preço?')) return;
     const before = tables;
     setTables((xs) => xs.filter((x) => x.id !== t.id));
-    try { await api.del(`/api/price-tables/${t.id}`); }
-    catch { setTables(before); alert('Não foi possível excluir a tabela.'); }
+    try { await api.del(`/api/price-tables/${t.id}`); toast.success('Tabela excluída.'); }
+    catch { setTables(before); toast.error('Não foi possível excluir a tabela.'); }
   };
 
   if (loading) return <Spinner />;
@@ -104,9 +105,9 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (!nome.trim() || representedId === '' || !inicio) return;
+    if (!nome.trim() || representedId === '' || !inicio) { toast.error('Preencha nome, representada e início de vigência.'); return; }
     if (items.some((i) => i.preco.trim() === '' || !Number.isFinite(Number(i.preco)))) {
-      alert('Todo item precisa de preço.');
+      toast.error('Todo item precisa de preço.');
       return;
     }
     setBusy(true);
@@ -125,9 +126,10 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
       } else {
         await api.post('/api/price-tables', { ...body, items: payloadItems });
       }
+      toast.success(table ? 'Tabela salva.' : 'Tabela criada.');
       onSaved();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível salvar a tabela.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível salvar a tabela.');
     } finally { setBusy(false); }
   };
 
@@ -172,6 +174,9 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
               </div>
             );
           })}
+          {items.length > 0 && (
+            <p className="px-1 text-[11px] text-ink-400">Desconto máx. em % por item — deixe vazio para sem limite.</p>
+          )}
           {disponiveis.length > 0 && (
             <select value="" aria-label="Adicionar produto"
               onChange={(e) => { if (e.target.value !== '') addItem(Number(e.target.value)); }} className={inputCls}>

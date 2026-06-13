@@ -3,7 +3,7 @@ import { MapContainer, TileLayer, CircleMarker, Tooltip } from 'react-leaflet';
 import { api } from '../lib/api.ts';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
-import { brl, brl0 } from '../lib/format.ts';
+import { brl, brl0, csvNum } from '../lib/format.ts';
 import { downloadCsv } from '../lib/export.ts';
 
 type Tab = 'vendas' | 'abc' | 'cobertura' | 'descartes';
@@ -57,7 +57,7 @@ function Vendas({ ownerId }: { ownerId: 'todos' | number }): React.JSX.Element {
   const max = rows.reduce((m, r) => Math.max(m, Number(r.total)), 0);
 
   const exportar = (): void => downloadCsv(`vendas-por-${groupBy}`, ['Agrupador', 'Pedidos', 'Total'],
-    rows.map((r) => [r.label, r.qtd, Number(r.total).toFixed(2)]));
+    rows.map((r) => [r.label, r.qtd, csvNum(r.total)]));
 
   return (
     <div className="space-y-4">
@@ -107,7 +107,19 @@ function Abc({ ownerId }: { ownerId: 'todos' | number }): React.JSX.Element {
   }, [ownerId]);
 
   const exportar = (): void => downloadCsv('curva-abc', ['Cliente', 'Faturamento', 'Share %', 'Classe'],
-    clientes.map((c) => [c.nome_fantasia || c.razao_social, c.total.toFixed(2), c.share, c.classe]));
+    clientes.map((c) => [c.nome_fantasia || c.razao_social, csvNum(c.total), c.share, c.classe]));
+
+  // subtotais por classe (A/B/C): nº de clientes, faturamento e % do total — torna o 80/20 evidente
+  const resumo = useMemo(() => {
+    const totalGeral = clientes.reduce((s, c) => s + c.total, 0) || 1;
+    const map = new Map<string, { n: number; total: number }>();
+    for (const c of clientes) {
+      const g = map.get(c.classe) ?? { n: 0, total: 0 };
+      g.n++; g.total += c.total; map.set(c.classe, g);
+    }
+    return (['A', 'B', 'C'] as const).filter((k) => map.has(k))
+      .map((k) => ({ classe: k, ...map.get(k)!, share: (map.get(k)!.total / totalGeral) * 100 }));
+  }, [clientes]);
 
   if (loading) return <Spinner />;
   if (clientes.length === 0) return <EmptyState icon="barChart" title="Sem faturamento" hint="Curva ABC dos últimos 12 meses." />;
@@ -117,6 +129,17 @@ function Abc({ ownerId }: { ownerId: 'todos' | number }): React.JSX.Element {
       <div className="flex items-center justify-between p-4">
         <p className="text-sm text-ink-500">{clientes.length} cliente(s) — últimos 12 meses</p>
         <Btn variant="soft" size="sm" icon="download" onClick={exportar}>Exportar CSV</Btn>
+      </div>
+      <div className="grid grid-cols-3 gap-2 px-4 pb-3">
+        {resumo.map((g) => (
+          <div key={g.classe} className="flex items-center gap-2 rounded-xl border border-ink-100 px-3 py-2">
+            <span className={cn('grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-bold text-white', ABC_TONE[g.classe])}>{g.classe}</span>
+            <div className="min-w-0">
+              <p className="tabnums text-sm font-bold text-ink-800">{brl0(g.total)} <span className="text-xs font-medium text-ink-400">({g.share.toFixed(0)}%)</span></p>
+              <p className="text-[11px] text-ink-400">{g.n} cliente(s)</p>
+            </div>
+          </div>
+        ))}
       </div>
       <table className="w-full text-sm">
         <thead>

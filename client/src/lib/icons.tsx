@@ -39,6 +39,10 @@ const PATHS: Record<string, string> = {
   bell: 'M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0',
   download: 'M12 3v12m0 0 4-4m-4 4-4-4M4 19h16',
   menu: 'M4 6h16M4 12h16M4 18h16',
+  eyeOff: 'M3 3l18 18M10.6 10.6a3 3 0 0 0 4.2 4.2M9.4 5.2A9.5 9.5 0 0 1 12 5c6.5 0 10 7 10 7a17 17 0 0 1-3 3.8M6.6 6.6A17 17 0 0 0 2 12s3.5 7 10 7a9.5 9.5 0 0 0 3.4-.6',
+  alertTriangle: 'M12 9v4m0 4h.01M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z',
+  arrowRight: 'M5 12h14m-7-7 7 7-7 7',
+  wifiOff: 'M3 3l18 18M9 17h.01M12 20h.01M5 12.5a10 10 0 0 1 4-2.4M2 8.8a15 15 0 0 1 5-3.2m6.5-.1A15 15 0 0 1 22 8.8M16 12.3a10 10 0 0 1 3 .2',
 };
 
 export type IconName = keyof typeof PATHS;

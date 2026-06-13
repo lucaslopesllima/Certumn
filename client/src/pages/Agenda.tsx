@@ -4,6 +4,16 @@ import type { Activity, KanbanCard, OptimizeResult } from '../lib/types.ts';
 import { Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { ActivityCreateModal, VisitModal } from '../lib/activityModal.tsx';
+import { toast } from '../lib/toast.tsx';
+
+// "Adicionar" sem dia escolhido abre num horário comercial futuro: antes das 9h
+// usa hoje 09:00; durante o expediente, a próxima hora cheia (nunca no passado).
+const proximoHorarioComercial = (): Date => {
+  const d = new Date();
+  if (d.getHours() < 9) d.setHours(9, 0, 0, 0);
+  else d.setHours(d.getHours() + 1, 0, 0, 0);
+  return d;
+};
 
 /* ── tipo metadata (color + icon per activity kind) ─────── */
 const TIPO: Record<string, { label: string; icon: IconName; dot: string; chip: string }> = {
@@ -73,11 +83,14 @@ export function Agenda(): React.JSX.Element {
   const toggle = async (a: Activity): Promise<void> => {
     const next = a.status === 'feito' ? 'pendente' : 'feito';
     setItems((xs) => xs.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    await api.patch(`/api/activities/${a.id}`, { status: next });
+    try { await api.patch(`/api/activities/${a.id}`, { status: next }); }
+    catch { setItems((xs) => xs.map((x) => (x.id === a.id ? { ...x, status: a.status } : x))); toast.error('Não foi possível atualizar.'); }
   };
   const remove = async (a: Activity): Promise<void> => {
+    const before = items;
     setItems((xs) => xs.filter((x) => x.id !== a.id));
-    await api.del(`/api/activities/${a.id}`);
+    try { await api.del(`/api/activities/${a.id}`); toast.success('Atividade excluída.'); }
+    catch { setItems(before); toast.error('Não foi possível excluir.'); }
   };
 
   // filtered set used by every view
@@ -127,7 +140,7 @@ export function Agenda(): React.JSX.Element {
   // otimiza pelo planejador existente e salva como "Rota DD/MM".
   const gerarRota = async (date: Date, events: Activity[]): Promise<void> => {
     const ids = [...new Set(events.map((e) => e.company_id).filter((x): x is number => x != null))];
-    if (ids.length === 0) { window.alert('Nenhum compromisso com empresa vinculada neste dia.'); return; }
+    if (ids.length === 0) { toast.error('Nenhum compromisso com empresa vinculada neste dia.'); return; }
     setRotaBusy(true);
     try {
       const r = await api.post<OptimizeResult>('/api/routes/optimize', { company_ids: ids });
@@ -143,9 +156,9 @@ export function Agenda(): React.JSX.Element {
         })),
       });
       const aviso = r.skipped.length ? ` (${r.skipped.length} sem localização ignorada(s))` : '';
-      window.alert(`Rota gerada e salva${aviso}. Veja em Rotas.`);
+      toast.success(`Rota gerada e salva${aviso}. Veja em Rotas.`);
     } catch (e) {
-      window.alert(e instanceof ApiError ? e.message : 'Falha ao gerar a rota do dia.');
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao gerar a rota do dia.');
     } finally { setRotaBusy(false); }
   };
 
@@ -154,7 +167,7 @@ export function Agenda(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col gap-4 p-4 sm:p-6">
       <PageHeader title="Agenda" subtitle={`${pendentes} atividade(s) pendente(s)`}
-        actions={<Btn icon="plus" onClick={() => setAddAt(new Date())}>Adicionar</Btn>} />
+        actions={<Btn icon="plus" onClick={() => setAddAt(proximoHorarioComercial())}>Adicionar</Btn>} />
 
       {/* ── control panel ─────────────────────────────── */}
       <Card className="flex flex-wrap items-center justify-between gap-3 p-3">
@@ -211,7 +224,7 @@ export function Agenda(): React.JSX.Element {
           onDay={setDayOpen}
           onSlot={(d) => setAddAt(d)} />
       ) : (
-        <ListView byDay={byDay} onToggle={toggle} onRemove={remove} onEdit={setEditing} onVisit={setVisiting} onAdd={() => setAddAt(new Date())} />
+        <ListView byDay={byDay} onToggle={toggle} onRemove={remove} onEdit={setEditing} onVisit={setVisiting} onAdd={() => setAddAt(proximoHorarioComercial())} />
       )}
 
       {addAt && (

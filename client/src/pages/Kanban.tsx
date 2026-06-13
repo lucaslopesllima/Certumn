@@ -7,7 +7,8 @@ import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
-import { brl0 as brl } from '../lib/format.ts';
+import { brl0 as brl, maskPhone } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const STATUS_TONE: Record<string, Tone> = {
   prospect: 'info', cliente: 'success', descartado: 'neutral',
@@ -25,6 +26,7 @@ export function Kanban(): React.JSX.Element {
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<number | 'none' | null>(null);
   const [editing, setEditing] = useState<KanbanCard | null>(null);
+  const [moveFor, setMoveFor] = useState<number | null>(null); // card com menu "mover" aberto
   const [viewing, setViewing] = useState<number | null>(null); // company_id em visualização
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
@@ -62,19 +64,24 @@ export function Kanban(): React.JSX.Element {
       await api.patch(`/api/relationships/${cardId}`, { stage_id: stageId });
     } catch {
       void load(); // revert from server on failure
+      toast.error('Não foi possível mover o card.');
     }
   };
 
   const saveEdit = async (id: number, patch: EditPatch): Promise<void> => {
-    await api.patch(`/api/relationships/${id}`, patch);
-    await load(); // refetch so the joined dropdown labels (marca, contato, etc.) come back fresh
-    setEditing(null);
+    try {
+      await api.patch(`/api/relationships/${id}`, patch);
+      await load(); // refetch so the joined dropdown labels (marca, contato, etc.) come back fresh
+      setEditing(null);
+      toast.success('Prospecção atualizada.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
   };
 
   const removeFromFunnel = async (id: number): Promise<void> => {
     setCards((cs) => cs.filter((c) => c.id !== id)); // optimista
     setEditing(null);
-    try { await api.del(`/api/relationships/${id}`); } catch { void load(); }
+    try { await api.del(`/api/relationships/${id}`); toast.success('Empresa removida do funil.'); }
+    catch { void load(); toast.error('Não foi possível remover do funil.'); }
   };
 
   const visibleCards = useMemo(
@@ -97,7 +104,7 @@ export function Kanban(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-4 p-4 sm:p-6">
-        <PageHeader title="Funil de vendas" subtitle="Arraste os cards entre as etapas."
+        <PageHeader title="Funil de vendas" subtitle="Arraste os cards ou use o botão → para mover entre etapas."
           actions={
             <div className="flex items-center gap-2">
               <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
@@ -144,12 +151,37 @@ export function Kanban(): React.JSX.Element {
                     onDragEnd={() => { setDragId(null); setOver(null); }}
                     className={cn('group relative cursor-grab rounded-xl border border-ink-200/70 bg-white p-3 shadow-card transition active:cursor-grabbing',
                       dragId === c.id && 'opacity-50')}>
-                    <button type="button"
-                      onClick={() => setEditing(c)}
-                      title="Editar prospecção"
-                      className="absolute right-2 top-2 rounded-lg p-1 text-ink-300 opacity-0 transition hover:bg-ink-100 hover:text-ink-600 group-hover:opacity-100 focus:opacity-100">
-                      <Icon name="pencil" size={14} />
-                    </button>
+                    <div className="absolute right-2 top-2 flex items-center gap-0.5">
+                      <button type="button"
+                        onClick={() => setMoveFor((m) => (m === c.id ? null : c.id))}
+                        aria-label="Mover para outra etapa" aria-haspopup="menu" aria-expanded={moveFor === c.id}
+                        title="Mover para…"
+                        className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                        <Icon name="arrowRight" size={14} />
+                      </button>
+                      <button type="button"
+                        onClick={() => setEditing(c)}
+                        title="Editar prospecção"
+                        className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                        <Icon name="pencil" size={14} />
+                      </button>
+                    </div>
+                    {moveFor === c.id && (
+                      <>
+                        <div className="fixed inset-0 z-[40]" onClick={() => setMoveFor(null)} />
+                        <div role="menu" className="absolute right-2 top-9 z-[50] w-44 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-pop">
+                          <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Mover para</p>
+                          {stages.map((s) => (
+                            <button key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
+                              onClick={() => { void move(c.id, s.id); setMoveFor(null); }}
+                              className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                                c.stage_id === s.id ? 'font-semibold text-brand-600' : 'text-ink-700 hover:bg-ink-50')}>
+                              {c.stage_id === s.id && <Icon name="check" size={13} />}{s.nome}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                     <div className="flex items-center gap-1 pr-6">
                       <p className="truncate text-sm font-semibold text-ink-800">{c.nome_fantasia || c.razao_social}</p>
                       <button type="button"
@@ -499,8 +531,10 @@ function NovoContato({ companyId, onCreated, onCancel }: {
       const r = await api.post<{ contact: Contact }>('/api/contacts', {
         nome: nome.trim(), cargo: txt(cargo), telefone: txt(telefone), email: txt(email), company_id: companyId,
       });
+      toast.success('Contato criado.');
       onCreated(r.contact);
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o contato.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -517,7 +551,7 @@ function NovoContato({ companyId, onCreated, onCancel }: {
           <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} />
           <div className="grid gap-2.5 sm:grid-cols-2">
             <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className={inputCls} />
-            <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Telefone" className={inputCls} />
+            <input value={telefone} onChange={(e) => setTelefone(maskPhone(e.target.value))} placeholder="Telefone" inputMode="tel" className={inputCls} />
           </div>
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className={inputCls} />
         </div>
@@ -549,8 +583,10 @@ function NovoProduto({ reps, onCreated, onCancel }: {
         preco: preco.trim() === '' ? null : Number(preco),
         represented_id: repId === '' ? null : Number(repId),
       });
+      toast.success('Produto criado.');
       onCreated(r.item);
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o produto.'); }
+    finally { setBusy(false); }
   };
 
   return (

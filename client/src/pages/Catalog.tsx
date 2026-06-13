@@ -4,6 +4,7 @@ import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -30,6 +31,7 @@ export function Catalog(): React.JSX.Element {
   const [editing, setEditing] = useState<number | 'new' | null>(null);
   const [tab, setTab] = useState<'itens' | 'tabelas'>('itens');
   const [addingTable, setAddingTable] = useState(false);
+  const [q, setQ] = useState('');
 
   const load = async (): Promise<void> => {
     const [c, r] = await Promise.all([
@@ -45,29 +47,45 @@ export function Catalog(): React.JSX.Element {
   const repName = (id: number | null): string | null => reps.find((r) => r.id === id)?.nome ?? null;
 
   const create = async (f: Form): Promise<void> => {
-    const r = await api.post<{ item: CatalogItem }>('/api/catalog', toBody(f));
-    setList((xs) => [...xs, r.item]);
-    setEditing(null);
+    try {
+      const r = await api.post<{ item: CatalogItem }>('/api/catalog', toBody(f));
+      setList((xs) => [...xs, r.item]);
+      setEditing(null);
+      toast.success('Item criado.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o item.'); }
   };
   const update = async (id: number, f: Form): Promise<void> => {
-    const r = await api.patch<{ item: CatalogItem }>(`/api/catalog/${id}`, toBody(f));
-    setList((xs) => xs.map((x) => (x.id === id ? r.item : x)));
-    setEditing(null);
+    try {
+      const r = await api.patch<{ item: CatalogItem }>(`/api/catalog/${id}`, toBody(f));
+      setList((xs) => xs.map((x) => (x.id === id ? r.item : x)));
+      setEditing(null);
+      toast.success('Item salvo.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar o item.'); }
   };
   // Otimista com rollback: PATCH/DELETE recusado devolve o estado anterior.
   const toggleAtivo = async (i: CatalogItem): Promise<void> => {
     const before = list;
     setList((xs) => xs.map((x) => (x.id === i.id ? { ...x, ativo: !x.ativo } : x)));
     try { await api.patch(`/api/catalog/${i.id}`, { ativo: !i.ativo }); }
-    catch { setList(before); alert('Não foi possível atualizar o item.'); }
+    catch { setList(before); toast.error('Não foi possível atualizar o item.'); }
   };
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir este item do catálogo?')) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
-    try { await api.del(`/api/catalog/${id}`); }
-    catch { setList(before); alert('Não foi possível excluir o item.'); }
+    try { await api.del(`/api/catalog/${id}`); toast.success('Item excluído.'); }
+    catch { setList(before); toast.error('Não foi possível excluir o item.'); }
   };
+
+  // filtro client-side por nome/código/descrição — catálogo grande vira scroll sem isso
+  const termo = q.trim().toLowerCase();
+  const filtered = termo
+    ? list.filter((i) => `${i.nome} ${i.codigo ?? ''} ${i.descricao ?? ''}`.toLowerCase().includes(termo))
+    : list;
+  // o item em edição não pode sumir da lista porque o termo de busca mudou
+  const display = typeof editing === 'number' && !filtered.some((i) => i.id === editing)
+    ? [...filtered, list.find((i) => i.id === editing)].filter((i): i is CatalogItem => !!i)
+    : filtered;
 
   return (
     <div className="space-y-4 p-4 sm:p-6">
@@ -91,11 +109,21 @@ export function Catalog(): React.JSX.Element {
             <div className="mb-4"><ItemForm reps={reps} initial={EMPTY} onSave={create} onCancel={() => setEditing(null)} /></div>
           )}
 
+          {list.length > 0 && (
+            <div className="relative mb-3">
+              <Icon name="search" size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome, código ou descrição…" className={cn(inputCls, 'pl-9')} />
+            </div>
+          )}
+
           <div className="space-y-2">
             {list.length === 0 && editing !== 'new' && (
               <EmptyState icon="box" title="Catálogo vazio" hint="Cadastre os produtos/serviços que você representa." />
             )}
-            {list.map((i) => editing === i.id ? (
+            {list.length > 0 && display.length === 0 && (
+              <p className="py-6 text-center text-sm text-ink-400">Nenhum item para “{q.trim()}”.</p>
+            )}
+            {display.map((i) => editing === i.id ? (
               <Card key={i.id} className="border-brand-200 bg-brand-50/40 p-3">
                 <ItemForm reps={reps} initial={toForm(i)} onSave={(f) => update(i.id, f)} onCancel={() => setEditing(null)} />
               </Card>

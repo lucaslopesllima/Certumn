@@ -5,6 +5,7 @@ import { api } from './lib/api.ts';
 import type { Notification } from './lib/types.ts';
 import { Icon, type IconName } from './lib/icons.tsx';
 import { cn } from './lib/ui.tsx';
+import { onQueueChange, queued } from './lib/offline.ts';
 
 // Code splitting por rota: Leaflet e as páginas pesadas ficam fora do bundle
 // inicial — quem abre o Login não baixa o mapa.
@@ -72,6 +73,10 @@ function useNav(): typeof NAV {
   const { user } = useAuth();
   return NAV.filter((n) => !n.admin || user?.role === 'admin');
 }
+
+// No mobile a barra inferior cabe ~4 alvos com toque confortável (≥44px). Os
+// itens mais usados ficam fixos; o resto vai pra uma folha "Mais".
+const MOBILE_PRIMARY = ['/', '/funil', '/pedidos', '/agenda'];
 
 function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
   return (
@@ -241,10 +246,70 @@ export function NotificationBell({ variant }: { variant: 'light' | 'dark' }): Re
   );
 }
 
+// Folha "Mais" no mobile: itens secundários da navegação que não cabem na barra
+// inferior. Abre de baixo, fecha ao tocar fora ou escolher destino.
+function MobileMoreSheet({ items, open, onClose }: { items: typeof NAV; open: boolean; onClose: () => void }): React.JSX.Element | null {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-[1100] sm:hidden" role="dialog" aria-modal="true" aria-label="Mais opções">
+      <div className="absolute inset-0 bg-ink-900/40" onClick={onClose} />
+      <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-ink-200 bg-white pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-pop animate-[toastIn_.18s_ease-out]">
+        <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-ink-200" />
+        <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Mais</p>
+        <div className="grid grid-cols-3 gap-1 px-3 pb-3">
+          {items.map((n) => (
+            <NavLink key={n.to} to={n.to} onClick={onClose}
+              className={({ isActive }) => cn(
+                'flex flex-col items-center gap-1 rounded-xl py-3 text-xs font-medium transition-colors',
+                isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-600 hover:bg-ink-50')}>
+              <Icon name={n.icon} size={22} />{n.label}
+            </NavLink>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Banner de status offline: consome a fila de ações de campo (offline.ts) e
+// avisa o vendedor que há check-ins/relatórios aguardando sincronização.
+function OfflineBanner(): React.JSX.Element | null {
+  const [pendentes, setPendentes] = useState(0);
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+  useEffect(() => {
+    const refresh = (): void => { void queued().then((q) => setPendentes(q.length)); };
+    refresh();
+    const off = onQueueChange(refresh);
+    const on = (): void => setOnline(true);
+    const down = (): void => setOnline(false);
+    window.addEventListener('online', on);
+    window.addEventListener('offline', down);
+    return () => { off(); window.removeEventListener('online', on); window.removeEventListener('offline', down); };
+  }, []);
+
+  if (online && pendentes === 0) return null;
+  return (
+    <div className={cn('flex items-center gap-2 px-4 py-1.5 text-xs font-medium',
+      online ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700')}>
+      <Icon name={online ? 'bell' : 'wifiOff'} size={14} />
+      {online
+        ? `Sincronizando ${pendentes} ação(ões) de campo…`
+        : pendentes > 0
+          ? `Offline — ${pendentes} ação(ões) aguardando. Enviadas quando a conexão voltar.`
+          : 'Você está offline. Check-ins serão sincronizados ao reconectar.'}
+    </div>
+  );
+}
+
 function Shell({ children }: { children: ReactNode }): React.JSX.Element {
   const loc = useLocation();
   const nav = useNav();
+  const [moreOpen, setMoreOpen] = useState(false);
   const title = nav.find((n) => n.to === loc.pathname)?.label ?? 'Prospecta';
+  const primary = nav.filter((n) => MOBILE_PRIMARY.includes(n.to));
+  const secondary = nav.filter((n) => !MOBILE_PRIMARY.includes(n.to));
+  // fecha a folha ao trocar de rota
+  useEffect(() => { setMoreOpen(false); }, [loc.pathname]);
   return (
     <div className="flex h-dvh bg-ink-50">
       <Sidebar />
@@ -268,21 +333,27 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
           <NotificationBell variant="light" />
         </header>
 
+        <OfflineBanner />
         <main className="min-h-0 flex-1 overflow-auto pb-20 sm:pb-0">{children}</main>
       </div>
 
-      {/* mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid border-t border-ink-200 bg-white/95 backdrop-blur sm:hidden"
-        style={{ gridTemplateColumns: `repeat(${nav.length}, minmax(0, 1fr))` }}>
-        {nav.map((n) => (
+      {/* mobile bottom nav: 4 fixos + Mais (alvos ≥44px) */}
+      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-5 border-t border-ink-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+        {primary.map((n) => (
           <NavLink key={n.to} to={n.to} end={n.to === '/'}
             className={({ isActive }) => cn(
-              'flex flex-col items-center gap-0.5 py-2 text-[10px] font-medium transition-colors',
+              'flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors',
               isActive ? 'text-brand-600' : 'text-ink-400')}>
-            <Icon name={n.icon} size={20} />{n.label}
+            <Icon name={n.icon} size={22} />{n.label}
           </NavLink>
         ))}
+        <button onClick={() => setMoreOpen(true)}
+          className={cn('flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors',
+            moreOpen || secondary.some((n) => n.to === loc.pathname) ? 'text-brand-600' : 'text-ink-400')}>
+          <Icon name="menu" size={22} />Mais
+        </button>
       </nav>
+      <MobileMoreSheet items={secondary} open={moreOpen} onClose={() => setMoreOpen(false)} />
     </div>
   );
 }

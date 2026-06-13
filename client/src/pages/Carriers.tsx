@@ -4,6 +4,8 @@ import type { Carrier, CompanyHit } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
+import { toast } from '../lib/toast.tsx';
+import { maskCNPJ, maskPhone } from '../lib/format.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -36,28 +38,34 @@ export function Carriers(): React.JSX.Element {
   useEffect(() => { void load(); }, []);
 
   const create = async (f: Form): Promise<void> => {
-    const r = await api.post<{ carrier: Carrier }>('/api/carriers', toBody(f));
-    setList((xs) => [...xs, r.carrier]);
-    setEditing(null);
+    try {
+      const r = await api.post<{ carrier: Carrier }>('/api/carriers', toBody(f));
+      setList((xs) => [...xs, r.carrier]);
+      setEditing(null);
+      toast.success('Transportadora criada.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar.'); }
   };
   const update = async (id: number, f: Form): Promise<void> => {
-    const r = await api.patch<{ carrier: Carrier }>(`/api/carriers/${id}`, toBody(f));
-    setList((xs) => xs.map((x) => (x.id === id ? r.carrier : x)));
-    setEditing(null);
+    try {
+      const r = await api.patch<{ carrier: Carrier }>(`/api/carriers/${id}`, toBody(f));
+      setList((xs) => xs.map((x) => (x.id === id ? r.carrier : x)));
+      setEditing(null);
+      toast.success('Transportadora salva.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
   };
   // Otimista com rollback, mesmo padrão do Catálogo.
   const toggleAtivo = async (c: Carrier): Promise<void> => {
     const before = list;
     setList((xs) => xs.map((x) => (x.id === c.id ? { ...x, ativo: !x.ativo } : x)));
     try { await api.patch(`/api/carriers/${c.id}`, { ativo: !c.ativo }); }
-    catch { setList(before); alert('Não foi possível atualizar a transportadora.'); }
+    catch { setList(before); toast.error('Não foi possível atualizar a transportadora.'); }
   };
   const remove = async (c: Carrier): Promise<void> => {
     if (!confirm('Desativar esta transportadora? Pedidos já emitidos mantêm o vínculo.')) return;
     const before = list;
     setList((xs) => xs.map((x) => (x.id === c.id ? { ...x, ativo: false } : x)));
-    try { await api.del(`/api/carriers/${c.id}`); }
-    catch { setList(before); alert('Não foi possível desativar a transportadora.'); }
+    try { await api.del(`/api/carriers/${c.id}`); toast.success('Transportadora desativada.'); }
+    catch { setList(before); toast.error('Não foi possível desativar a transportadora.'); }
   };
 
   return (
@@ -138,8 +146,8 @@ function CarrierForm({ initial, onSave, onCancel }: {
       <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
       <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da transportadora *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-3">
-        <input value={f.cnpj} onChange={set('cnpj')} placeholder="CNPJ" className={inputCls} />
-        <input value={f.telefone} onChange={set('telefone')} placeholder="Telefone" className={inputCls} />
+        <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
+        <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
         <input value={f.email} onChange={set('email')} placeholder="E-mail" className={inputCls} />
       </div>
       <input value={f.contato} onChange={set('contato')} placeholder="Pessoa de contato" className={inputCls} />

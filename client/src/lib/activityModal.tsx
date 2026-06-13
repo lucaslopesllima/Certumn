@@ -3,6 +3,7 @@ import { api } from './api.ts';
 import { postField } from './offline.ts';
 import { Btn, Card, cn } from './ui.tsx';
 import { Icon, type IconName } from './icons.tsx';
+import { toast } from './toast.tsx';
 import type { Activity } from './types.ts';
 
 // Modal de criação de atividade/compromisso. Reutilizado na Agenda e no Funil.
@@ -38,14 +39,17 @@ export function ActivityCreateModal({ preset, funnel, presetCompanyId, activity,
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (!titulo || !start) return;
+    if (!titulo.trim()) { toast.error('Informe o título da atividade.'); return; }
+    if (!start) { toast.error('Informe a data e hora.'); return; }
     setBusy(true);
     try {
-      const body = { titulo, tipo, start_at: new Date(start).toISOString(), company_id: companyId };
+      const body = { titulo: titulo.trim(), tipo, start_at: new Date(start).toISOString(), company_id: companyId };
       if (editando) await api.patch(`/api/activities/${activity!.id}`, body);
       else await api.post('/api/activities', body);
+      toast.success(editando ? 'Atividade salva.' : 'Atividade criada.');
       onSaved();
-    } finally { setBusy(false); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não foi possível salvar a atividade.'); }
+    finally { setBusy(false); }
   };
 
   return (

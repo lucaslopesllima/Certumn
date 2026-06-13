@@ -3,6 +3,8 @@ import { api, ApiError, setToken } from '../lib/api.ts';
 import type { AccountOrg, AccountUser } from '../lib/types.ts';
 import { Btn, Card, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
+import { maskCNPJ, maskPhone } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 const t = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -25,6 +27,7 @@ export function Account(): React.JSX.Element {
   const [errInfo, setErrInfo] = useState('');
 
   const [cepBusy, setCepBusy] = useState(false);
+  const [cepMsg, setCepMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   // senha
   const [atual, setAtual] = useState('');
@@ -49,11 +52,11 @@ export function Account(): React.JSX.Element {
   const buscarCep = async (raw: string): Promise<void> => {
     const cep = raw.replace(/\D/g, '');
     if (cep.length !== 8) return;
-    setCepBusy(true);
+    setCepBusy(true); setCepMsg(null);
     try {
       const resp = await fetch(`https://viacep.com.br/ws/${cep}/json/`);
       const j = await resp.json() as { erro?: boolean; logradouro?: string; bairro?: string; localidade?: string; uf?: string; complemento?: string };
-      if (j.erro) return;
+      if (j.erro) { setCepMsg({ ok: false, text: 'CEP não encontrado — preencha manualmente.' }); return; }
       setOrg((o) => o ? {
         ...o,
         logradouro: j.logradouro || o.logradouro,
@@ -62,7 +65,8 @@ export function Account(): React.JSX.Element {
         uf: j.uf || o.uf,
         complemento: o.complemento || j.complemento || o.complemento,
       } : o);
-    } catch { /* silencioso — usuário pode preencher à mão */ }
+      setCepMsg({ ok: true, text: 'Endereço preenchido pelo CEP.' });
+    } catch { setCepMsg({ ok: false, text: 'Não foi possível consultar o CEP — preencha manualmente.' }); }
     finally { setCepBusy(false); }
   };
 
@@ -85,8 +89,10 @@ export function Account(): React.JSX.Element {
       });
       setOrg(r.org); setEmail(r.user.email);
       setSavedInfo(true); setTimeout(() => setSavedInfo(false), 2000);
+      toast.success('Dados salvos.');
     } catch (e) {
-      setErrInfo(e instanceof ApiError ? e.message : 'Erro ao salvar');
+      const msg = e instanceof ApiError ? e.message : 'Erro ao salvar';
+      setErrInfo(msg); toast.error(msg);
     } finally { setBusyInfo(false); }
   };
 
@@ -101,8 +107,10 @@ export function Account(): React.JSX.Element {
       setToken(r.token);
       setOkPwd(true); setMsgPwd('Senha atualizada.');
       setAtual(''); setNova(''); setConf('');
+      toast.success('Senha atualizada.');
     } catch (e) {
-      setMsgPwd(e instanceof ApiError ? e.message : 'Erro ao atualizar senha');
+      const msg = e instanceof ApiError ? e.message : 'Erro ao atualizar senha';
+      setMsgPwd(msg); toast.error(msg);
     } finally { setBusyPwd(false); }
   };
 
@@ -119,9 +127,11 @@ export function Account(): React.JSX.Element {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Nome / Razão social"><input value={org.nome} onChange={set('nome')} className={inputCls} /></Field>
-          <Field label="CNPJ"><input value={org.cnpj ?? ''} onChange={set('cnpj')} placeholder="00.000.000/0000-00" className={inputCls} /></Field>
+          <Field label="CNPJ"><input value={org.cnpj ?? ''} inputMode="numeric"
+            onChange={(e) => setOrg((o) => (o ? { ...o, cnpj: maskCNPJ(e.target.value) } : o))} placeholder="00.000.000/0000-00" className={inputCls} /></Field>
           <Field label="E-mail (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} /></Field>
-          <Field label="Telefone"><input value={org.telefone ?? ''} onChange={set('telefone')} className={inputCls} /></Field>
+          <Field label="Telefone"><input value={org.telefone ?? ''} inputMode="tel"
+            onChange={(e) => setOrg((o) => (o ? { ...o, telefone: maskPhone(e.target.value) } : o))} placeholder="(00) 00000-0000" className={inputCls} /></Field>
         </div>
 
         <p className="mt-5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Endereço</p>
@@ -132,6 +142,11 @@ export function Account(): React.JSX.Element {
                 placeholder="00000-000" className={inputCls} />
               {cepBusy && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-ink-400">buscando…</span>}
             </div>
+            {cepMsg && (
+              <span className={cn('mt-1 inline-flex items-center gap-1 text-[11px]', cepMsg.ok ? 'text-emerald-600' : 'text-amber-600')}>
+                <Icon name={cepMsg.ok ? 'check' : 'alertTriangle'} size={12} />{cepMsg.text}
+              </span>
+            )}
           </Field>
           <Field label="Logradouro" className="sm:col-span-3"><input value={org.logradouro ?? ''} onChange={set('logradouro')} className={inputCls} /></Field>
           <Field label="Número" className="sm:col-span-1"><input value={org.numero ?? ''} onChange={set('numero')} className={inputCls} /></Field>
@@ -155,6 +170,15 @@ export function Account(): React.JSX.Element {
           <Field label="Nova senha"><input type="password" value={nova} onChange={(e) => setNova(e.target.value)} className={inputCls} /></Field>
           <Field label="Confirmar nova senha"><input type="password" value={conf} onChange={(e) => setConf(e.target.value)} className={inputCls} /></Field>
         </div>
+        {(nova || conf) && (
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            {[{ ok: nova.length >= 6, txt: 'Ao menos 6 caracteres' }, { ok: nova.length > 0 && nova === conf, txt: 'As senhas conferem' }].map((r) => (
+              <li key={r.txt} className={cn('inline-flex items-center gap-1.5 text-xs', r.ok ? 'text-emerald-600' : 'text-ink-400')}>
+                <Icon name={r.ok ? 'check' : 'x'} size={12} />{r.txt}
+              </li>
+            ))}
+          </ul>
+        )}
         <div className="mt-4 flex items-center gap-3">
           <Btn icon="check" onClick={() => void savePwd()} disabled={busyPwd || !atual || !nova}>{busyPwd ? '…' : 'Atualizar senha'}</Btn>
           {msgPwd && <span className={cn('text-sm', okPwd ? 'text-emerald-600' : 'text-rose-600')}>{msgPwd}</span>}

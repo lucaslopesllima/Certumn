@@ -61,14 +61,24 @@ export function Dashboard(): React.JSX.Element {
       {loading || !data ? <Spinner /> : (
         <>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label="Vendas do mês" value={brl0(data.vendas.total)} icon="trendingUp" tone="success"
-              sub={metaPct != null ? `${metaPct}% da meta (${brl0(data.vendas.meta)})` : `${data.vendas.qtd} pedido(s)`} />
-            <StatCard label="Comissões previstas" value={brl0(data.comissoes.previsto)} icon="percent" tone="info"
-              sub={`Recebido ${brl0(data.comissoes.recebido)}`} />
-            <StatCard label="Negócios no funil" value={String(funilTotal)} icon="columns" tone="brand"
-              sub={brl0(funilValor)} />
-            <StatCard label="Divergências" value={String(data.comissoes.divergentes)} icon="x"
-              tone={data.comissoes.divergentes > 0 ? 'danger' : 'neutral'} sub="comissões a conferir" />
+            {/* KPI → ação: cada card leva à tela onde o usuário age sobre o número */}
+            <Link to="/pedidos" className="rounded-2xl transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+              <StatCard label="Vendas do mês" value={brl0(data.vendas.total)} icon="trendingUp" tone="success"
+                sub={metaPct != null ? `${metaPct}% da meta (${brl0(data.vendas.meta)})` : `${data.vendas.qtd} pedido(s)`} />
+            </Link>
+            <Link to="/comissoes" className="rounded-2xl transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+              <StatCard label="Comissões previstas" value={brl0(data.comissoes.previsto)} icon="percent" tone="info"
+                sub={`Recebido ${brl0(data.comissoes.recebido)}`} />
+            </Link>
+            <Link to="/funil" className="rounded-2xl transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+              <StatCard label="Negócios no funil" value={String(funilTotal)} icon="columns" tone="brand"
+                sub={brl0(funilValor)} />
+            </Link>
+            <Link to="/comissoes" className="rounded-2xl transition hover:shadow-pop focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+              <StatCard label="Divergências" value={String(data.comissoes.divergentes)} icon="alertTriangle"
+                tone={data.comissoes.divergentes > 0 ? 'danger' : 'neutral'}
+                sub={data.comissoes.divergentes > 0 ? 'tocar para conferir →' : 'tudo certo'} />
+            </Link>
           </div>
 
           {metaPct != null && (

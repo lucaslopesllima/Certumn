@@ -6,6 +6,8 @@ import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { ProfileForm } from './Profile.tsx';
+import { toast } from '../lib/toast.tsx';
+import { maskCNPJ, maskPhone } from '../lib/format.ts';
 
 type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'alertas';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
@@ -77,10 +79,13 @@ function AlertasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   }, []);
 
   const save = async (): Promise<void> => {
-    if (dias === '' || dias < 1) return;
-    await api.patch('/api/account', { inatividade_dias: Number(dias) });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (dias === '' || dias < 1) { toast.error('Informe um número de dias válido.'); return; }
+    try {
+      await api.patch('/api/account', { inatividade_dias: Number(dias) });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success('Alerta de inatividade salvo.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
   };
 
   if (loading) return <Spinner />;
@@ -123,24 +128,28 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
     e.preventDefault();
     const nome = novo.trim();
     if (!nome) return;
-    const r = await api.post<{ stage: Stage }>('/api/stages', { nome });
-    setStages((s) => [...s, r.stage]);
-    setNovo('');
-    flash();
+    try {
+      const r = await api.post<{ stage: Stage }>('/api/stages', { nome });
+      setStages((s) => [...s, r.stage]);
+      setNovo('');
+      flash(); toast.success(`Fase "${nome}" adicionada.`);
+    } catch (e2) { toast.error(e2 instanceof Error ? e2.message : 'Não foi possível adicionar a fase.'); }
   };
 
   const rename = async (id: number, nome: string): Promise<void> => {
     const trimmed = nome.trim();
     if (!trimmed) return;
-    await api.patch(`/api/stages/${id}`, { nome: trimmed });
-    flash();
+    try { await api.patch(`/api/stages/${id}`, { nome: trimmed }); setStages((s) => s.map((x) => (x.id === id ? { ...x, nome: trimmed } : x))); flash(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível renomear.'); }
   };
 
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir esta fase? Os cards nela ficam sem etapa.')) return;
-    await api.del(`/api/stages/${id}`);
-    setStages((s) => s.filter((x) => x.id !== id));
-    flash();
+    try {
+      await api.del(`/api/stages/${id}`);
+      setStages((s) => s.filter((x) => x.id !== id));
+      flash(); toast.success('Fase excluída.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível excluir a fase.'); }
   };
 
   // Reorder by swapping with neighbor, then persist new ordem for the affected stages.
@@ -167,7 +176,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
         <h3 className="text-sm font-semibold text-ink-900">Fases do funil</h3>
         {saved && <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600"><Icon name="check" size={14} /> Salvo</span>}
       </div>
-      <p className="mt-0.5 text-xs text-ink-400">Renomeie, reordene e exclua. Reflete direto na tela de Funil.</p>
+      <p className="mt-0.5 text-xs text-ink-400">Renomeie (Enter ou clique fora para salvar), reordene e exclua. Reflete direto na tela de Funil.</p>
 
       <ul className="mt-4 space-y-2">
         {stages.map((st, i) => (
@@ -226,23 +235,32 @@ function RepresentadasEditor({ inputCls }: { inputCls: string }): React.JSX.Elem
   useEffect(() => { void load(); }, []);
 
   const create = async (f: EmpForm): Promise<void> => {
-    const r = await api.post<{ empresa: RepresentedCompany }>('/api/represented', normalize(f));
-    setList((xs) => [...xs, r.empresa]);
-    setEditing(null);
+    try {
+      const r = await api.post<{ empresa: RepresentedCompany }>('/api/represented', normalize(f));
+      setList((xs) => [...xs, r.empresa]);
+      setEditing(null);
+      toast.success('Representada criada.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar.'); }
   };
   const update = async (id: number, f: EmpForm): Promise<void> => {
-    const r = await api.patch<{ empresa: RepresentedCompany }>(`/api/represented/${id}`, normalize(f));
-    setList((xs) => xs.map((x) => (x.id === id ? r.empresa : x)));
-    setEditing(null);
+    try {
+      const r = await api.patch<{ empresa: RepresentedCompany }>(`/api/represented/${id}`, normalize(f));
+      setList((xs) => xs.map((x) => (x.id === id ? r.empresa : x)));
+      setEditing(null);
+      toast.success('Representada salva.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
   };
   const toggleAtivo = async (e: RepresentedCompany): Promise<void> => {
     setList((xs) => xs.map((x) => (x.id === e.id ? { ...x, ativo: !x.ativo } : x)));
-    await api.patch(`/api/represented/${e.id}`, { ativo: !e.ativo });
+    try { await api.patch(`/api/represented/${e.id}`, { ativo: !e.ativo }); }
+    catch { setList((xs) => xs.map((x) => (x.id === e.id ? { ...x, ativo: e.ativo } : x))); toast.error('Não foi possível atualizar.'); }
   };
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir esta empresa representada?')) return;
+    const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
-    await api.del(`/api/represented/${id}`);
+    try { await api.del(`/api/represented/${id}`); toast.success('Representada excluída.'); }
+    catch { setList(before); toast.error('Não foi possível excluir.'); }
   };
 
   if (loading) return <Spinner />;
@@ -338,7 +356,7 @@ function EmpresaForm({ inputCls, initial, onSave, onCancel }: {
       <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da empresa / marca *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
         <input value={f.segmento} onChange={set('segmento')} placeholder="Segmento (ex.: Calçados)" className={inputCls} />
-        <input value={f.cnpj} onChange={set('cnpj')} placeholder="CNPJ" className={inputCls} />
+        <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
         <input value={f.contato} onChange={set('contato')} placeholder="Contato (telefone/e-mail)" className={inputCls} />
         <input value={f.site} onChange={set('site')} placeholder="Site" className={inputCls} />
       </div>
@@ -416,19 +434,25 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
     e.preventDefault();
     const nome = novo.trim();
     if (!nome) return;
-    const r = await api.post<{ item: NamedItem }>(`/api/${path}`, { nome });
-    setItems((xs) => [...xs, r.item]);
-    setNovo('');
+    try {
+      const r = await api.post<{ item: NamedItem }>(`/api/${path}`, { nome });
+      setItems((xs) => [...xs, r.item]);
+      setNovo('');
+      toast.success('Item adicionado.');
+    } catch (e2) { toast.error(e2 instanceof Error ? e2.message : 'Não foi possível adicionar.'); }
   };
   const rename = async (id: number, nome: string): Promise<void> => {
     const t = nome.trim();
     if (!t) return;
-    await api.patch(`/api/${path}/${id}`, { nome: t });
+    try { await api.patch(`/api/${path}/${id}`, { nome: t }); setItems((xs) => xs.map((x) => (x.id === id ? { ...x, nome: t } : x))); }
+    catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível renomear.'); }
   };
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir este item? Prospecções que o usavam ficam sem valor.')) return;
+    const before = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
-    await api.del(`/api/${path}/${id}`);
+    try { await api.del(`/api/${path}/${id}`); toast.success('Item excluído.'); }
+    catch { setItems(before); toast.error('Não foi possível excluir.'); }
   };
 
   if (loading) return <Spinner />;
@@ -498,19 +522,27 @@ function ContatosEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   const repName = (id: number | null): string | null => reps.find((r) => r.id === id)?.nome ?? null;
 
   const create = async (f: ContactForm): Promise<void> => {
-    const r = await api.post<{ contact: Contact }>('/api/contacts', contactBody(f));
-    setList((xs) => [...xs, r.contact]);
-    setEditing(null);
+    try {
+      const r = await api.post<{ contact: Contact }>('/api/contacts', contactBody(f));
+      setList((xs) => [...xs, r.contact]);
+      setEditing(null);
+      toast.success('Contato criado.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o contato.'); }
   };
   const update = async (id: number, f: ContactForm): Promise<void> => {
-    const r = await api.patch<{ contact: Contact }>(`/api/contacts/${id}`, contactBody(f));
-    setList((xs) => xs.map((x) => (x.id === id ? r.contact : x)));
-    setEditing(null);
+    try {
+      const r = await api.patch<{ contact: Contact }>(`/api/contacts/${id}`, contactBody(f));
+      setList((xs) => xs.map((x) => (x.id === id ? r.contact : x)));
+      setEditing(null);
+      toast.success('Contato salvo.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar o contato.'); }
   };
   const remove = async (id: number): Promise<void> => {
     if (!confirm('Excluir este contato?')) return;
+    const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
-    await api.del(`/api/contacts/${id}`);
+    try { await api.del(`/api/contacts/${id}`); toast.success('Contato excluído.'); }
+    catch { setList(before); toast.error('Não foi possível excluir o contato.'); }
   };
 
   if (loading) return <Spinner />;
@@ -586,7 +618,7 @@ function ContatoForm({ inputCls, reps, initial, onSave, onCancel }: {
           {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
         <input value={f.email} onChange={set('email')} placeholder="E-mail" className={inputCls} />
-        <input value={f.telefone} onChange={set('telefone')} placeholder="Telefone" className={inputCls} />
+        <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
       </div>
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>

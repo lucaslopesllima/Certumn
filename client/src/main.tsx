@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom';
 import { registerSW } from 'virtual:pwa-register';
 import { AuthProvider } from './lib/auth.tsx';
 import { ErrorBoundary } from './lib/ErrorBoundary.tsx';
+import { ToastHost } from './lib/toast.tsx';
 import { App } from './App.tsx';
 import { initOfflineSync } from './lib/offline.ts';
 import 'leaflet/dist/leaflet.css';
@@ -20,6 +21,7 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <AuthProvider>
           <App />
+          <ToastHost />
         </AuthProvider>
       </BrowserRouter>
     </ErrorBoundary>

@@ -6,8 +6,9 @@ import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderStatus, PriceTable, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, fmtDate, todayStr } from '../lib/format.ts';
+import { brl, csvNum, fmtDate, todayStr } from '../lib/format.ts';
 import { downloadCsv } from '../lib/export.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -42,6 +43,7 @@ export function Orders(): React.JSX.Element {
   const [editing, setEditing] = useState<Order | null>(null);
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [nfModal, setNfModal] = useState<Order | null>(null);
 
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [companies, setCompanies] = useState<(Opt & { relationship_id: number })[]>([]);
@@ -96,31 +98,28 @@ export function Orders(): React.JSX.Element {
     return { aberto, faturado };
   }, [filtered]);
 
-  const transition = async (o: Order, to: OrderStatus): Promise<void> => {
-    let nf: string | null = null;
-    if (to === 'faturado') {
-      nf = prompt('Número da NF (opcional):');
-      if (nf === null) return; // cancelou o prompt
-      nf = nf.trim() || null;
-    }
+  const transition = async (o: Order, to: OrderStatus, nf?: string | null): Promise<void> => {
+    // faturar pede o nº da NF — abre modal em vez de prompt nativo
+    if (to === 'faturado' && nf === undefined) { setNfModal(o); return; }
     try {
       const r = await api.post<{ order: Order }>(`/api/orders/${o.id}/transition`, { status: to, nf_numero: nf ?? undefined });
       setOrders((xs) => xs.map((x) => (x.id === o.id ? r.order : x)));
-    } catch (e) { alert(e instanceof Error ? e.message : 'Não foi possível atualizar o pedido.'); }
+      toast.success(to === 'cancelado' ? `Pedido #${o.numero} cancelado.` : `Pedido #${o.numero}: ${STATUS_META[to].label}.`);
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível atualizar o pedido.'); }
   };
 
   const remove = async (o: Order): Promise<void> => {
     if (!confirm(`Excluir o pedido #${o.numero}?`)) return;
     const before = orders;
     setOrders((xs) => xs.filter((x) => x.id !== o.id));
-    try { await api.del(`/api/orders/${o.id}`); }
-    catch { setOrders(before); alert('Não foi possível excluir o pedido.'); }
+    try { await api.del(`/api/orders/${o.id}`); toast.success(`Pedido #${o.numero} excluído.`); }
+    catch { setOrders(before); toast.error('Não foi possível excluir o pedido.'); }
   };
 
   const exportar = (): void => downloadCsv('pedidos',
     ['Número', 'Cliente', 'Representada', 'Vendedor', 'Status', 'NF', 'Total', 'Criado em'],
     filtered.map((o) => [o.numero, o.company_nome, o.represented_nome, o.owner_nome ?? o.owner_email ?? '',
-      STATUS_META[o.status].label, o.nf_numero ?? '', Number(o.total).toFixed(2), fmtDate(o.created_at)]));
+      STATUS_META[o.status].label, o.nf_numero ?? '', csvNum(o.total), fmtDate(o.created_at)]));
 
   const openEdit = async (o: Order): Promise<void> => {
     const r = await api.get<{ order: Order }>(`/api/orders/${o.id}`);
@@ -133,12 +132,12 @@ export function Orders(): React.JSX.Element {
     try {
       const { html } = await api.get<{ html: string }>(`/api/orders/${o.id}/print`);
       const w = window.open('', '_blank');
-      if (!w) { alert('Permita pop-ups para gerar a impressão.'); return; }
+      if (!w) { toast.error('Permita pop-ups para gerar a impressão.'); return; }
       w.document.write(html);
       w.document.close();
       w.focus();
       w.print();
-    } catch (e) { alert(e instanceof Error ? e.message : 'Não foi possível gerar a impressão.'); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível gerar a impressão.'); }
   };
 
   const closeModal = (): void => {
@@ -202,6 +201,34 @@ export function Orders(): React.JSX.Element {
       {importing && (
         <ImportModal onClose={() => setImporting(false)} onDone={() => { setImporting(false); void load(); }} />
       )}
+      {nfModal && (
+        <NfModal order={nfModal} onClose={() => setNfModal(null)}
+          onConfirm={(nf) => { const o = nfModal; setNfModal(null); void transition(o, 'faturado', nf); }} />
+      )}
+    </div>
+  );
+}
+
+// Captura o nº da NF ao faturar — substitui o prompt() nativo. NF é opcional.
+function NfModal({ order, onClose, onConfirm }: { order: Order; onClose: () => void; onConfirm: (nf: string | null) => void }): React.JSX.Element {
+  const [nf, setNf] = useState('');
+  const submit = (e: React.FormEvent): void => { e.preventDefault(); onConfirm(nf.trim() || null); };
+  return (
+    <div className="fixed inset-0 z-[2100] grid place-items-center bg-ink-950/40 p-4" onClick={onClose}>
+      <Card className="w-full max-w-sm p-4 shadow-pop" >
+        <div onClick={(e) => e.stopPropagation()}>
+          <h3 className="mb-1 text-sm font-bold text-ink-900">Faturar pedido #{order.numero}</h3>
+          <p className="mb-3 text-xs text-ink-400">Informe o número da nota fiscal (opcional).</p>
+          <form onSubmit={submit} className="space-y-3">
+            <input value={nf} onChange={(e) => setNf(e.target.value)} autoFocus inputMode="numeric"
+              placeholder="Número da NF" className={inputCls} />
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
+              <Btn icon="check" type="submit">Faturar</Btn>
+            </div>
+          </form>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -297,6 +324,14 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
   const [table, setTable] = useState<PriceTable | null>(null);
   const [comissao, setComissao] = useState<CommissionEntry | null>(null);
   const [busy, setBusy] = useState(false);
+  const [tried, setTried] = useState(false); // mostra erros inline só após tentar salvar
+
+  // validação por item, reusada pra destacar campo e bloquear submit
+  const itemErr = (i: ItemDraft): { desc: boolean; qtd: boolean; preco: boolean } => ({
+    desc: !i.descricao.trim(),
+    qtd: !(Number(i.qtd) > 0),
+    preco: i.preco_unit.trim() === '' || !(Number(i.preco_unit) >= 0),
+  });
 
   // pedido faturado/entregue tem comissão gerada — exibe a previsão
   // (admin vê o total; vendedor vê a própria parte).
@@ -336,12 +371,12 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (readOnly) return;
-    if (companyId == null || representedId == null) { alert('Escolha o cliente e a representada.'); return; }
-    if (items.length === 0) { alert('Adicione pelo menos um item.'); return; }
-    if (items.some((i) => !i.descricao.trim() || !(Number(i.qtd) > 0) || !(Number(i.preco_unit) >= 0) || i.preco_unit.trim() === '')) {
-      alert('Todo item precisa de descrição, quantidade e preço.');
-      return;
-    }
+    setTried(true);
+    if (companyId == null || representedId == null) { toast.error('Escolha o cliente e a representada.'); return; }
+    if (items.length === 0) { toast.error('Adicione pelo menos um item.'); return; }
+    // aponta o primeiro item incompleto pelo número, em vez de mensagem genérica
+    const badIdx = items.findIndex((i) => { const er = itemErr(i); return er.desc || er.qtd || er.preco; });
+    if (badIdx >= 0) { toast.error(`Item ${badIdx + 1}: preencha descrição, quantidade e preço.`); return; }
     setBusy(true);
     const num = (s: string): number | undefined => (s.trim() === '' ? undefined : Number(s));
     const body: Record<string, unknown> = {
@@ -370,9 +405,10 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
     try {
       if (order) await api.patch(`/api/orders/${order.id}`, body);
       else await api.post('/api/orders', { ...body, status: cotacao ? 'cotacao' : 'rascunho' });
+      toast.success(order ? `Pedido #${order.numero} salvo.` : 'Pedido criado.');
       onSaved();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível salvar o pedido.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível salvar o pedido.');
     } finally { setBusy(false); }
   };
 
@@ -416,27 +452,35 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
 
             <div className="space-y-1.5">
               <span className="text-xs font-semibold text-ink-600">Itens *</span>
-              {items.map((i, idx) => (
+              {items.map((i, idx) => {
+                const err = tried ? itemErr(i) : { desc: false, qtd: false, preco: false };
+                const fieldCls = (bad: boolean): string => cn('rounded-lg border bg-white px-2 py-1.5 text-sm',
+                  bad ? 'border-rose-400 ring-1 ring-rose-200' : 'border-ink-200');
+                return (
                 <div key={idx} className="space-y-1.5 rounded-xl border border-ink-200/70 bg-ink-50/50 p-2">
                   <div className="flex items-center gap-2">
-                    <input value={i.descricao} disabled={readOnly} aria-label={`Descrição item ${idx + 1}`}
+                    <input value={i.descricao} disabled={readOnly} aria-label={`Descrição item ${idx + 1}`} aria-invalid={err.desc}
                       onChange={(e) => setItem(idx, { descricao: e.target.value })} placeholder="Descrição *"
-                      className="min-w-0 flex-1 rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-sm" />
+                      className={cn('min-w-0 flex-1', fieldCls(err.desc))} />
                     {!readOnly && (
                       <button type="button" aria-label={`Remover item ${idx + 1}`} onClick={() => setItems((xs) => xs.filter((_, j) => j !== idx))}
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={15} /></button>
                     )}
                   </div>
                   <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ['ipi_pct', 'IPI %'], ['st_pct', 'ST %']] as const).map(([k, ph]) => (
-                      <input key={k} type="number" min="0" step="any" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`}
+                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ['ipi_pct', 'IPI %'], ['st_pct', 'ST %']] as const).map(([k, ph]) => {
+                      const bad = (k === 'qtd' && err.qtd) || (k === 'preco_unit' && err.preco);
+                      return (
+                      <input key={k} type="number" min="0" step="any" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
                         onChange={(e) => setItem(idx, { [k]: e.target.value })} placeholder={ph}
-                        className="rounded-lg border border-ink-200 bg-white px-2 py-1.5 text-sm" />
-                    ))}
+                        className={fieldCls(bad)} />
+                      );
+                    })}
                     <span className="tabnums grid place-items-center text-xs font-bold text-ink-700">{brl(itemTotal(i))}</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
               {!readOnly && (
                 <div className="grid gap-1.5 sm:grid-cols-2">
                   <select value="" aria-label="Adicionar item do catálogo"
@@ -532,7 +576,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
       const r = await api.post<{ processadas: number; faturadas: number }>('/api/orders/import', { csv });
       setResult(r);
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Não foi possível importar.');
+      toast.error(err instanceof Error ? err.message : 'Não foi possível importar.');
     } finally { setBusy(false); }
   };
 

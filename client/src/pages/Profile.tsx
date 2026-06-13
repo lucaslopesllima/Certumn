@@ -6,6 +6,7 @@ import { Icon } from '../lib/icons.tsx';
 import { Cnae, seedCnae } from '../lib/cnae.tsx';
 import { useOptionalUser } from '../lib/auth.tsx';
 import { useSellers, sellerLabel } from '../lib/sellers.tsx';
+import { toast } from '../lib/toast.tsx';
 
 const DIV_LABEL = (secao: string): string =>
   secao === 'C' ? 'Indústria / Fabricação' : secao === 'G' ? 'Comércio' : `Seção ${secao}`;
@@ -42,6 +43,7 @@ export function ProfileForm(): React.JSX.Element {
   // CNAE search
   const [q, setQ] = useState('');
   const [grupos, setGrupos] = useState<CnaeGrupo[]>([]);
+  const [searching, setSearching] = useState(false);
   const debounce = useRef<number | undefined>(undefined);
 
   // municipio search (typeahead)
@@ -93,10 +95,13 @@ export function ProfileForm(): React.JSX.Element {
 
   useEffect(() => {
     if (debounce.current) clearTimeout(debounce.current);
-    if (q.trim().length < 2) { setGrupos([]); return; }
+    if (q.trim().length < 2) { setGrupos([]); setSearching(false); return; }
+    setSearching(true);
     debounce.current = window.setTimeout(async () => {
-      const r = await api.get<{ grupos: CnaeGrupo[] }>(`/api/cnae/search?q=${encodeURIComponent(q.trim())}`);
-      setGrupos(r.grupos);
+      try {
+        const r = await api.get<{ grupos: CnaeGrupo[] }>(`/api/cnae/search?q=${encodeURIComponent(q.trim())}`);
+        setGrupos(r.grupos);
+      } finally { setSearching(false); }
     }, 300);
   }, [q]);
 
@@ -138,26 +143,30 @@ export function ProfileForm(): React.JSX.Element {
       const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`;
       const resp = await fetch(url, { headers: { 'Accept-Language': 'pt-BR' } });
       const arr = await resp.json() as { lat: string; lon: string; display_name: string }[];
-      if (!arr.length) { alert('Endereço não encontrado.'); return; }
+      if (!arr.length) { toast.error('Endereço não encontrado.'); return; }
       setOrigemLat(Number(arr[0]!.lat));
       setOrigemLon(Number(arr[0]!.lon));
-    } catch { alert('Falha ao geocodificar.'); }
+      toast.success('Coordenadas encontradas.');
+    } catch { toast.error('Falha ao geocodificar.'); }
     finally { setGeocoding(false); }
   };
 
   const save = async (): Promise<void> => {
-    await api.put('/api/profile', {
-      user_id: user?.role === 'admin' ? scopeUser : undefined,
-      cnaes_alvo: cnaes.map((c) => c.codigo),
-      territorio_municipios: selMun.map((m) => m.id),
-      territorio_raio_km: raio === '' ? null : Number(raio),
-      pesos,
-      origem_endereco: origemEndereco.trim() || null,
-      origem_lat: origemLat,
-      origem_lon: origemLon,
-    });
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    try {
+      await api.put('/api/profile', {
+        user_id: user?.role === 'admin' ? scopeUser : undefined,
+        cnaes_alvo: cnaes.map((c) => c.codigo),
+        territorio_municipios: selMun.map((m) => m.id),
+        territorio_raio_km: raio === '' ? null : Number(raio),
+        pesos,
+        origem_endereco: origemEndereco.trim() || null,
+        origem_lat: origemLat,
+        origem_lon: origemLon,
+      });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success('Perfil-alvo salvo.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar o perfil.'); }
   };
 
   if (loading) return <div className="p-6"><Spinner /></div>;
@@ -194,7 +203,11 @@ export function ProfileForm(): React.JSX.Element {
         <div className="relative">
           <Icon name="search" size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar CNAE…" className={cn(inputCls, 'pl-9')} />
+          {searching && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-ink-400">buscando…</span>}
         </div>
+        {q.trim().length >= 2 && !searching && grupos.length === 0 && (
+          <p className="mt-2 text-xs text-ink-400">Nenhum CNAE encontrado para “{q.trim()}”.</p>
+        )}
 
         {cnaes.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-1.5">

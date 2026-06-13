@@ -4,8 +4,14 @@ import type { Activity, FinanceCategory, FinanceEntry, KanbanCard, RepresentedCo
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, todayStr } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
+
+const mesLabel = (ym: string): string => {
+  const [y, m] = ym.split('-').map(Number);
+  return `${['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'][(m ?? 1) - 1]}/${y}`;
+};
 
 const STATUS_META: Record<string, { label: string; tone: Tone }> = {
   pendente: { label: 'Pendente', tone: 'warn' },
@@ -22,6 +28,8 @@ export function Finance(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [kind, setKind] = useState<'todos' | 'receber' | 'pagar'>('todos');
   const [status, setStatus] = useState<'todos' | 'pendente' | 'liquidado' | 'cancelado'>('todos');
+  const [periodo, setPeriodo] = useState<'mes' | 'todos'>('mes');
+  const [mesRef, setMesRef] = useState<string>(todayStr().slice(0, 7));
   const [editing, setEditing] = useState<FinanceEntry | null>(null);
   const [adding, setAdding] = useState(false);
   const [managingCats, setManagingCats] = useState(false);
@@ -65,9 +73,24 @@ export function Finance(): React.JSX.Element {
     }).catch(() => undefined);
   }, []);
 
-  const filtered = useMemo(() => entries.filter((e) =>
-    (kind === 'todos' || e.kind === kind) && (status === 'todos' || e.status === status)
-  ), [entries, kind, status]);
+  const filtered = useMemo(() => {
+    const today = todayStr();
+    return entries.filter((e) => {
+      if (kind !== 'todos' && e.kind !== kind) return false;
+      if (status !== 'todos' && e.status !== status) return false;
+      // no recorte por mês, vencidos pendentes nunca somem (urgência não pode esconder)
+      if (periodo === 'mes') {
+        const vencidoPendente = e.status === 'pendente' && e.vencimento < today;
+        if (!e.vencimento.startsWith(mesRef) && !vencidoPendente) return false;
+      }
+      return true;
+    }).sort((a, b) => {
+      // vencidos pendentes primeiro, depois por data de vencimento
+      const av = a.status === 'pendente' && a.vencimento < today ? 0 : 1;
+      const bv = b.status === 'pendente' && b.vencimento < today ? 0 : 1;
+      return av - bv || a.vencimento.localeCompare(b.vencimento);
+    });
+  }, [entries, kind, status, periodo, mesRef]);
 
   // KPIs (somente lançamentos não cancelados)
   const kpis = useMemo(() => {
@@ -86,8 +109,8 @@ export function Finance(): React.JSX.Element {
   const remove = async (e: FinanceEntry): Promise<void> => {
     const before = entries;
     setEntries((xs) => xs.filter((x) => x.id !== e.id));
-    try { await api.del(`/api/finance/${e.id}`); }
-    catch { setEntries(before); alert('Não foi possível excluir o lançamento.'); }
+    try { await api.del(`/api/finance/${e.id}`); toast.success('Lançamento excluído.'); }
+    catch { setEntries(before); toast.error('Não foi possível excluir o lançamento.'); }
   };
   const liquidar = async (e: FinanceEntry): Promise<void> => {
     const next = e.status === 'liquidado' ? 'pendente' : 'liquidado';
@@ -98,7 +121,8 @@ export function Finance(): React.JSX.Element {
         status: next, liquidacao_data: next === 'liquidado' ? todayStr() : null,
       });
       void load();
-    } catch { setEntries(before); alert('Não foi possível atualizar o lançamento.'); }
+      toast.success(next === 'liquidado' ? 'Lançamento liquidado.' : 'Lançamento reaberto.');
+    } catch { setEntries(before); toast.error('Não foi possível atualizar o lançamento.'); }
   };
 
   return (
@@ -131,14 +155,29 @@ export function Finance(): React.JSX.Element {
           { value: 'receber', label: 'A receber', icon: 'arrowDown' },
           { value: 'pagar', label: 'A pagar', icon: 'arrowUp' },
         ]} />
-        <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}
-          className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
-          <option value="todos">Todos os status</option>
-          <option value="pendente">Pendentes</option>
-          <option value="liquidado">Liquidados</option>
-          <option value="cancelado">Cancelados</option>
-        </select>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Filtrar por status"
+            className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
+            <option value="todos">Todos os status</option>
+            <option value="pendente">Pendentes</option>
+            <option value="liquidado">Liquidados</option>
+            <option value="cancelado">Cancelados</option>
+          </select>
+          <select value={periodo} onChange={(e) => setPeriodo(e.target.value as typeof periodo)} aria-label="Período"
+            className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
+            <option value="mes">Por mês</option>
+            <option value="todos">Todo período</option>
+          </select>
+          {periodo === 'mes' && (
+            <input type="month" value={mesRef} onChange={(e) => setMesRef(e.target.value)} aria-label="Mês de referência"
+              className="rounded-lg border border-ink-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400" />
+          )}
+        </div>
       </Card>
+
+      {periodo === 'mes' && !loading && filtered.length > 0 && (
+        <p className="-mt-1 px-1 text-xs text-ink-400">Exibindo {mesLabel(mesRef)} · vencidos pendentes sempre incluídos.</p>
+      )}
 
       {loading ? (
         <Spinner />
@@ -175,7 +214,7 @@ function Row({ e, onEdit, onRemove, onLiquidar }: {
   const recorrente = e.recorrencia === 'mensal' || e.recorrencia_origem_id != null;
   const categoria = e.categoria_nome ?? e.categoria;
   return (
-    <Card className="flex items-center gap-3 p-3">
+    <Card className={cn('flex items-center gap-3 p-3', vencido && 'border-l-4 border-l-rose-500')}>
       <button onClick={onLiquidar} title={e.status === 'liquidado' ? 'Reabrir' : 'Marcar liquidado'}
         className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl transition',
           e.status === 'liquidado' ? 'bg-emerald-500 text-white'
@@ -203,6 +242,7 @@ function Row({ e, onEdit, onRemove, onLiquidar }: {
           {receber ? '+' : '−'} {brl(Number(e.valor))}
         </span>
         <Badge tone={vencido ? 'danger' : STATUS_META[e.status]!.tone}>
+          {vencido && <Icon name="alertTriangle" size={11} />}
           {vencido ? 'Vencido' : STATUS_META[e.status]!.label}
         </Badge>
       </div>
@@ -358,7 +398,8 @@ function CategoriesModal({ categories, onClose, onChanged }: {
       await api.post('/api/finance/categories', { nome: nome.trim(), grupo_dre: grupo.trim() || null, kind: kind || null });
       setNome(''); setGrupo(''); setKind('');
       onChanged();
-    } catch (err) { alert(err instanceof Error ? err.message : 'Não foi possível criar a categoria.'); }
+      toast.success('Categoria criada.');
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não foi possível criar a categoria.'); }
     finally { setBusy(false); }
   };
   const remove = async (c: FinanceCategory): Promise<void> => {
@@ -435,7 +476,9 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
   const submit = async (ev: React.FormEvent): Promise<void> => {
     ev.preventDefault();
     const v = Number(valor.replace(',', '.'));
-    if (!descricao || !vencimento || !Number.isFinite(v) || v <= 0) return;
+    if (!descricao.trim()) { toast.error('Informe a descrição.'); return; }
+    if (!vencimento) { toast.error('Informe o vencimento.'); return; }
+    if (!Number.isFinite(v) || v <= 0) { toast.error('Informe um valor maior que zero.'); return; }
     setBusy(true);
     try {
       const body = {
@@ -451,8 +494,10 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
       };
       if (entry) await api.patch(`/api/finance/${entry.id}`, body);
       else await api.post('/api/finance', body);
+      toast.success(entry ? 'Lançamento salvo.' : 'Lançamento criado.');
       onSaved();
-    } finally { setBusy(false); }
+    } catch (err) { toast.error(err instanceof Error ? err.message : 'Não foi possível salvar o lançamento.'); }
+    finally { setBusy(false); }
   };
 
   const sel = (val: number | null, set: (n: number | null) => void, opts: Opt[], placeholder: string): React.JSX.Element => (

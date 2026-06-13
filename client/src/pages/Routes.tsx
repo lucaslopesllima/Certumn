@@ -6,6 +6,40 @@ import type { FunnelCompany, Vehicle, OptimizeResult, SavedRoute } from '../lib/
 import { Btn, Badge, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
+
+// Modal genérico de entrada — substitui window.prompt nativo nas rotas (nome,
+// data, valor de despesa). Prefill visível, validação e visual da app.
+type PromptKind = 'text' | 'date' | 'decimal';
+interface PromptState { title: string; label: string; kind: PromptKind; initial: string; confirmLabel: string; placeholder?: string; onConfirm: (v: string) => void }
+
+function PromptModal({ state, onClose }: { state: PromptState; onClose: () => void }): React.JSX.Element {
+  const [val, setVal] = useState(state.initial);
+  const submit = (e: React.FormEvent): void => { e.preventDefault(); onClose(); state.onConfirm(val); };
+  return (
+    <div className="fixed inset-0 z-[2000] grid place-items-center bg-ink-950/40 p-4" onClick={onClose}>
+      <Card className="w-full max-w-sm p-4 shadow-pop">
+        <div onClick={(e) => e.stopPropagation()}>
+          <h3 className="mb-3 text-sm font-bold text-ink-900">{state.title}</h3>
+          <form onSubmit={submit} className="space-y-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold text-ink-600">{state.label}</span>
+              <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
+                type={state.kind === 'date' ? 'date' : 'text'}
+                inputMode={state.kind === 'decimal' ? 'decimal' : undefined}
+                placeholder={state.placeholder}
+                className="w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
+            </label>
+            <div className="flex justify-end gap-2">
+              <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
+              <Btn icon="check" type="submit">{state.confirmLabel}</Btn>
+            </div>
+          </form>
+        </div>
+      </Card>
+    </div>
+  );
+}
 
 const km = (n: number | null): string => (n == null ? '—' : `${n.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} km`);
 const dur = (min: number | null): string => {
@@ -37,6 +71,9 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
   const [err, setErr] = useState('');
   const [result, setResult] = useState<OptimizeResult | null>(null);
   const [saved, setSaved] = useState<SavedRoute[]>([]);
+  const [prompt, setPrompt] = useState<PromptState | null>(null);
+  const nomePadraoData = (): string => new Date().toLocaleDateString('pt-BR');
+  const hojeIso = (): string => new Date().toISOString().slice(0, 10);
 
   const reloadSaved = (): void => {
     void api.get<{ routes: SavedRoute[] }>('/api/routes').then((r) => setSaved(r.routes)).catch(() => undefined);
@@ -75,16 +112,27 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
       };
       const r = await api.post<OptimizeResult>('/api/routes/optimize', body);
       setResult(r);
-      if (r.skipped.length > 0) setErr(`${r.skipped.length} empresa(s) sem localização foram ignoradas.`);
+      if (r.skipped.length > 0) {
+        const nomes = r.skipped
+          .map((id) => { const c = funnel.find((x) => x.company_id === id); return c ? (c.nome_fantasia || c.razao_social) : null; })
+          .filter(Boolean);
+        setErr(`Sem localização, ignorada(s): ${nomes.length ? nomes.join(', ') : `${r.skipped.length} empresa(s)`}.`);
+      }
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Falha ao calcular a rota.');
     } finally { setBusy(false); }
   };
 
-  const save = async (): Promise<void> => {
+  const save = (): void => {
     if (!result) return;
-    const nome = window.prompt('Nome da rota:', `Rota ${new Date().toLocaleDateString('pt-BR')}`);
-    if (!nome) return;
+    setPrompt({
+      title: 'Salvar rota', label: 'Nome da rota', kind: 'text', confirmLabel: 'Salvar',
+      initial: `Rota ${nomePadraoData()}`,
+      onConfirm: (nome) => { if (nome.trim()) void doSave(nome.trim()); },
+    });
+  };
+  const doSave = async (nome: string): Promise<void> => {
+    if (!result) return;
     setBusy(true); setErr('');
     try {
       await api.post('/api/routes', {
@@ -100,28 +148,37 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
         })),
       });
       reloadSaved();
+      toast.success('Rota salva.');
     } catch (e) {
-      setErr(e instanceof ApiError ? e.message : 'Falha ao salvar a rota.');
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao salvar a rota.');
     } finally { setBusy(false); }
   };
 
   const delSaved = async (id: number): Promise<void> => {
     if (!window.confirm('Excluir esta rota?')) return;
-    await api.del(`/api/routes/${id}`).catch(() => undefined);
+    try { await api.del(`/api/routes/${id}`); toast.success('Rota excluída.'); }
+    catch { toast.error('Não foi possível excluir a rota.'); }
     reloadSaved();
   };
 
   // Fase 5.3 — reusar: re-otimiza as paradas (empresas podem ter mudado) e
   // salva uma rota nova.
-  const reuse = async (r: SavedRoute): Promise<void> => {
-    const nome = window.prompt('Nome da nova rota:', `${r.nome} (${new Date().toLocaleDateString('pt-BR')})`);
-    if (!nome) return;
+  const reuse = (r: SavedRoute): void => {
+    setPrompt({
+      title: 'Reusar rota', label: 'Nome da nova rota', kind: 'text', confirmLabel: 'Reusar',
+      initial: `${r.nome} (${nomePadraoData()})`,
+      onConfirm: (nome) => { if (nome.trim()) void doReuse(r, nome.trim()); },
+    });
+  };
+  const doReuse = async (r: SavedRoute, nome: string): Promise<void> => {
     try {
       const out = await api.post<{ skipped: number[] }>(`/api/routes/${r.id}/reuse`, { nome });
       reloadSaved();
-      if (out.skipped.length) window.alert(`Rota criada — ${out.skipped.length} empresa(s) sem localização ignorada(s).`);
+      toast.success(out.skipped.length
+        ? `Rota criada — ${out.skipped.length} empresa(s) sem localização ignorada(s).`
+        : 'Rota criada.');
     } catch (e) {
-      window.alert(e instanceof ApiError ? e.message : 'Falha ao reusar a rota.');
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao reusar a rota.');
     }
   };
 
@@ -138,28 +195,37 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
   };
 
   // Fase 5.2 inverso — cria um compromisso de visita por parada.
-  const agendar = async (r: SavedRoute): Promise<void> => {
-    const d = window.prompt('Data da rota (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (!d) return;
+  const agendar = (r: SavedRoute): void => {
+    setPrompt({
+      title: 'Agendar visitas', label: 'Data da rota', kind: 'date', confirmLabel: 'Criar compromissos',
+      initial: hojeIso(),
+      onConfirm: (d) => { if (d) void doAgendar(r, d); },
+    });
+  };
+  const doAgendar = async (r: SavedRoute, d: string): Promise<void> => {
     try {
       const out = await api.post<{ created: number }>(`/api/routes/${r.id}/agenda`, { start_at: `${d}T08:00:00` });
-      window.alert(`${out.created} compromisso(s) criado(s) na Agenda.`);
+      toast.success(`${out.created} compromisso(s) criado(s) na Agenda.`);
     } catch (e) {
-      window.alert(e instanceof ApiError ? e.message : 'Falha ao criar compromissos.');
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao criar compromissos.');
     }
   };
 
   // Fase 6.1 — lança a despesa de viagem (combustível) da rota no financeiro.
-  const lancarCusto = async (r: SavedRoute): Promise<void> => {
-    const sugestao = r.custo_total != null ? String(Number(r.custo_total)) : '';
-    const raw = window.prompt('Valor da despesa de viagem (R$):', sugestao);
-    if (raw === null) return;
+  const lancarCusto = (r: SavedRoute): void => {
+    setPrompt({
+      title: 'Lançar despesa de viagem', label: 'Valor (R$)', kind: 'decimal', confirmLabel: 'Lançar no Financeiro',
+      initial: r.custo_total != null ? String(Number(r.custo_total)) : '', placeholder: 'ex.: 120,00',
+      onConfirm: (raw) => void doLancarCusto(r, raw),
+    });
+  };
+  const doLancarCusto = async (r: SavedRoute, raw: string): Promise<void> => {
     const valor = raw.trim() === '' ? undefined : Number(raw.replace(',', '.'));
     try {
       await api.post(`/api/routes/${r.id}/expense`, valor != null ? { valor } : {});
-      window.alert('Despesa de viagem lançada no Financeiro.');
+      toast.success('Despesa de viagem lançada no Financeiro.');
     } catch (e) {
-      window.alert(e instanceof ApiError ? e.message : 'Falha ao lançar a despesa.');
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao lançar a despesa.');
     }
   };
 
@@ -263,6 +329,10 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                   ))}
                 </MapContainer>
               </div>
+              <div className="flex items-center gap-4 border-t border-ink-100 px-4 py-2 text-[11px] text-ink-500">
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-ink-900" /> Origem</span>
+                <span className="inline-flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-emerald-600" /> Paradas (na ordem 1, 2, 3…)</span>
+              </div>
             </Card>
 
             <Card className="p-0">
@@ -331,6 +401,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
           </Card>
         )}
       </div>
+      {prompt && <PromptModal state={prompt} onClose={() => setPrompt(null)} />}
     </div>
   );
 }
@@ -369,6 +440,7 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
       if (editId != null) await api.patch(`/api/vehicles/${editId}`, body);
       else await api.post('/api/vehicles', body);
       cancel(); reload();
+      toast.success(editId != null ? 'Veículo salvo.' : 'Veículo criado.');
     } catch (e) {
       setErr(e instanceof ApiError ? e.message : 'Falha ao salvar veículo.');
     } finally { setBusy(false); }
@@ -376,7 +448,8 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
 
   const remove = async (id: number): Promise<void> => {
     if (!window.confirm('Remover este veículo?')) return;
-    await api.del(`/api/vehicles/${id}`).catch(() => undefined);
+    try { await api.del(`/api/vehicles/${id}`); toast.success('Veículo removido.'); }
+    catch { toast.error('Não foi possível remover o veículo.'); }
     if (editId === id) cancel();
     reload();
   };

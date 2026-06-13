@@ -10,6 +10,7 @@ import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { Cnae } from '../lib/cnae.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
+import { toast } from '../lib/toast.tsx';
 
 const MATCH_COLOR: Record<string, string> = {
   classe: '#039855', divisao: '#0284c7', secao: '#12b76a', nenhum: '#94a3b8',
@@ -156,7 +157,7 @@ export function Recommend(): React.JSX.Element {
 
   // Rota (OSRM público) da localização atual do rep até a empresa escolhida.
   const traceRoute = async (rec: Recommendation): Promise<void> => {
-    if (rec.lat == null || rec.lon == null) { alert('Empresa sem localização geográfica.'); return; }
+    if (rec.lat == null || rec.lon == null) { toast.error('Empresa sem localização geográfica.'); return; }
     setRoutingId(rec.id);
     try {
       // origem = endereço do usuário logado (org) no banco, geocodificado;
@@ -168,7 +169,7 @@ export function Recommend(): React.JSX.Element {
       } catch { /* ignora, tenta fallback */ }
       if (!o) o = origemFixa;
       if (!o) {
-        if (!navigator.geolocation) { alert('Cadastre seu endereço em Configurações (conta) para traçar rotas.'); return; }
+        if (!navigator.geolocation) { toast.error('Cadastre seu endereço em Configurações (conta) para traçar rotas.'); return; }
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
           navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 }));
         o = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -177,7 +178,7 @@ export function Recommend(): React.JSX.Element {
       const url = `https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=full&geometries=geojson`;
       const resp = await fetch(url);
       const j = await resp.json() as { code: string; routes?: { distance: number; duration: number; geometry: { coordinates: [number, number][] } }[] };
-      if (j.code !== 'Ok' || !j.routes?.length) { alert('Não foi possível traçar a rota.'); return; }
+      if (j.code !== 'Ok' || !j.routes?.length) { toast.error('Não foi possível traçar a rota.'); return; }
       const rt = j.routes[0]!;
       setRoute({
         destId: rec.id,
@@ -189,7 +190,7 @@ export function Recommend(): React.JSX.Element {
       setView('mapa');
       setFocus(null);
     } catch (e) {
-      alert(e instanceof GeolocationPositionError ? 'Permissão de localização negada.' : 'Falha ao traçar rota.');
+      toast.error(e instanceof GeolocationPositionError ? 'Permissão de localização negada.' : 'Falha ao traçar rota.');
     } finally { setRoutingId(null); }
   };
 
@@ -254,13 +255,14 @@ export function Recommend(): React.JSX.Element {
     try {
       await api.post('/api/relationships', { company_id: Number(rec.id) });
       setAdded((s) => new Set(s).add(rec.id));
+      toast.success(`${rec.nome_fantasia || rec.razao_social} adicionada ao funil.`);
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message || 'Não foi possível adicionar ao funil.');
     }
   };
 
   const verNoMapa = async (rec: Recommendation): Promise<void> => {
-    if (rec.lat == null || rec.lon == null) { alert('Empresa sem localização geográfica.'); return; }
+    if (rec.lat == null || rec.lon == null) { toast.error('Empresa sem localização geográfica.'); return; }
     setView('mapa');
     const g = await geocodeRec(rec); // pino exato (geocode do endereço)
     setFocus({ id: rec.id, lat: g.lat, lon: g.lon });
