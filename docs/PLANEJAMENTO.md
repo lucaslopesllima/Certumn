@@ -252,7 +252,17 @@ export CSV abre no Excel com acentuação correta (BOM UTF-8).
 
 ---
 
-## Fase 5 — Campo: check-in, rota da agenda, PWA (3 sem)
+## Fase 5 — Campo: check-in, rota da agenda, PWA (3 sem) ✅ CONCLUÍDA
+
+> Implementada em `feature/fase0-fundacao` (jun/2026). Migration: 032_fase5_campo.sql
+> (activities += checkin_lat/lon/at + relatorio jsonb; routes += template/recorrencia).
+> Backend: `POST /api/activities/:id/checkin` e `/report` (relatório marca feito + baixa
+> data_contato do funil); planejador refatorado em `computeRoute`/`persistRoute` reusados por
+> `POST /api/routes/:id/reuse` (re-otimiza template) e `/agenda` (1 visita por parada).
+> `PATCH /api/routes/:id` marca template/recorrência. Frontend: `VisitModal` (check-in geo +
+> relatório) na Agenda, "Gerar rota do dia" no modal do dia, ações reusar/template/agendar nas
+> rotas salvas. PWA via `vite-plugin-pwa` (manifest + SW, NetworkFirst em activities/routes) e
+> fila offline em `lib/offline.ts` (IndexedDB) p/ check-in/relatório, com flush ao reconectar.
 
 ### 5.1 Check-in de visita
 - **Migration**: `activities` ganha `checkin_lat`, `checkin_lon`, `checkin_at`,
@@ -331,7 +341,7 @@ notificações relevantes.
 
 ## Convenções para todas as fases
 
-1. **Migrations**: numeração sequencial contínua (próxima livre: 030), idempotentes,
+1. **Migrations**: numeração sequencial contínua (próxima livre: 033), idempotentes,
    rodadas pelo runner existente (`scripts/migrate.ts`).
 2. **Tenant**: toda tabela nova tem `org_id` + índice `(org_id, ...)`; toda query filtra org.
 3. **Ownership**: toda entidade operacional nova tem `owner_user_id`/`user_id`.

@@ -123,3 +123,61 @@ describe('RoutePlanner', () => {
     expect(await screen.findByText(/Fiorino/)).toBeInTheDocument();
   });
 });
+
+// Fase 5: ações nas rotas salvas (reusar, criar compromissos, template).
+const SAVED = [{
+  id: 7, nome: 'Rota seg', vehicle_id: null, veiculo: null,
+  dist_km: '24.6', dur_min: '41', litros: '2', custo_total: '13.4',
+  template: false, recorrencia: null, created_at: '2026-06-01', paradas: '2',
+}];
+
+describe('RoutePlanner: rotas salvas (Fase 5)', () => {
+  beforeEach(() => {
+    m.get.mockImplementation(async (p: string) => {
+      if (p.startsWith('/api/relationships')) return { relationships: FUNNEL };
+      if (p === '/api/vehicles') return { vehicles: VEHICLES };
+      if (p === '/api/routes') return { routes: SAVED };
+      return {};
+    });
+    vi.mocked(m.patch).mockReset();
+    vi.stubGlobal('alert', vi.fn());
+  });
+
+  it('reusar: pede nome e chama /reuse', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => 'Rota nova'));
+    m.post.mockResolvedValueOnce({ skipped: [] });
+    render(<RoutePlanner />);
+    await screen.findByText('Rota seg');
+    await userEvent.click(screen.getByRole('button', { name: 'Reusar rota' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/routes/7/reuse', { nome: 'Rota nova' }));
+  });
+
+  it('criar compromissos: pede data e chama /agenda', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => '2026-07-01'));
+    m.post.mockResolvedValueOnce({ created: 2 });
+    render(<RoutePlanner />);
+    await screen.findByText('Rota seg');
+    await userEvent.click(screen.getByRole('button', { name: 'Criar compromissos' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/routes/7/agenda', { start_at: '2026-07-01T08:00:00' }));
+  });
+
+  it('marcar template: faz PATCH e atualiza o estado local (sem refetch da lista)', async () => {
+    m.patch.mockResolvedValueOnce({ route: { template: true } });
+    render(<RoutePlanner />);
+    await screen.findByText('Rota seg');
+    await userEvent.click(screen.getByRole('button', { name: 'Marcar como template' }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/routes/7', { template: true }));
+    // o badge "Template" aparece a partir do retorno do PATCH, sem refetch:
+    // GET /api/routes só foi chamado no mount (1x), não após o toggle.
+    expect(await screen.findByText('Template')).toBeInTheDocument();
+    expect(m.get.mock.calls.filter((c: unknown[]) => c[0] === '/api/routes')).toHaveLength(1);
+  });
+
+  it('reusar cancelado (prompt vazio) não chama API', async () => {
+    vi.stubGlobal('prompt', vi.fn(() => null));
+    render(<RoutePlanner />);
+    await screen.findByText('Rota seg');
+    await userEvent.click(screen.getByRole('button', { name: 'Reusar rota' }));
+    expect(m.post).not.toHaveBeenCalledWith(expect.stringContaining('/reuse'), expect.anything());
+  });
+});

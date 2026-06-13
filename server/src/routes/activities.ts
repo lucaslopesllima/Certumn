@@ -3,6 +3,7 @@ import { one, query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
 import { scopeOwner, canWriteOwned, invalidOwnerAssignment } from '../scope.ts';
+import { audit } from '../audit.ts';
 
 // Lightweight agenda (no real-time). All rows scoped by org_id.
 // Fase 3: rep vê/edita só os próprios compromissos; admin tudo + filtro.
@@ -31,6 +32,7 @@ export function activityRoutes(app: FastifyInstance): void {
     if (status) { params.push(status); where.push(`a.status = $${params.length}::activity_status`); }
     const rows = await query(
       `SELECT a.id, a.tipo, a.titulo, a.start_at, a.end_at, a.owner_user_id, a.company_id, a.status,
+              a.checkin_lat, a.checkin_lon, a.checkin_at, a.relatorio,
               c.razao_social
        FROM activities a
        LEFT JOIN companies c ON c.id = a.company_id
@@ -141,5 +143,87 @@ export function activityRoutes(app: FastifyInstance): void {
     const rows = await query('DELETE FROM activities WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
     return { deleted: true };
+  });
+
+  // Fase 5 — check-in de visita: grava a geolocalização do navegador na hora.
+  app.post('/api/activities/:id/checkin', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        required: ['lat', 'lon'],
+        properties: { lat: { type: 'number' }, lon: { type: 'number' } },
+      },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const { lat, lon } = req.body as { lat: number; lon: number };
+    const current = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM activities WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!current) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
+      return reply.code(403).send({ error: 'compromisso de outro vendedor' });
+    }
+    const rows = await query(
+      `UPDATE activities SET checkin_lat = $1, checkin_lon = $2, checkin_at = now()
+       WHERE id = $3 AND org_id = $4
+       RETURNING id, checkin_lat, checkin_lon, checkin_at`,
+      [lat, lon, id, orgId],
+    );
+    await audit(req, 'activity', id, 'checkin', { lat, lon });
+    return { activity: rows[0] };
+  });
+
+  // Fase 5 — relatório pós-visita: formulário curto (resultado, próximo passo,
+  // texto). Atualiza data_contato do relationship vinculado (zera o alerta de
+  // inatividade da Fase 4) e marca o compromisso como feito.
+  app.post('/api/activities/:id/report', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        required: ['resultado'],
+        properties: {
+          resultado: { type: 'string', minLength: 1 },
+          proximo_passo: { type: ['string', 'null'] },
+          texto: { type: ['string', 'null'] },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const b = req.body as { resultado: string; proximo_passo?: string | null; texto?: string | null };
+    const current = await one<{ owner_user_id: string | null; company_id: string | null }>(
+      'SELECT owner_user_id, company_id FROM activities WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!current) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
+      return reply.code(403).send({ error: 'compromisso de outro vendedor' });
+    }
+    const relatorio = {
+      resultado: b.resultado,
+      proximo_passo: b.proximo_passo ?? null,
+      texto: b.texto ?? null,
+    };
+    const rows = await query(
+      `UPDATE activities SET relatorio = $1, status = 'feito'
+       WHERE id = $2 AND org_id = $3
+       RETURNING id, status, relatorio`,
+      [JSON.stringify(relatorio), id, orgId],
+    );
+    // Visita registrada vira "último contato" do cliente no funil.
+    if (current.company_id != null) {
+      await query(
+        'UPDATE company_relationships SET data_contato = current_date, updated_at = now() WHERE org_id = $1 AND company_id = $2',
+        [orgId, Number(current.company_id)],
+      );
+    }
+    await audit(req, 'activity', id, 'report', relatorio);
+    return { activity: rows[0] };
   });
 }

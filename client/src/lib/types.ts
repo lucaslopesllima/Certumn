@@ -118,9 +118,12 @@ export interface Relationship {
   valor_estimado: string | null; notas: string | null; razao_social: string;
 }
 
+export interface VisitReport { resultado: string; proximo_passo: string | null; texto: string | null }
 export interface Activity {
   id: number; tipo: string; titulo: string; start_at: string; end_at: string | null;
   company_id: number | null; status: string; razao_social: string | null;
+  checkin_lat?: number | null; checkin_lon?: number | null; checkin_at?: string | null;
+  relatorio?: VisitReport | null;
 }
 
 export interface Vehicle {
@@ -153,7 +156,8 @@ export interface OptimizeResult {
 export interface SavedRoute {
   id: number; nome: string; vehicle_id: number | null; veiculo: string | null;
   dist_km: string | null; dur_min: string | null; litros: string | null;
-  custo_total: string | null; created_at: string; paradas: string;
+  custo_total: string | null; template?: boolean; recorrencia?: string | null;
+  created_at: string; paradas: string;
 }
 
 export interface PriceTableItem {

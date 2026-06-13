@@ -180,4 +180,84 @@ describe('metas (goals)', () => {
     expect((await inj(a, 'POST', '/api/goals', { user_id: repId2, competencia: '2026-06', valor_meta: 5000 })).statusCode).toBe(201);
     expect((await inj(a, 'POST', '/api/goals', { user_id: repId2, competencia: '2026-06', valor_meta: 6000 })).statusCode).toBe(409);
   });
+
+  it('GET lista, PATCH e DELETE de meta (admin); 404 quando inexistente', async () => {
+    const criar = await inj(a, 'POST', '/api/goals', { user_id: repId1, competencia: '2026-09', valor_meta: 3000 });
+    const id = Number((criar.json() as { goal: { id: number } }).goal.id);
+
+    const lista = (await inj(a, 'GET', '/api/goals?competencia=2026-09')).json() as { goals: { id: number }[] };
+    expect(lista.goals.some((g) => Number(g.id) === id)).toBe(true);
+
+    const up = await inj(a, 'PATCH', `/api/goals/${id}`, { valor_meta: 4000 });
+    expect(up.statusCode).toBe(200);
+    expect(Number((up.json() as { goal: { valor_meta: string } }).goal.valor_meta)).toBe(4000);
+    expect((await inj(a, 'PATCH', '/api/goals/99999999', { valor_meta: 1 })).statusCode).toBe(404);
+
+    expect((await inj(a, 'DELETE', `/api/goals/${id}`)).statusCode).toBe(200);
+    expect((await inj(a, 'DELETE', '/api/goals/99999999')).statusCode).toBe(404);
+  });
+
+  it('erro de banco não-único (overflow numeric) propaga 500', async () => {
+    // valor_meta numeric(14,2) estoura -> erro != 23505 -> throw e -> 500
+    expect((await inj(a, 'POST', '/api/goals', { user_id: repId1, competencia: '2026-12', valor_meta: 1e15 })).statusCode).toBe(500);
+  });
+});
+
+// ── Caminhos de dono/role exercitados por rep na MESMA org (403/404 que o
+// teste cross-org não alcança), além de branches de config e nullVisible.
+describe('RBAC de carteira: rep não mexe em recurso de outro dono', () => {
+  it('atividade: rep não edita/apaga/check-in/relatório de atividade alheia; não atribui a outro', async () => {
+    // atividade do admin (dono = admin) na org A
+    const act = await inj(a, 'POST', '/api/activities', { titulo: 'Do admin', start_at: '2026-06-10T10:00:00Z' });
+    const id = Number((act.json() as { activity: { id: number } }).activity.id);
+
+    expect((await inj(rep1, 'PATCH', `/api/activities/${id}`, { titulo: 'x' })).statusCode).toBe(403);
+    expect((await inj(rep1, 'DELETE', `/api/activities/${id}`)).statusCode).toBe(403);
+    expect((await inj(rep1, 'POST', `/api/activities/${id}/checkin`, { lat: 0, lon: 0 })).statusCode).toBe(403);
+    expect((await inj(rep1, 'POST', `/api/activities/${id}/report`, { resultado: 'x' })).statusCode).toBe(403);
+
+    // rep não cria/edita atribuindo a outro vendedor
+    expect((await inj(rep1, 'POST', '/api/activities', { titulo: 'inv', start_at: '2026-06-10T10:00:00Z', owner_user_id: repId2 })).statusCode).toBe(403);
+    const minha = await inj(rep1, 'POST', '/api/activities', { titulo: 'minha', start_at: '2026-06-10T10:00:00Z' });
+    const myId = Number((minha.json() as { activity: { id: number } }).activity.id);
+    expect((await inj(rep1, 'PATCH', `/api/activities/${myId}`, { owner_user_id: repId2 })).statusCode).toBe(403);
+  });
+
+  it('veículo: rep não edita/apaga veículo de outro vendedor', async () => {
+    const v = await inj(rep2, 'POST', '/api/vehicles', { nome: 'Carro rep2', consumo_kml: 10 });
+    const vid = Number((v.json() as { vehicle: { id: number } }).vehicle.id);
+    expect((await inj(rep1, 'PATCH', `/api/vehicles/${vid}`, { nome: 'invado' })).statusCode).toBe(403);
+    expect((await inj(rep1, 'DELETE', `/api/vehicles/${vid}`)).statusCode).toBe(403);
+  });
+
+  it('rota: rep não lê/edita/reusa/agenda/apaga rota de outro vendedor; rep lista as próprias', async () => {
+    const company = await makeCompany({ municipioId: 3550308, lat: -23.5, lon: -46.6 });
+    const saved = await inj(rep2, 'POST', '/api/routes', {
+      nome: 'Rota rep2', origem_lat: -23.5, origem_lon: -46.6,
+      stops: [{ company_id: company, seq: 0, lat: -23.6, lon: -46.7 }],
+    });
+    expect(saved.statusCode).toBe(201);
+    const rid = Number((saved.json() as { route: { id: number } }).route.id);
+
+    expect((await inj(rep1, 'GET', `/api/routes/${rid}`)).statusCode).toBe(404);
+    expect((await inj(rep1, 'PATCH', `/api/routes/${rid}`, { template: true })).statusCode).toBe(403);
+    expect((await inj(rep1, 'POST', `/api/routes/${rid}/reuse`, {})).statusCode).toBe(404);
+    expect((await inj(rep1, 'POST', `/api/routes/${rid}/agenda`, { start_at: '2026-07-01T08:00:00Z' })).statusCode).toBe(404);
+    expect((await inj(rep1, 'DELETE', `/api/routes/${rid}`)).statusCode).toBe(403);
+
+    // rep lista as próprias rotas (cobre o ramo nullVisible do scope)
+    const lista = (await inj(rep2, 'GET', '/api/routes')).json() as { routes: { id: number }[] };
+    expect(lista.routes.some((x) => Number(x.id) === rid)).toBe(true);
+  });
+
+  it('relationship: rep não reatribui a própria carteira a outro vendedor', async () => {
+    const r = await mkRel(rep1);
+    expect((await inj(rep1, 'PATCH', `/api/relationships/${r}`, { owner_user_id: repId2 })).statusCode).toBe(403);
+  });
+
+  it('config de alertas (inatividade_dias): só admin; transfer com mesmo usuário -> 400', async () => {
+    expect((await inj(rep1, 'PATCH', '/api/account', { inatividade_dias: 45 })).statusCode).toBe(403);
+    expect((await inj(a, 'PATCH', '/api/account', { inatividade_dias: 45 })).statusCode).toBe(200);
+    expect((await inj(a, 'POST', '/api/relationships/transfer', { from_user_id: repId1, to_user_id: repId1 })).statusCode).toBe(400);
+  });
 });

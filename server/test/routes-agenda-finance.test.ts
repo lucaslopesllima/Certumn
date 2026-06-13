@@ -67,6 +67,53 @@ describe('activities', () => {
   });
 });
 
+describe('check-in e relatório de visita (Fase 5)', () => {
+  it('check-in grava geo; alheio 404/403', async () => {
+    const act = (await inj(a, 'POST', '/api/activities',
+      { titulo: 'Visita check-in', start_at: '2026-06-12T09:00:00Z', company_id: companyId })).json() as { activity: { id: number } };
+    const id = act.activity.id;
+
+    const ok = await inj(a, 'POST', `/api/activities/${id}/checkin`, { lat: -23.5, lon: -46.6 });
+    expect(ok.statusCode).toBe(200);
+    expect((ok.json() as { activity: { checkin_lat: number } }).activity.checkin_lat).toBe(-23.5);
+
+    // aparece no GET com checkin_at
+    const list = await inj(a, 'GET', '/api/activities');
+    const got = (list.json() as { activities: { id: number; checkin_at: string | null }[] }).activities.find((x) => x.id === id);
+    expect(got?.checkin_at).not.toBeNull();
+
+    // outra org não acha
+    expect((await inj(b, 'POST', `/api/activities/${id}/checkin`, { lat: 0, lon: 0 })).statusCode).toBe(404);
+  });
+
+  it('relatório marca feito e atualiza data_contato do funil', async () => {
+    const company = await makeCompany();
+    // empresa no funil de A para checar a baixa de data_contato
+    const rel = await inj(a, 'POST', '/api/relationships', { company_id: company });
+    expect(rel.statusCode).toBe(201);
+
+    const act = (await inj(a, 'POST', '/api/activities',
+      { titulo: 'Visita relatório', start_at: '2026-06-12T11:00:00Z', company_id: company })).json() as { activity: { id: number } };
+    const id = act.activity.id;
+
+    const r = await inj(a, 'POST', `/api/activities/${id}/report`,
+      { resultado: 'vendeu', proximo_passo: 'follow-up', texto: 'cliente fechou pedido' });
+    expect(r.statusCode).toBe(200);
+    const j = r.json() as { activity: { status: string; relatorio: { resultado: string } } };
+    expect(j.activity.status).toBe('feito');
+    expect(j.activity.relatorio.resultado).toBe('vendeu');
+
+    const dc = await query<{ data_contato: string | null }>(
+      'SELECT data_contato::text AS data_contato FROM company_relationships WHERE org_id = $1 AND company_id = $2',
+      [a.user.org_id, company]);
+    expect(dc[0]!.data_contato).not.toBeNull();
+
+    // resultado obrigatório; alheio 404
+    expect((await inj(a, 'POST', `/api/activities/${id}/report`, {})).statusCode).toBe(400);
+    expect((await inj(b, 'POST', `/api/activities/${id}/report`, { resultado: 'x' })).statusCode).toBe(404);
+  });
+});
+
 describe('finance', () => {
   it('CRUD com vínculos válidos + filtros', async () => {
     const rep = (await inj(a, 'POST', '/api/represented', { nome: 'Fornecedora' }))

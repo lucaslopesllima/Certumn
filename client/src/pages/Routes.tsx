@@ -111,6 +111,44 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
     reloadSaved();
   };
 
+  // Fase 5.3 — reusar: re-otimiza as paradas (empresas podem ter mudado) e
+  // salva uma rota nova.
+  const reuse = async (r: SavedRoute): Promise<void> => {
+    const nome = window.prompt('Nome da nova rota:', `${r.nome} (${new Date().toLocaleDateString('pt-BR')})`);
+    if (!nome) return;
+    try {
+      const out = await api.post<{ skipped: number[] }>(`/api/routes/${r.id}/reuse`, { nome });
+      reloadSaved();
+      if (out.skipped.length) window.alert(`Rota criada — ${out.skipped.length} empresa(s) sem localização ignorada(s).`);
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : 'Falha ao reusar a rota.');
+    }
+  };
+
+  // Marca/desmarca como template (rota recorrente reutilizável). O PATCH já
+  // devolve a rota atualizada — aplica no estado local em vez de refazer o GET
+  // da lista inteira.
+  const toggleTemplate = async (r: SavedRoute): Promise<void> => {
+    try {
+      const out = await api.patch<{ route?: Pick<SavedRoute, 'template'> }>(
+        `/api/routes/${r.id}`, { template: !r.template });
+      const next = out.route?.template ?? !r.template;
+      setSaved((list) => list.map((x) => (x.id === r.id ? { ...x, template: next } : x)));
+    } catch { /* falha: mantém o estado atual */ }
+  };
+
+  // Fase 5.2 inverso — cria um compromisso de visita por parada.
+  const agendar = async (r: SavedRoute): Promise<void> => {
+    const d = window.prompt('Data da rota (AAAA-MM-DD):', new Date().toISOString().slice(0, 10));
+    if (!d) return;
+    try {
+      const out = await api.post<{ created: number }>(`/api/routes/${r.id}/agenda`, { start_at: `${d}T08:00:00` });
+      window.alert(`${out.created} compromisso(s) criado(s) na Agenda.`);
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : 'Falha ao criar compromissos.');
+    }
+  };
+
   const mapPts: [number, number][] = result
     ? [[result.origem.lat, result.origem.lon], ...result.stops.map((s) => [s.lat, s.lon] as [number, number])]
     : [];
@@ -239,16 +277,32 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             <p className="border-b border-ink-100 px-4 py-3 text-sm font-semibold text-ink-700">Rotas salvas</p>
             <ul className="divide-y divide-ink-100">
               {saved.map((r) => (
-                <li key={r.id} className="flex items-center gap-3 px-4 py-2.5">
+                <li key={r.id} className="flex items-center gap-2 px-4 py-2.5">
                   <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600"><Icon name="route" size={16} /></span>
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm font-medium text-ink-800">{r.nome}</span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-medium text-ink-800">{r.nome}</span>
+                      {r.template && <Badge tone="brand">Template</Badge>}
+                    </span>
                     <span className="block truncate text-[11px] text-ink-400">
                       {r.paradas} parada(s) · {km(r.dist_km != null ? Number(r.dist_km) : null)}
                       {r.custo_total != null && ` · ${brl(Number(r.custo_total))}`}
                       {r.veiculo && ` · ${r.veiculo}`}
                     </span>
                   </span>
+                  <button onClick={() => void agendar(r)} aria-label="Criar compromissos" title="Criar compromissos na Agenda"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
+                    <Icon name="calendar" size={15} />
+                  </button>
+                  <button onClick={() => void reuse(r)} aria-label="Reusar rota" title="Reusar (re-otimizar)"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
+                    <Icon name="compass" size={15} />
+                  </button>
+                  <button onClick={() => void toggleTemplate(r)} aria-label="Marcar como template" title={r.template ? 'Desmarcar template' : 'Marcar como template'}
+                    className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-ink-100',
+                      r.template ? 'text-brand-600' : 'text-ink-400 hover:text-brand-600')}>
+                    <Icon name="layers" size={15} />
+                  </button>
                   <button onClick={() => void delSaved(r.id)} aria-label="Excluir"
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-rose-50 hover:text-rose-600">
                     <Icon name="trash" size={16} />

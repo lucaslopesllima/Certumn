@@ -371,3 +371,56 @@ describe('orders: importação de faturamento (CSV)', () => {
     expect((await inj(rep, 'POST', '/api/orders/import', { csv })).statusCode).toBe(403);
   });
 });
+
+// Erro de banco no meio da transação (overflow numeric) precisa fazer ROLLBACK
+// e propagar 500 — sem deixar pedido/itens órfãos.
+describe('orders/price-tables: ROLLBACK em erro de transação', () => {
+  const OVERFLOW = 1e15; // estoura numeric(16,2) (máx 14 dígitos inteiros)
+  let company: number;
+  beforeAll(async () => { company = await makeCompany(); await inj(a, 'POST', '/api/relationships', { company_id: company }); });
+
+  it('create: item com preço gigante -> overflow -> ROLLBACK 500, sem pedido criado', async () => {
+    const antes = (await inj(a, 'GET', '/api/orders')).json() as { orders: { id: number }[] };
+    const r = await inj(a, 'POST', '/api/orders', {
+      company_id: company, represented_id: repA,
+      items: [{ descricao: 'Estouro', qtd: 1, preco_unit: OVERFLOW }],
+    });
+    expect(r.statusCode).toBe(500);
+    const depois = (await inj(a, 'GET', '/api/orders')).json() as { orders: { id: number }[] };
+    expect(depois.orders.length).toBe(antes.orders.length); // rollback: nada criado
+  });
+
+  it('update: PATCH com price_table_id + itens válidos, depois itens com overflow -> ROLLBACK 500', async () => {
+    const ok = await inj(a, 'POST', '/api/orders', {
+      company_id: company, represented_id: repA,
+      items: [{ descricao: 'Normal', qtd: 1, preco_unit: 10 }],
+    });
+    const id = Number((ok.json() as { order: { id: number } }).order.id);
+
+    // cobre o ramo price_table_id presente no PATCH + recálculo
+    const upd = await inj(a, 'PATCH', `/api/orders/${id}`, {
+      price_table_id: null, items: [{ descricao: 'Dois', qtd: 2, preco_unit: 30 }],
+    });
+    expect(upd.statusCode).toBe(200);
+    expect(Number((upd.json() as { order: { total: string } }).order.total)).toBe(60);
+
+    const boom = await inj(a, 'PATCH', `/api/orders/${id}`, {
+      items: [{ descricao: 'Estouro', qtd: 1, preco_unit: OVERFLOW }],
+    });
+    expect(boom.statusCode).toBe(500);
+    // pedido intacto (itens antigos preservados pelo rollback)
+    const after = (await inj(a, 'GET', `/api/orders/${id}`)).json() as { order: { total: string } };
+    expect(Number(after.order.total)).toBe(60);
+  });
+
+  it('price-tables replaceItems: preço gigante -> overflow -> ROLLBACK 500', async () => {
+    const t = await mkTable(a);
+    const r = await inj(a, 'PUT', `/api/price-tables/${t.id}/items`, {
+      items: [{ catalog_item_id: prod1, preco: 1e15 }],
+    });
+    expect(r.statusCode).toBe(500);
+    // tabela continua sem itens (rollback)
+    const det = (await inj(a, 'GET', `/api/price-tables/${t.id}`)).json() as { table: { items: unknown[] } };
+    expect(det.table.items.length).toBe(0);
+  });
+});

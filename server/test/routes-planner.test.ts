@@ -196,3 +196,94 @@ describe('POST/GET/DELETE /api/routes', () => {
     expect((await inj(a, 'GET', `/api/routes/${routeId}`)).statusCode).toBe(404);
   });
 });
+
+// cria uma rota salva de A com c2,c1 e devolve o id.
+async function saveRoute(extra: Record<string, unknown> = {}): Promise<number> {
+  const r = await inj(a, 'POST', '/api/routes', {
+    nome: 'Rota base', origem_lat: -23.5, origem_lon: -46.6,
+    dist_km: 30, dur_min: 60,
+    stops: [
+      { company_id: c2, seq: 0, lat: -23.6, lon: -46.7, leg_dur_min: 21.7 },
+      { company_id: c1, seq: 1, lat: -23.55, lon: -46.63, leg_dur_min: 13 },
+    ],
+    ...extra,
+  });
+  expect(r.statusCode).toBe(201);
+  return (r.json() as { route: { id: number } }).route.id;
+}
+
+describe('PATCH /api/routes/:id + template + reuse (Fase 5.3)', () => {
+  it('marca template/recorrência; persiste e aparece no GET', async () => {
+    const id = await saveRoute();
+    const up = await inj(a, 'PATCH', `/api/routes/${id}`, { template: true, recorrencia: 'semanal-seg' });
+    expect(up.statusCode).toBe(200);
+    expect((up.json() as { route: { template: boolean } }).route.template).toBe(true);
+
+    const detail = (await inj(a, 'GET', `/api/routes/${id}`)).json() as { route: { template: boolean; recorrencia: string } };
+    expect(detail.route.template).toBe(true);
+    expect(detail.route.recorrencia).toBe('semanal-seg');
+
+    // vazio 400; alheio 404
+    expect((await inj(a, 'PATCH', `/api/routes/${id}`, {})).statusCode).toBe(400);
+    expect((await inj(b, 'PATCH', `/api/routes/${id}`, { template: false })).statusCode).toBe(404);
+  });
+
+  it('reuse re-otimiza e persiste rota nova do vendedor', async () => {
+    await setOrigem(a);
+    const id = await saveRoute();
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => osrmOk });
+
+    const r = await inj(a, 'POST', `/api/routes/${id}/reuse`, { nome: 'Rota reusada' });
+    expect(r.statusCode).toBe(201);
+    const novaId = (r.json() as { route: { id: number } }).route.id;
+    expect(novaId).not.toBe(id);
+
+    const detail = (await inj(a, 'GET', `/api/routes/${novaId}`)).json() as { route: { nome: string }; stops: { company_id: number | string }[] };
+    expect(detail.route.nome).toBe('Rota reusada');
+    // re-otimização com o mesmo mock OSRM inverte a ordem da entrada [c2,c1] -> [c1,c2]
+    expect(detail.stops.map((s) => Number(s.company_id))).toEqual([c1, c2]);
+
+    // rota de outra org -> 404
+    expect((await inj(b, 'POST', `/api/routes/${id}/reuse`, {})).statusCode).toBe(404);
+  });
+
+  it('reuse tolera veículo deletado: 201 e rota nova sem veículo', async () => {
+    await setOrigem(a);
+    const v = (await inj(a, 'POST', '/api/vehicles', { nome: 'Vai Sumir', consumo_kml: 10 }))
+      .json() as { vehicle: { id: number } };
+    const id = await saveRoute({ vehicle_id: v.vehicle.id });
+
+    // veículo excluído depois da rota salva
+    await query('DELETE FROM vehicles WHERE id = $1', [v.vehicle.id]);
+
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => osrmOk });
+    const r = await inj(a, 'POST', `/api/routes/${id}/reuse`, { nome: 'Reuse sem veículo' });
+    expect(r.statusCode).toBe(201); // não aborta com 404 "veículo não encontrado"
+    const novaId = (r.json() as { route: { id: number } }).route.id;
+
+    const detail = (await inj(a, 'GET', `/api/routes/${novaId}`)).json() as { route: { vehicle_id: number | null } };
+    expect(detail.route.vehicle_id).toBeNull();
+  });
+});
+
+describe('POST /api/routes/:id/agenda (Fase 5.2 inverso)', () => {
+  it('cria uma visita por parada com horário sequencial', async () => {
+    const id = await saveRoute();
+    const r = await inj(a, 'POST', `/api/routes/${id}/agenda`, { start_at: '2026-07-01T08:00:00Z' });
+    expect(r.statusCode).toBe(201);
+    expect((r.json() as { created: number }).created).toBe(2);
+
+    const list = await inj(a, 'GET', '/api/activities?from=2026-07-01T00:00:00Z&to=2026-07-02T00:00:00Z');
+    const visitas = (list.json() as { activities: { tipo: string; company_id: number | string | null }[] }).activities
+      .filter((x) => x.tipo === 'visita');
+    const cids = visitas.map((v) => Number(v.company_id));
+    expect(cids).toContain(c2);
+    expect(cids).toContain(c1);
+
+    // start_at inválido -> 400; rota alheia -> 404
+    expect((await inj(a, 'POST', `/api/routes/${id}/agenda`, { start_at: 'xx' })).statusCode).toBe(400);
+    expect((await inj(b, 'POST', `/api/routes/${id}/agenda`, { start_at: '2026-07-01T08:00:00Z' })).statusCode).toBe(404);
+  });
+});
