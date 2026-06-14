@@ -35,7 +35,11 @@ const REL_LABELS = `rc.nome AS representada, mb.nome AS marca,
     SELECT json_agg(json_build_object('id', ci.id, 'nome', ci.nome, 'codigo', ci.codigo, 'preco', ci.preco) ORDER BY ci.nome)
     FROM relationship_catalog rcc JOIN catalog_items ci ON ci.id = rcc.catalog_item_id
     WHERE rcc.relationship_id = r.id
-  ), '[]') AS catalogo`;
+  ), '[]') AS catalogo,
+  COALESCE((
+    SELECT json_agg(json_build_object('id', sr.id, 'produto', sr.produto_snapshot, 'status', sr.status) ORDER BY sr.created_at DESC)
+    FROM sample_requests sr WHERE sr.relationship_id = r.id
+  ), '[]') AS amostras`;
 
 // JOINs that resolve the FK labels above. Reused by GET /relationships and /kanban.
 // org no join: rótulo de outra org nunca resolve, mesmo que um id alheio escape.

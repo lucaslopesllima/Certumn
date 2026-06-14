@@ -55,6 +55,7 @@ export interface KanbanCard {
   marca_id: number | null; marca: string | null;
   contatos: { id: number; nome: string; cargo: string | null }[];
   catalogo: { id: number; nome: string; codigo: string | null; preco: string | null }[];
+  amostras: { id: number; produto: string; status: string }[];
   cenario_id: number | null; cenario: string | null;
   acao_id: number | null; acao: string | null;
   data_contato: string | null; previsao_data: string | null;
@@ -97,6 +98,16 @@ export interface GeocodeResult {
 export interface CatalogItem {
   id: number; nome: string; codigo: string | null; descricao: string | null;
   preco: string | null; represented_id: number | null; ativo: boolean;
+}
+
+export type SampleStatus = 'solicitada' | 'enviada' | 'recebida' | 'cancelada';
+export interface SampleRequest {
+  id: number; relationship_id: number; catalog_item_id: number | null; produto_snapshot: string;
+  contact_id: number | null; activity_id: number | null; owner_user_id: number | null;
+  status: SampleStatus; quantidade: string | null;
+  data_solicitacao: string | null; data_prevista: string | null; notas: string | null;
+  created_at: string; produto_codigo: string | null; contato: string | null;
+  atividade_titulo: string | null; atividade_start: string | null;
 }
 
 export interface Brand { id: number; represented_id: number; nome: string }

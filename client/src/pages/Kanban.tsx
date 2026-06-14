@@ -7,6 +7,7 @@ import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
+import { SampleRequestModal, SampleListModal } from '../lib/sampleModal.tsx';
 import { brl0 as brl, maskPhone, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
@@ -28,6 +29,8 @@ export function Kanban(): React.JSX.Element {
   const [editing, setEditing] = useState<KanbanCard | null>(null);
   const [moveFor, setMoveFor] = useState<number | null>(null); // card com menu "mover" aberto
   const [viewing, setViewing] = useState<number | null>(null); // company_id em visualização
+  const [sampleFor, setSampleFor] = useState<KanbanCard | null>(null); // card criando amostra
+  const [samplesView, setSamplesView] = useState<KanbanCard | null>(null); // card vendo/editando amostras
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [scenarios, setScenarios] = useState<NamedItem[]>([]);
@@ -203,6 +206,14 @@ export function Kanban(): React.JSX.Element {
                         <span className="truncate">{c.catalogo.map((x) => x.nome).join(', ')}</span>
                       </p>
                     )}
+                    {c.amostras.length > 0 && (
+                      <button type="button" onClick={() => setSamplesView(c)}
+                        title="Ver/editar amostras solicitadas"
+                        className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+                        <Icon name="flask" size={12} className="shrink-0" />
+                        <span className="truncate">{c.amostras.length} amostra{c.amostras.length > 1 ? 's' : ''}</span>
+                      </button>
+                    )}
                     {c.valor_estimado && Number(c.valor_estimado) > 0 && (
                       <p className="tabnums mt-1 text-xs font-semibold text-emerald-600">{brl(Number(c.valor_estimado))}</p>
                     )}
@@ -213,12 +224,18 @@ export function Kanban(): React.JSX.Element {
                         <span className="truncate">{[c.cidade, c.uf].filter(Boolean).join(' · ')}</span>
                       </span>
                     </div>
-                    {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
-                    <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
-                      title="Novo pedido"
-                      className="mt-2 inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
-                      <Icon name="plus" size={13} /> Novo pedido
-                    </a>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
+                      <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
+                        title="Novo pedido"
+                        className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+                        <Icon name="plus" size={13} /> Pedido
+                      </a>
+                      <button type="button" onClick={() => setSampleFor(c)} title="Solicitar amostra"
+                        className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+                        <Icon name="flask" size={13} /> +Amostra
+                      </button>
+                    </div>
                   </div>
                 ))}
                 {colCards.length === 0 && (
@@ -241,6 +258,22 @@ export function Kanban(): React.JSX.Element {
       )}
       {viewing !== null && (
         <CompanyModal companyId={viewing} onClose={() => setViewing(null)} />
+      )}
+      {sampleFor && (
+        <SampleRequestModal
+          card={{ id: sampleFor.id, company_id: sampleFor.company_id, label: sampleFor.nome_fantasia || sampleFor.razao_social }}
+          catalog={catalog}
+          onClose={() => setSampleFor(null)}
+          onSaved={() => { setSampleFor(null); void load(); }}
+        />
+      )}
+      {samplesView && (
+        <SampleListModal
+          card={{ id: samplesView.id, company_id: samplesView.company_id, label: samplesView.nome_fantasia || samplesView.razao_social }}
+          catalog={catalog}
+          onClose={() => setSamplesView(null)}
+          onChanged={() => { void load(); }}
+        />
       )}
     </div>
   );

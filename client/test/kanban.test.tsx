@@ -1,6 +1,7 @@
 // Funil kanban: board, colunas, KPIs, drag-drop otimista com revert.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Kanban } from '../src/pages/Kanban.tsx';
 import { api } from '../src/lib/api.ts';
 
@@ -20,7 +21,7 @@ const card = (over: Record<string, unknown>): Record<string, unknown> => ({
   data_contato: null, previsao_data: null, updated_at: '',
   razao_social: 'Empresa Um LTDA', nome_fantasia: 'Loja Um', cnpj: '11222333000144',
   cnae_principal: 4781400, municipio_id: 100, uf: 'SP', cidade: 'São Paulo', porte: 'pequeno',
-  representada: null, marca: null, cenario: null, acao: null, contatos: [], catalogo: [], ...over,
+  representada: null, marca: null, cenario: null, acao: null, contatos: [], catalogo: [], amostras: [], ...over,
 });
 
 beforeEach(() => {
@@ -30,13 +31,16 @@ beforeEach(() => {
     if (p === '/api/kanban') {
       return { stages: STAGES, cards: [
         card({ id: 1 }),
-        card({ id: 2, razao_social: 'Empresa Dois SA', nome_fantasia: null, stage_id: 11, status: 'cliente', valor_estimado: '2000' }),
+        card({ id: 2, razao_social: 'Empresa Dois SA', nome_fantasia: null, stage_id: 11, status: 'cliente', valor_estimado: '2000',
+          amostras: [{ id: 5, produto: 'Produto A', status: 'solicitada' }] }),
       ] };
     }
     if (p === '/api/profile') return { profile: null };
     if (p === '/api/represented') return { empresas: [] };
     if (p === '/api/brands') return { brands: [] };
     if (p === '/api/catalog') return { items: [] };
+    if (p.startsWith('/api/contacts')) return { contacts: [] };
+    if (p.startsWith('/api/sample-requests')) return { samples: [] };
     return { items: [] }; // scenarios/actions
   });
 });
@@ -85,5 +89,19 @@ describe('Kanban', () => {
     fireEvent.dragStart(cardEl);
     fireEvent.drop(colProspeccao);
     expect(m.patch).not.toHaveBeenCalled();
+  });
+
+  it('botão +Amostra abre o modal de solicitar amostra', async () => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getAllByRole('button', { name: /\+Amostra/ })[0]!);
+    expect(await screen.findByText('Solicitar amostra')).toBeInTheDocument();
+  });
+
+  it('sinal de amostra no card abre a lista de amostras', async () => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getByRole('button', { name: /1 amostra/ }));
+    expect(await screen.findByRole('heading', { name: 'Amostras' })).toBeInTheDocument();
   });
 });

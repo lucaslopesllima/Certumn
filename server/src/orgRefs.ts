@@ -16,6 +16,7 @@ const REF_TABLES = {
   relationship_id: 'company_relationships',
   price_table_id: 'price_tables',
   catalog_item_id: 'catalog_items',
+  contact_id: 'contacts',
   carrier_id: 'carriers',
   route_id: 'routes',
   categoria_id: 'finance_categories',
