@@ -102,7 +102,7 @@ describe('Orders', () => {
 
     await userEvent.selectOptions(screen.getByLabelText('Adicionar item do catálogo'), '9');
     // preço pré-preenchido vem da tabela (90), não do catálogo (100)
-    expect(screen.getByLabelText('Preço * item 1')).toHaveValue(90);
+    expect(screen.getByLabelText('Preço * item 1')).toHaveValue('90');
 
     await userEvent.selectOptions(screen.getByLabelText('Transportadora'), '4');
 

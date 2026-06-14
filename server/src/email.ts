@@ -2,7 +2,9 @@ import { query } from './db.ts';
 import { getSmtpSettings, sendViaSmtp, type SmtpSettings } from './smtp.ts';
 
 // Avança um ISO pelo intervalo da recorrência. Retorna null se não há repetição.
-function addInterval(iso: string, rec: string | null): string | null {
+// Exportada p/ teste unitário (o guard de data inválida é inalcançável via
+// processDueEmails, que sempre passa um timestamp já validado pelo pg).
+export function addInterval(iso: string, rec: string | null): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   if (rec === 'diaria') d.setUTCDate(d.getUTCDate() + 1);
@@ -14,7 +16,7 @@ function addInterval(iso: string, rec: string | null): string | null {
 
 // Próxima ocorrência estritamente futura (evita backlog de catch-up: se o
 // agendamento estava muito atrasado, salta direto pra frente de `now`).
-function nextOccurrence(iso: string, rec: string | null, now: Date): string | null {
+export function nextOccurrence(iso: string, rec: string | null, now: Date): string | null {
   let next = addInterval(iso, rec);
   if (!next) return null;
   let guard = 0;
