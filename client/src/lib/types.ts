@@ -97,7 +97,7 @@ export interface GeocodeResult {
 
 export interface CatalogItem {
   id: number; nome: string; codigo: string | null; descricao: string | null;
-  preco: string | null; represented_id: number | null; ativo: boolean;
+  preco: string | null; unidade_medida: string | null; represented_id: number | null; ativo: boolean;
   // alíquotas por produto (numeric vem string do pg). null = não definido →
   // pedido cai no default da org. Ver TaxDefaults.
   icms_pct: string | null; ipi_pct: string | null; st_pct: string | null;
@@ -208,6 +208,7 @@ export interface Carrier {
 export type OrderStatus = 'cotacao' | 'rascunho' | 'enviado' | 'faturado' | 'entregue' | 'cancelado';
 export interface OrderItem {
   id: number; catalog_item_id: number | null; descricao_snapshot: string;
+  unidade_medida_snapshot: string | null;
   qtd: string; preco_unit: string; desconto_pct: string;
   icms_pct: string; ipi_pct: string; st_pct: string; pis_pct: string; cofins_pct: string; iss_pct: string;
   total: string;

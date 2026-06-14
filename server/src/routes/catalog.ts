@@ -3,7 +3,7 @@ import { query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
 import { TAX_FIELDS } from './tax.ts';
 
-const COLS = `id, nome, codigo, descricao, preco, represented_id, ativo, ${TAX_FIELDS.join(', ')}`;
+const COLS = `id, nome, codigo, descricao, preco, unidade_medida, represented_id, ativo, ${TAX_FIELDS.join(', ')}`;
 // alíquotas por produto: null = não definido (cai no default da org no pedido).
 const TAX_BODY = Object.fromEntries(
   TAX_FIELDS.map((k) => [k, { type: ['number', 'null'], minimum: 0, maximum: 100 }]),
@@ -13,6 +13,7 @@ const BODY = {
   codigo: { type: ['string', 'null'] },
   descricao: { type: ['string', 'null'] },
   preco: { type: ['number', 'null'] },
+  unidade_medida: { type: ['string', 'null'] },
   represented_id: { type: ['integer', 'null'] },
   ativo: { type: 'boolean' },
   ...TAX_BODY,
@@ -35,10 +36,10 @@ export function catalogRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const b = req.body as Record<string, unknown> & { nome: string };
     const vals = [orgId, b.nome, b.codigo ?? null, b.descricao ?? null, b.preco ?? null,
-      b.represented_id ?? null, ...TAX_FIELDS.map((k) => b[k] ?? null)];
+      b.unidade_medida ?? null, b.represented_id ?? null, ...TAX_FIELDS.map((k) => b[k] ?? null)];
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
     const rows = await query(
-      `INSERT INTO catalog_items (org_id, nome, codigo, descricao, preco, represented_id, ${TAX_FIELDS.join(', ')})
+      `INSERT INTO catalog_items (org_id, nome, codigo, descricao, preco, unidade_medida, represented_id, ${TAX_FIELDS.join(', ')})
        VALUES (${placeholders}) RETURNING ${COLS}`,
       vals,
     );
@@ -57,7 +58,7 @@ export function catalogRoutes(app: FastifyInstance): void {
     const b = req.body as Record<string, unknown>;
     const sets: string[] = [];
     const params: unknown[] = [];
-    for (const k of ['nome', 'codigo', 'descricao', 'preco', 'represented_id', 'ativo', ...TAX_FIELDS]) {
+    for (const k of ['nome', 'codigo', 'descricao', 'preco', 'unidade_medida', 'represented_id', 'ativo', ...TAX_FIELDS]) {
       if (k in b) { params.push(b[k]); sets.push(`${k} = $${params.length}`); }
     }
     if (sets.length === 0) return reply.code(400).send({ error: 'nada para atualizar' });

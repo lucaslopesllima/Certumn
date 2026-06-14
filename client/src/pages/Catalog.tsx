@@ -6,6 +6,7 @@ import { Icon } from '../lib/icons.tsx';
 import { brl, dec, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
+import { UNIDADES_MEDIDA_GRUPOS } from '../lib/units.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -16,14 +17,15 @@ const TAX_FIELDS = [
 ] as const;
 type TaxKey = (typeof TAX_FIELDS)[number][0];
 
-type Form = { nome: string; codigo: string; descricao: string; preco: string; represented_id: string } & Record<TaxKey, string>;
+type Form = { nome: string; codigo: string; descricao: string; preco: string; unidade_medida: string; represented_id: string } & Record<TaxKey, string>;
 const EMPTY: Form = {
-  nome: '', codigo: '', descricao: '', preco: '', represented_id: '',
+  nome: '', codigo: '', descricao: '', preco: '', unidade_medida: '', represented_id: '',
   icms_pct: '', ipi_pct: '', st_pct: '', pis_pct: '', cofins_pct: '', iss_pct: '',
 };
 const toForm = (i: CatalogItem): Form => ({
   nome: i.nome, codigo: i.codigo ?? '', descricao: i.descricao ?? '',
-  preco: numStr(i.preco), represented_id: i.represented_id != null ? String(i.represented_id) : '',
+  preco: numStr(i.preco), unidade_medida: i.unidade_medida ?? '',
+  represented_id: i.represented_id != null ? String(i.represented_id) : '',
   ...Object.fromEntries(TAX_FIELDS.map(([k]) => [k, numStr(i[k])])) as Record<TaxKey, string>,
 });
 function toBody(f: Form): Record<string, unknown> {
@@ -32,6 +34,7 @@ function toBody(f: Form): Record<string, unknown> {
   return {
     nome: f.nome.trim(), codigo: t(f.codigo), descricao: t(f.descricao),
     preco: f.preco.trim() === '' ? null : Number(f.preco),
+    unidade_medida: t(f.unidade_medida),
     represented_id: f.represented_id === '' ? null : Number(f.represented_id),
     ...Object.fromEntries(TAX_FIELDS.map(([k]) => [k, taxNum(f[k])])),
   };
@@ -151,7 +154,7 @@ export function Catalog(): React.JSX.Element {
                     {!i.ativo && <Badge tone="neutral">inativo</Badge>}
                   </div>
                   <p className="mt-0.5 truncate text-xs text-ink-400">
-                    {[i.preco != null ? brl(Number(i.preco)) : null, i.descricao].filter(Boolean).join(' · ') || 'sem detalhes'}
+                    {[i.preco != null ? brl(Number(i.preco)) + (i.unidade_medida ? ` / ${i.unidade_medida}` : '') : i.unidade_medida, i.descricao].filter(Boolean).join(' · ') || 'sem detalhes'}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
@@ -188,9 +191,17 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome do produto / serviço *" className={inputCls} />
-      <div className="grid gap-2.5 sm:grid-cols-3">
+      <div className="grid gap-2.5 sm:grid-cols-2">
         <input value={f.codigo} onChange={set('codigo')} placeholder="Código / SKU" className={inputCls} />
         <input type="number" min="0" step="0.01" value={f.preco} onChange={set('preco')} placeholder="Preço (R$)" className={inputCls} />
+        <select value={f.unidade_medida} onChange={set('unidade_medida')} className={inputCls}>
+          <option value="">Unidade de medida (opcional)</option>
+          {UNIDADES_MEDIDA_GRUPOS.map((g) => (
+            <optgroup key={g.grupo} label={g.grupo}>
+              {g.itens.map((u) => <option key={u.value} value={u.value}>{u.label} ({u.value})</option>)}
+            </optgroup>
+          ))}
+        </select>
         <select value={f.represented_id} onChange={set('represented_id')} className={inputCls}>
           <option value="">Representada (opcional)</option>
           {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}

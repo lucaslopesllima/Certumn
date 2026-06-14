@@ -60,6 +60,7 @@ const ITEM_SCHEMA = {
   properties: {
     catalog_item_id: { type: ['integer', 'null'] },
     descricao: { type: ['string', 'null'] },
+    unidade_medida: { type: ['string', 'null'] },
     qtd: { type: 'number', exclusiveMinimum: 0 },
     preco_unit: { type: ['number', 'null'], minimum: 0 },
     desconto_pct: { type: 'number', minimum: 0, maximum: 100 },
@@ -89,6 +90,7 @@ const HEADER_PROPS = {
 interface ItemInput {
   catalog_item_id?: number | null;
   descricao?: string | null;
+  unidade_medida?: string | null;
   qtd: number;
   preco_unit?: number | null;
   desconto_pct?: number;
@@ -103,6 +105,7 @@ interface ItemInput {
 interface ResolvedItem {
   catalog_item_id: number | null;
   descricao_snapshot: string;
+  unidade_medida_snapshot: string | null;
   qtd: number;
   // preço cru: número do payload OU string vinda do banco (numeric). Mantido sem
   // Number() pra não passar por float — o cálculo do total é feito no banco.
@@ -127,14 +130,14 @@ async function resolveItems(
   const catIds = items.map((i) => i.catalog_item_id).filter((v): v is number => v != null);
   // preço guardado como string crua (numeric do banco) — sem Number(), pra não
   // introduzir float. O total é calculado no banco (coluna GENERATED).
-  const catalog = new Map<number, { nome: string; preco: string | null; tax: Record<TaxField, string | null> }>();
+  const catalog = new Map<number, { nome: string; preco: string | null; unidade_medida: string | null; tax: Record<TaxField, string | null> }>();
   if (catIds.length > 0) {
     const rows = await query<Record<string, string | null> & { id: string; nome: string; preco: string | null }>(
-      `SELECT id, nome, preco, ${TAX_FIELDS.join(', ')} FROM catalog_items WHERE org_id = $1 AND id = ANY($2)`,
+      `SELECT id, nome, preco, unidade_medida, ${TAX_FIELDS.join(', ')} FROM catalog_items WHERE org_id = $1 AND id = ANY($2)`,
       [orgId, catIds],
     );
     for (const r of rows) catalog.set(Number(r.id), {
-      nome: r.nome, preco: r.preco,
+      nome: r.nome, preco: r.preco, unidade_medida: r.unidade_medida ?? null,
       tax: Object.fromEntries(TAX_FIELDS.map((k) => [k, r[k]])) as Record<TaxField, string | null>,
     });
   }
@@ -176,9 +179,12 @@ async function resolveItems(
     const tax = Object.fromEntries(TAX_FIELDS.map((k) => [k,
       it[k] ?? (prodHasTax ? Number(cat!.tax[k] ?? 0) : (taxDef[k] ?? 0)),
     ])) as Record<TaxField, number>;
+    // unidade respeita o cadastro do produto; item livre pode informar no payload.
+    const unidade = it.unidade_medida ?? cat?.unidade_medida ?? null;
     out.push({
       catalog_item_id: it.catalog_item_id ?? null,
       descricao_snapshot: descricao,
+      unidade_medida_snapshot: unidade,
       qtd: it.qtd,
       preco_unit: preco,
       desconto_pct: desconto,
@@ -189,7 +195,7 @@ async function resolveItems(
 }
 
 const orderItems = (orderId: number): Promise<unknown[]> => query(
-  `SELECT id, catalog_item_id, descricao_snapshot, qtd, preco_unit, desconto_pct,
+  `SELECT id, catalog_item_id, descricao_snapshot, unidade_medida_snapshot, qtd, preco_unit, desconto_pct,
           icms_pct, ipi_pct, st_pct, pis_pct, cofins_pct, iss_pct, total
    FROM order_items WHERE order_id = $1 ORDER BY id`,
   [orderId],
@@ -243,6 +249,7 @@ function orderHtml(org: OrgHeader, order: Record<string, unknown>, items: Record
         <td class="c">${i + 1}</td>
         <td>${esc(it.descricao_snapshot)}</td>
         <td class="r">${esc(it.qtd)}</td>
+        <td class="u">${esc(it.unidade_medida_snapshot ?? '')}</td>
         <td class="r">${brl(it.preco_unit)}</td>
         <td class="r">${Number(it.desconto_pct ?? 0)}%</td>
         <td class="r">${brl(it.total)}</td>
@@ -265,6 +272,7 @@ function orderHtml(org: OrgHeader, order: Record<string, unknown>, items: Record
   th, td { padding: 7px 9px; border-bottom: 1px solid #e5e7eb; }
   th { background: #f3f4f6; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .03em; }
   td.r, th.r { text-align: right; } td.c, th.c { text-align: center; width: 28px; }
+  td.u, th.u { text-align: center; white-space: nowrap; }
   tfoot td { font-weight: 700; font-size: 15px; border-top: 2px solid #4f46e5; border-bottom: none; }
   .cond { font-size: 12px; color: #444; }
   @media print { body { margin: 0; } @page { margin: 16mm; } }
@@ -291,10 +299,10 @@ function orderHtml(org: OrgHeader, order: Record<string, unknown>, items: Record
   <div><strong>Vendedor</strong><br>${esc(order.owner_nome ?? order.owner_email ?? '—')}</div>
 </div>
 <table>
-  <thead><tr><th class="c">#</th><th>Descrição</th><th class="r">Qtd</th>
+  <thead><tr><th class="c">#</th><th>Descrição</th><th class="r">Qtd</th><th class="u">Un.</th>
     <th class="r">Preço</th><th class="r">Desc.</th><th class="r">Total</th></tr></thead>
   <tbody>${rows}</tbody>
-  <tfoot><tr><td colspan="5" class="r">Total${Number(order.frete ?? 0) > 0 ? ` (frete ${brl(order.frete)})` : ''}</td>
+  <tfoot><tr><td colspan="6" class="r">Total${Number(order.frete ?? 0) > 0 ? ` (frete ${brl(order.frete)})` : ''}</td>
     <td class="r">${brl(order.total)}</td></tr></tfoot>
 </table>
 <div class="cond">
@@ -419,10 +427,10 @@ export function orderRoutes(app: FastifyInstance): void {
         for (const it of resolved) {
           // total NÃO entra no INSERT — é coluna GENERATED (calculada no banco).
           await c.query(
-            `INSERT INTO order_items (order_id, catalog_item_id, descricao_snapshot, qtd,
+            `INSERT INTO order_items (order_id, catalog_item_id, descricao_snapshot, unidade_medida_snapshot, qtd,
                preco_unit, desconto_pct, icms_pct, ipi_pct, st_pct, pis_pct, cofins_pct, iss_pct)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-            [id, it.catalog_item_id, it.descricao_snapshot, it.qtd, it.preco_unit,
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+            [id, it.catalog_item_id, it.descricao_snapshot, it.unidade_medida_snapshot, it.qtd, it.preco_unit,
               it.desconto_pct, it.icms_pct, it.ipi_pct, it.st_pct, it.pis_pct, it.cofins_pct, it.iss_pct],
           );
         }
@@ -496,11 +504,11 @@ export function orderRoutes(app: FastifyInstance): void {
           for (const it of resolved) {
             // total NÃO entra no INSERT — é coluna GENERATED (calculada no banco).
             await c.query(
-              `INSERT INTO order_items (order_id, catalog_item_id, descricao_snapshot, qtd,
-                 preco_unit, desconto_pct, ipi_pct, st_pct)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-              [id, it.catalog_item_id, it.descricao_snapshot, it.qtd, it.preco_unit,
-                it.desconto_pct, it.ipi_pct, it.st_pct],
+              `INSERT INTO order_items (order_id, catalog_item_id, descricao_snapshot, unidade_medida_snapshot, qtd,
+                 preco_unit, desconto_pct, icms_pct, ipi_pct, st_pct, pis_pct, cofins_pct, iss_pct)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+              [id, it.catalog_item_id, it.descricao_snapshot, it.unidade_medida_snapshot, it.qtd, it.preco_unit,
+                it.desconto_pct, it.icms_pct, it.ipi_pct, it.st_pct, it.pis_pct, it.cofins_pct, it.iss_pct],
             );
           }
         }

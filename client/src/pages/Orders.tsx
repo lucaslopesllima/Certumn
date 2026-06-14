@@ -289,12 +289,12 @@ const TAX_FIELDS = [
 type TaxKey = (typeof TAX_FIELDS)[number][0];
 
 interface ItemDraft {
-  catalog_item_id: number | null; descricao: string; qtd: string; preco_unit: string;
+  catalog_item_id: number | null; descricao: string; unidade_medida: string; qtd: string; preco_unit: string;
   desconto_pct: string; icms_pct: string; ipi_pct: string; st_pct: string;
   pis_pct: string; cofins_pct: string; iss_pct: string;
 }
 const EMPTY_ITEM: ItemDraft = {
-  catalog_item_id: null, descricao: '', qtd: '1', preco_unit: '', desconto_pct: '',
+  catalog_item_id: null, descricao: '', unidade_medida: '', qtd: '1', preco_unit: '', desconto_pct: '',
   icms_pct: '', ipi_pct: '', st_pct: '', pis_pct: '', cofins_pct: '', iss_pct: '',
 };
 
@@ -331,7 +331,8 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
   const [observacoes, setObservacoes] = useState(order?.observacoes ?? '');
   const [items, setItems] = useState<ItemDraft[]>(
     (order?.items ?? []).map((i) => ({
-      catalog_item_id: i.catalog_item_id, descricao: i.descricao_snapshot, qtd: numStr(i.qtd),
+      catalog_item_id: i.catalog_item_id, descricao: i.descricao_snapshot,
+      unidade_medida: i.unidade_medida_snapshot ?? '', qtd: numStr(i.qtd),
       preco_unit: numStr(i.preco_unit), desconto_pct: String(Number(i.desconto_pct) || ''),
       icms_pct: String(Number(i.icms_pct) || ''), ipi_pct: String(Number(i.ipi_pct) || ''),
       st_pct: String(Number(i.st_pct) || ''), pis_pct: String(Number(i.pis_pct) || ''),
@@ -396,6 +397,7 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
       ...itemTax(cat),
       catalog_item_id: id,
       descricao: cat?.nome ?? '',
+      unidade_medida: cat?.unidade_medida ?? '',
       preco_unit: tablePrice(id) ?? numStr(cat?.preco),
     }]);
   };
@@ -431,6 +433,7 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
       items: items.map((i) => ({
         catalog_item_id: i.catalog_item_id,
         descricao: i.descricao.trim(),
+        unidade_medida: i.unidade_medida.trim() || null,
         qtd: dec(i.qtd),
         preco_unit: dec(i.preco_unit),
         desconto_pct: num(i.desconto_pct) ?? 0,
@@ -510,9 +513,11 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
                   <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
                     {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ...TAX_FIELDS] as const).map(([k, ph]) => {
                       const bad = (k === 'qtd' && err.qtd) || (k === 'preco_unit' && err.preco);
+                      // qtd herda a unidade do produto (snapshot) — rótulo "Qtd (KG)".
+                      const lbl = k === 'qtd' && i.unidade_medida ? `Qtd * (${i.unidade_medida})` : ph;
                       return (
                       <label key={k} className="block">
-                        <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{ph}</span>
+                        <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{lbl}</span>
                         <input type="text" inputMode="decimal" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
                           onChange={(e) => setItem(idx, { [k]: e.target.value.replace(/[^\d.,]/g, '') })} placeholder={ph}
                           className={cn(fieldCls(bad), 'w-full')} />
