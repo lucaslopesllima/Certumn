@@ -28,6 +28,7 @@ import { dashboardRoutes } from './routes/dashboard.ts';
 import { reportRoutes } from './routes/reports.ts';
 import { notificationRoutes } from './routes/notifications.ts';
 import { sampleRequestRoutes } from './routes/sampleRequests.ts';
+import { taxRoutes } from './routes/tax.ts';
 
 // Monta a app com todas as rotas de API, sem listen e sem estáticos —
 // index.ts (produção) adiciona o resto; os testes usam app.inject().
@@ -71,6 +72,7 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
   reportRoutes(app);
   notificationRoutes(app);
   sampleRequestRoutes(app);
+  taxRoutes(app);
 
   return app;
 }

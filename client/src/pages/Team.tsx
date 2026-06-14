@@ -446,7 +446,7 @@ function Metas(): React.JSX.Element {
                       <p className="tabnums text-xs font-semibold text-ink-500">{g.pct ?? 0}%</p>
                     </div>
                     <button onClick={() => void remove(g.id)} aria-label="Excluir meta"
-                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={15} /></button>
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
                   </div>
                 </div>
                 <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink-100">

@@ -3,10 +3,10 @@ import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
-import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderStatus, PriceTable, RepresentedCompany } from '../lib/types.ts';
+import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderStatus, PriceTable, RepresentedCompany, TaxDefaults } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, csvNum, fmtDate, numStr, todayStr } from '../lib/format.ts';
+import { brl, csvNum, dec, fmtDate, numStr, todayStr } from '../lib/format.ts';
 import { downloadCsv } from '../lib/export.ts';
 import { toast } from '../lib/toast.tsx';
 
@@ -281,17 +281,32 @@ function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
   );
 }
 
+// Campos de imposto por item (mesma ordem da config e do back). Rótulo p/ a grade.
+const TAX_FIELDS = [
+  ['icms_pct', 'ICMS %'], ['ipi_pct', 'IPI %'], ['st_pct', 'ST %'],
+  ['pis_pct', 'PIS %'], ['cofins_pct', 'COFINS %'], ['iss_pct', 'ISS %'],
+] as const;
+type TaxKey = (typeof TAX_FIELDS)[number][0];
+
 interface ItemDraft {
   catalog_item_id: number | null; descricao: string; qtd: string; preco_unit: string;
-  desconto_pct: string; ipi_pct: string; st_pct: string;
+  desconto_pct: string; icms_pct: string; ipi_pct: string; st_pct: string;
+  pis_pct: string; cofins_pct: string; iss_pct: string;
 }
-const EMPTY_ITEM: ItemDraft = { catalog_item_id: null, descricao: '', qtd: '1', preco_unit: '', desconto_pct: '', ipi_pct: '', st_pct: '' };
+const EMPTY_ITEM: ItemDraft = {
+  catalog_item_id: null, descricao: '', qtd: '1', preco_unit: '', desconto_pct: '',
+  icms_pct: '', ipi_pct: '', st_pct: '', pis_pct: '', cofins_pct: '', iss_pct: '',
+};
+
+// Alíquotas default da org como strings, p/ preencher item novo (vazio = '').
+const taxDraft = (d: TaxDefaults | null): Record<TaxKey, string> =>
+  Object.fromEntries(TAX_FIELDS.map(([k]) => [k, d && d[k] ? String(d[k]) : ''])) as Record<TaxKey, string>;
 
 const itemTotal = (i: ItemDraft): number => {
-  const q = Number(i.qtd) || 0;
-  const p = Number(i.preco_unit) || 0;
-  const d = Number(i.desconto_pct) || 0;
-  const imp = (Number(i.ipi_pct) || 0) + (Number(i.st_pct) || 0);
+  const q = dec(i.qtd) || 0;
+  const p = dec(i.preco_unit) || 0;
+  const d = dec(i.desconto_pct) || 0;
+  const imp = TAX_FIELDS.reduce((s, [k]) => s + (dec(i[k]) || 0), 0);
   return q * p * (1 - d / 100) * (1 + imp / 100);
 };
 
@@ -318,10 +333,13 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
     (order?.items ?? []).map((i) => ({
       catalog_item_id: i.catalog_item_id, descricao: i.descricao_snapshot, qtd: numStr(i.qtd),
       preco_unit: numStr(i.preco_unit), desconto_pct: String(Number(i.desconto_pct) || ''),
-      ipi_pct: String(Number(i.ipi_pct) || ''), st_pct: String(Number(i.st_pct) || ''),
+      icms_pct: String(Number(i.icms_pct) || ''), ipi_pct: String(Number(i.ipi_pct) || ''),
+      st_pct: String(Number(i.st_pct) || ''), pis_pct: String(Number(i.pis_pct) || ''),
+      cofins_pct: String(Number(i.cofins_pct) || ''), iss_pct: String(Number(i.iss_pct) || ''),
     })),
   );
   const [table, setTable] = useState<PriceTable | null>(null);
+  const [taxDef, setTaxDef] = useState<TaxDefaults | null>(null);
   const [comissao, setComissao] = useState<CommissionEntry | null>(null);
   const [busy, setBusy] = useState(false);
   const [tried, setTried] = useState(false); // mostra erros inline só após tentar salvar
@@ -329,8 +347,8 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
   // validação por item, reusada pra destacar campo e bloquear submit
   const itemErr = (i: ItemDraft): { desc: boolean; qtd: boolean; preco: boolean } => ({
     desc: !i.descricao.trim(),
-    qtd: !(Number(i.qtd) > 0),
-    preco: i.preco_unit.trim() === '' || !(Number(i.preco_unit) >= 0),
+    qtd: !(dec(i.qtd) > 0),
+    preco: i.preco_unit.trim() === '' || !(dec(i.preco_unit) >= 0),
   });
 
   // pedido faturado/entregue tem comissão gerada — exibe a previsão
@@ -341,6 +359,12 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
       .then((r) => setComissao(r.entries[0] ?? null)).catch(() => undefined);
   }, [order]);
 
+  // alíquotas default da org → preenchem impostos de itens novos.
+  useEffect(() => {
+    void api.get<{ tax: TaxDefaults }>('/api/tax-defaults')
+      .then((r) => setTaxDef(r.tax)).catch(() => undefined);
+  }, []);
+
   // representada escolhida -> carrega a tabela de preço vigente
   useEffect(() => {
     setTable(null);
@@ -349,15 +373,27 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
       .then((r) => setTable(r.table)).catch(() => undefined);
   }, [representedId]);
 
+  // ids vêm como string do back (bigint sem parser no pg) — coage os dois lados
+  // pra casar com o id numérico do <select> (Number(value)).
   const tablePrice = (catalogItemId: number): string | null => {
-    const it = table?.items?.find((x) => x.catalog_item_id === catalogItemId);
+    const it = table?.items?.find((x) => Number(x.catalog_item_id) === Number(catalogItemId));
     return it != null ? numStr(it.preco) : null;
   };
 
+  // imposto do item novo: se o produto define ALGUM imposto, usa o do produto
+  // (campo nulo = 0); senão cai inteiro no default da org.
+  const itemTax = (cat?: CatalogItem): Record<TaxKey, string> => {
+    const has = cat != null && TAX_FIELDS.some(([k]) => cat[k] != null);
+    return has
+      ? Object.fromEntries(TAX_FIELDS.map(([k]) => [k, numStr(cat[k])])) as Record<TaxKey, string>
+      : taxDraft(taxDef);
+  };
+
   const addCatalogItem = (id: number): void => {
-    const cat = catalog.find((c) => c.id === id);
+    const cat = catalog.find((c) => Number(c.id) === Number(id));
     setItems((xs) => [...xs, {
       ...EMPTY_ITEM,
+      ...itemTax(cat),
       catalog_item_id: id,
       descricao: cat?.nome ?? '',
       preco_unit: tablePrice(id) ?? numStr(cat?.preco),
@@ -366,7 +402,7 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
   const setItem = (idx: number, patch: Partial<ItemDraft>): void =>
     setItems((xs) => xs.map((x, i) => (i === idx ? { ...x, ...patch } : x)));
 
-  const total = items.reduce((s, i) => s + itemTotal(i), 0) + (Number(frete) || 0);
+  const total = items.reduce((s, i) => s + itemTotal(i), 0) + (dec(frete) || 0);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -378,28 +414,32 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
     const badIdx = items.findIndex((i) => { const er = itemErr(i); return er.desc || er.qtd || er.preco; });
     if (badIdx >= 0) { toast.error(`Item ${badIdx + 1}: preencha descrição, quantidade e preço.`); return; }
     setBusy(true);
-    const num = (s: string): number | undefined => (s.trim() === '' ? undefined : Number(s));
+    const num = (s: string): number | undefined => (s.trim() === '' ? undefined : dec(s));
     const body: Record<string, unknown> = {
       company_id: companyId,
       represented_id: representedId,
       relationship_id: order?.relationship_id
         ?? prefill?.relationship_id
-        ?? companies.find((c) => c.id === companyId)?.relationship_id
+        ?? companies.find((c) => Number(c.id) === Number(companyId))?.relationship_id
         ?? null,
       price_table_id: table != null ? table.id : null,
       validade: cotacao && validade ? validade : null,
       condicao_pagamento: condicao || null,
       carrier_id: carrierId,
-      frete: Number(frete) || 0,
+      frete: dec(frete) || 0,
       observacoes: observacoes || null,
       items: items.map((i) => ({
         catalog_item_id: i.catalog_item_id,
         descricao: i.descricao.trim(),
-        qtd: Number(i.qtd),
-        preco_unit: Number(i.preco_unit),
+        qtd: dec(i.qtd),
+        preco_unit: dec(i.preco_unit),
         desconto_pct: num(i.desconto_pct) ?? 0,
+        icms_pct: num(i.icms_pct) ?? 0,
         ipi_pct: num(i.ipi_pct) ?? 0,
         st_pct: num(i.st_pct) ?? 0,
+        pis_pct: num(i.pis_pct) ?? 0,
+        cofins_pct: num(i.cofins_pct) ?? 0,
+        iss_pct: num(i.iss_pct) ?? 0,
       })),
     };
     try {
@@ -467,16 +507,22 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={15} /></button>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ['ipi_pct', 'IPI %'], ['st_pct', 'ST %']] as const).map(([k, ph]) => {
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
+                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ...TAX_FIELDS] as const).map(([k, ph]) => {
                       const bad = (k === 'qtd' && err.qtd) || (k === 'preco_unit' && err.preco);
                       return (
-                      <input key={k} type="number" min="0" step="any" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
-                        onChange={(e) => setItem(idx, { [k]: e.target.value })} placeholder={ph}
-                        className={fieldCls(bad)} />
+                      <label key={k} className="block">
+                        <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{ph}</span>
+                        <input type="text" inputMode="decimal" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
+                          onChange={(e) => setItem(idx, { [k]: e.target.value.replace(/[^\d.,]/g, '') })} placeholder={ph}
+                          className={cn(fieldCls(bad), 'w-full')} />
+                      </label>
                       );
                     })}
-                    <span className="tabnums grid place-items-center text-xs font-bold text-ink-700">{brl(itemTotal(i))}</span>
+                    <div className="col-span-3 sm:col-span-1">
+                      <span className="mb-0.5 block text-[10px] font-semibold text-ink-500">Total</span>
+                      <span className="tabnums grid h-[34px] place-items-center text-xs font-bold text-ink-700">{brl(itemTotal(i))}</span>
+                    </div>
                   </div>
                 </div>
                 );
@@ -487,11 +533,11 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
                     onChange={(e) => { if (e.target.value !== '') addCatalogItem(Number(e.target.value)); }} className={inputCls}>
                     <option value="">+ Item do catálogo…</option>
                     {catalog.map((c) => {
-                      const p = tablePrice(c.id) ?? c.preco;
-                      return <option key={c.id} value={c.id}>{c.nome}{p != null ? ` (${brl(Number(p))})` : ''}</option>;
+                      const p = tablePrice(c.id) ?? (c.preco || null);
+                      return <option key={c.id} value={c.id}>{c.nome}{p != null ? ` (${brl(Number(p))})` : ' — sem preço'}</option>;
                     })}
                   </select>
-                  <Btn variant="ghost" type="button" icon="plus" onClick={() => setItems((xs) => [...xs, EMPTY_ITEM])}>
+                  <Btn variant="ghost" type="button" icon="plus" onClick={() => setItems((xs) => [...xs, { ...EMPTY_ITEM, ...taxDraft(taxDef) }])}>
                     Item livre
                   </Btn>
                 </div>
@@ -501,8 +547,8 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
             <div className="grid gap-2 sm:grid-cols-3">
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Frete (R$)</span>
-                <input type="number" min="0" step="0.01" value={frete} disabled={readOnly}
-                  onChange={(e) => setFrete(e.target.value)} className={cn(inputCls, 'mt-1')} />
+                <input type="text" inputMode="decimal" value={frete} disabled={readOnly}
+                  onChange={(e) => setFrete(e.target.value.replace(/[^\d.,]/g, ''))} className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Cond. pagamento</span>

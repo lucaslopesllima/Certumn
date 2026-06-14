@@ -432,12 +432,12 @@ function Row({ a, onToggle, onRemove, onEdit, onVisit }: {
         </button>
       )}
       <button onClick={() => onEdit(a)} aria-label="Editar"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-ink-100 hover:text-brand-600">
-        <Icon name="pencil" size={15} />
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100">
+        <Icon name="pencil" size={16} />
       </button>
       <button onClick={() => onRemove(a)} aria-label="Excluir"
         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
-        <Icon name="x" size={16} />
+        <Icon name="trash" size={16} />
       </button>
     </Card>
   );

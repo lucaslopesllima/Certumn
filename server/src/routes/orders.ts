@@ -5,6 +5,9 @@ import { audit, pick } from '../audit.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
 import { scopeOwner } from '../scope.ts';
 import { createCommissionForOrder, cancelCommissionForOrder } from '../commissions.ts';
+import { orgTaxDefaults, TAX_FIELDS } from './tax.ts';
+
+type TaxField = (typeof TAX_FIELDS)[number];
 
 // Pedidos de venda (Fase 1). Cotação = pedido com status='cotacao' + validade;
 // conversão é transição de status. Total SEMPRE recalculado server-side a
@@ -60,8 +63,12 @@ const ITEM_SCHEMA = {
     qtd: { type: 'number', exclusiveMinimum: 0 },
     preco_unit: { type: ['number', 'null'], minimum: 0 },
     desconto_pct: { type: 'number', minimum: 0, maximum: 100 },
+    icms_pct: { type: 'number', minimum: 0, maximum: 100 },
     ipi_pct: { type: 'number', minimum: 0, maximum: 100 },
     st_pct: { type: 'number', minimum: 0, maximum: 100 },
+    pis_pct: { type: 'number', minimum: 0, maximum: 100 },
+    cofins_pct: { type: 'number', minimum: 0, maximum: 100 },
+    iss_pct: { type: 'number', minimum: 0, maximum: 100 },
   },
 } as const;
 
@@ -78,14 +85,19 @@ const HEADER_PROPS = {
   observacoes: { type: ['string', 'null'] },
 } as const;
 
+// Impostos copiados por item. Alíquota ausente no payload cai no default da org.
 interface ItemInput {
   catalog_item_id?: number | null;
   descricao?: string | null;
   qtd: number;
   preco_unit?: number | null;
   desconto_pct?: number;
+  icms_pct?: number;
   ipi_pct?: number;
   st_pct?: number;
+  pis_pct?: number;
+  cofins_pct?: number;
+  iss_pct?: number;
 }
 
 interface ResolvedItem {
@@ -96,8 +108,12 @@ interface ResolvedItem {
   // Number() pra não passar por float — o cálculo do total é feito no banco.
   preco_unit: number | string;
   desconto_pct: number;
+  icms_pct: number;
   ipi_pct: number;
   st_pct: number;
+  pis_pct: number;
+  cofins_pct: number;
+  iss_pct: number;
 }
 
 // Resolve itens do payload: preço explícito > tabela de preço > catálogo;
@@ -111,12 +127,16 @@ async function resolveItems(
   const catIds = items.map((i) => i.catalog_item_id).filter((v): v is number => v != null);
   // preço guardado como string crua (numeric do banco) — sem Number(), pra não
   // introduzir float. O total é calculado no banco (coluna GENERATED).
-  const catalog = new Map<number, { nome: string; preco: string | null }>();
+  const catalog = new Map<number, { nome: string; preco: string | null; tax: Record<TaxField, string | null> }>();
   if (catIds.length > 0) {
-    const rows = await query<{ id: string; nome: string; preco: string | null }>(
-      'SELECT id, nome, preco FROM catalog_items WHERE org_id = $1 AND id = ANY($2)', [orgId, catIds],
+    const rows = await query<Record<string, string | null> & { id: string; nome: string; preco: string | null }>(
+      `SELECT id, nome, preco, ${TAX_FIELDS.join(', ')} FROM catalog_items WHERE org_id = $1 AND id = ANY($2)`,
+      [orgId, catIds],
     );
-    for (const r of rows) catalog.set(Number(r.id), { nome: r.nome, preco: r.preco });
+    for (const r of rows) catalog.set(Number(r.id), {
+      nome: r.nome, preco: r.preco,
+      tax: Object.fromEntries(TAX_FIELDS.map((k) => [k, r[k]])) as Record<TaxField, string | null>,
+    });
   }
   const tablePrices = new Map<number, { preco: string; desconto_max_pct: number | null }>();
   if (priceTableId != null) {
@@ -133,6 +153,11 @@ async function resolveItems(
     }
   }
 
+  // alíquotas: explícito no item > produto (se o produto define ALGUM imposto) >
+  // default da org. Produto sem nenhum imposto definido cai inteiro no default.
+  // A UI já preenche; este fallback cobre API/import. Explícito 0 permanece 0.
+  const taxDef = await orgTaxDefaults(orgId);
+
   const out: ResolvedItem[] = [];
   for (const it of items) {
     const cat = it.catalog_item_id != null ? catalog.get(it.catalog_item_id) : undefined;
@@ -146,16 +171,18 @@ async function resolveItems(
     if (fromTable?.desconto_max_pct != null && desconto > fromTable.desconto_max_pct) {
       return `desconto acima do máximo da tabela (${fromTable.desconto_max_pct}%)`;
     }
-    const ipi = it.ipi_pct ?? 0;
-    const st = it.st_pct ?? 0;
+    // produto define imposto? então é a base; senão usa o default da org.
+    const prodHasTax = cat != null && TAX_FIELDS.some((k) => cat.tax[k] != null);
+    const tax = Object.fromEntries(TAX_FIELDS.map((k) => [k,
+      it[k] ?? (prodHasTax ? Number(cat!.tax[k] ?? 0) : (taxDef[k] ?? 0)),
+    ])) as Record<TaxField, number>;
     out.push({
       catalog_item_id: it.catalog_item_id ?? null,
       descricao_snapshot: descricao,
       qtd: it.qtd,
       preco_unit: preco,
       desconto_pct: desconto,
-      ipi_pct: ipi,
-      st_pct: st,
+      ...tax,
     });
   }
   return out;
@@ -163,7 +190,7 @@ async function resolveItems(
 
 const orderItems = (orderId: number): Promise<unknown[]> => query(
   `SELECT id, catalog_item_id, descricao_snapshot, qtd, preco_unit, desconto_pct,
-          ipi_pct, st_pct, total
+          icms_pct, ipi_pct, st_pct, pis_pct, cofins_pct, iss_pct, total
    FROM order_items WHERE order_id = $1 ORDER BY id`,
   [orderId],
 );
@@ -393,10 +420,10 @@ export function orderRoutes(app: FastifyInstance): void {
           // total NÃO entra no INSERT — é coluna GENERATED (calculada no banco).
           await c.query(
             `INSERT INTO order_items (order_id, catalog_item_id, descricao_snapshot, qtd,
-               preco_unit, desconto_pct, ipi_pct, st_pct)
-             VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+               preco_unit, desconto_pct, icms_pct, ipi_pct, st_pct, pis_pct, cofins_pct, iss_pct)
+             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
             [id, it.catalog_item_id, it.descricao_snapshot, it.qtd, it.preco_unit,
-              it.desconto_pct, it.ipi_pct, it.st_pct],
+              it.desconto_pct, it.icms_pct, it.ipi_pct, it.st_pct, it.pis_pct, it.cofins_pct, it.iss_pct],
           );
         }
         await c.query(RECOMPUTE_TOTAL, [id]);

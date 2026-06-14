@@ -14,6 +14,12 @@ export const fmtDate = (iso: string): string =>
 
 export const todayStr = (): string => new Date().toISOString().slice(0, 10);
 
+// Number de valor digitado aceitando vírgula OU ponto decimal (pt-BR). Para
+// inputs type="text"/inputMode="decimal" onde o usuário pode digitar "1,5".
+// '' / inválido -> NaN (caller trata com `|| 0` ou checagem própria).
+export const dec = (s: string | number | null | undefined): number =>
+  s == null || s === '' ? NaN : Number(String(s).replace(',', '.'));
+
 // numeric cru do banco -> string limpa para input de edição. Tira zeros à
 // direita SEM arredondar (preserva precisão): '90.000000'->'90',
 // '10.330000'->'10.33', '10.333'->'10.333'. Mantém o valor cru editável; o

@@ -98,6 +98,10 @@ export interface GeocodeResult {
 export interface CatalogItem {
   id: number; nome: string; codigo: string | null; descricao: string | null;
   preco: string | null; represented_id: number | null; ativo: boolean;
+  // alíquotas por produto (numeric vem string do pg). null = não definido →
+  // pedido cai no default da org. Ver TaxDefaults.
+  icms_pct: string | null; ipi_pct: string | null; st_pct: string | null;
+  pis_pct: string | null; cofins_pct: string | null; iss_pct: string | null;
 }
 
 export type SampleStatus = 'solicitada' | 'enviada' | 'recebida' | 'cancelada';
@@ -190,7 +194,13 @@ export interface Carrier {
 export type OrderStatus = 'cotacao' | 'rascunho' | 'enviado' | 'faturado' | 'entregue' | 'cancelado';
 export interface OrderItem {
   id: number; catalog_item_id: number | null; descricao_snapshot: string;
-  qtd: string; preco_unit: string; desconto_pct: string; ipi_pct: string; st_pct: string; total: string;
+  qtd: string; preco_unit: string; desconto_pct: string;
+  icms_pct: string; ipi_pct: string; st_pct: string; pis_pct: string; cofins_pct: string; iss_pct: string;
+  total: string;
+}
+// Alíquotas default da org (numbers; ver /api/tax-defaults).
+export interface TaxDefaults {
+  icms_pct: number; ipi_pct: number; st_pct: number; pis_pct: number; cofins_pct: number; iss_pct: number;
 }
 export interface Order {
   id: number; numero: number; relationship_id: number | null; company_id: number;

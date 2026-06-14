@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
-import type { Brand, CompanyHit, Contact, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
+import type { Brand, CompanyHit, Contact, NamedItem, RepresentedCompany, Stage, TaxDefaults } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { ProfileForm } from './Profile.tsx';
 import { toast } from '../lib/toast.tsx';
-import { maskCNPJ, maskPhone } from '../lib/format.ts';
+import { dec, maskCNPJ, maskPhone } from '../lib/format.ts';
 
-type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'alertas';
+type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
   { key: 'perfil', label: 'Perfil-alvo', icon: 'compass', desc: 'Quem o motor deve priorizar' },
   { key: 'empresas', label: 'Empresas representadas', icon: 'building', desc: 'Representadas e suas marcas' },
@@ -17,6 +17,7 @@ const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; adm
   { key: 'cenarios', label: 'Cenários', icon: 'list', desc: 'Opções de "cenário atual"' },
   { key: 'acoes', label: 'Ações próximo nível', icon: 'target', desc: 'Opções de ação para avançar' },
   { key: 'funil', label: 'Funil', icon: 'columns', desc: 'Fases do seu pipeline de vendas' },
+  { key: 'aliquotas', label: 'Alíquotas', icon: 'percent', desc: 'Impostos default dos pedidos', admin: true },
   { key: 'alertas', label: 'Alertas', icon: 'bell', desc: 'Inatividade no dashboard', admin: true },
 ];
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -59,6 +60,7 @@ export function Settings(): React.JSX.Element {
               desc='Opções do dropdown "Ação para próximo nível" na prospecção.' placeholder="Nova ação (ex.: Enviar proposta)" />
           )}
           {section === 'funil' && <FunilEditor inputCls={inputCls} />}
+          {section === 'aliquotas' && <AliquotasEditor inputCls={inputCls} />}
           {section === 'alertas' && <AlertasEditor inputCls={inputCls} />}
         </div>
       </div>
@@ -101,6 +103,67 @@ function AlertasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
           onChange={(e) => setDias(e.target.value === '' ? '' : Number(e.target.value))}
           className={cn(inputCls, 'w-32')} />
       </label>
+      <div className="mt-4 flex items-center gap-3">
+        <Btn icon="check" onClick={() => void save()}>Salvar</Btn>
+        {saved && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
+      </div>
+    </Card>
+  );
+}
+
+// Alíquotas default da org (org-scoped, admin only no backend). Usadas como base
+// nos impostos de cada item ao criar pedido; cada pedido guarda a própria cópia.
+const TAX_FIELDS: { key: keyof TaxDefaults; label: string }[] = [
+  { key: 'icms_pct', label: 'ICMS' },
+  { key: 'ipi_pct', label: 'IPI' },
+  { key: 'st_pct', label: 'ICMS-ST' },
+  { key: 'pis_pct', label: 'PIS' },
+  { key: 'cofins_pct', label: 'COFINS' },
+  { key: 'iss_pct', label: 'ISS' },
+];
+
+function AliquotasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
+  const [tax, setTax] = useState<Record<keyof TaxDefaults, string>>();
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void api.get<{ tax: TaxDefaults }>('/api/tax-defaults').then((r) => {
+      setTax(Object.fromEntries(TAX_FIELDS.map(({ key }) => [key, r.tax[key] ? String(r.tax[key]) : ''])) as Record<keyof TaxDefaults, string>);
+    });
+  }, []);
+
+  const set = (k: keyof TaxDefaults) => (e: React.ChangeEvent<HTMLInputElement>): void =>
+    setTax((p) => ({ ...p!, [k]: e.target.value.replace(/[^\d.,]/g, '') }));
+
+  const save = async (): Promise<void> => {
+    if (!tax) return;
+    const body = Object.fromEntries(TAX_FIELDS.map(({ key }) => [key, dec(tax[key]) || 0]));
+    try {
+      const r = await api.patch<{ tax: TaxDefaults }>('/api/tax-defaults', body);
+      setTax(Object.fromEntries(TAX_FIELDS.map(({ key }) => [key, r.tax[key] ? String(r.tax[key]) : ''])) as Record<keyof TaxDefaults, string>);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+      toast.success('Alíquotas salvas.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
+  };
+
+  if (!tax) return <Spinner />;
+  return (
+    <Card className="max-w-lg p-4">
+      <h3 className="text-sm font-semibold text-ink-900">Alíquotas de impostos</h3>
+      <p className="mt-0.5 text-xs text-ink-400">
+        Percentuais default usados ao criar um pedido. Cada item do pedido recebe uma cópia editável —
+        mudar aqui não altera pedidos já criados.
+      </p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {TAX_FIELDS.map(({ key, label }) => (
+          <label key={key} className="block">
+            <span className="mb-1 block text-xs font-medium text-ink-500">{label} (%)</span>
+            <input type="text" inputMode="decimal" value={tax[key]} onChange={set(key)}
+              placeholder="0" className={inputCls} />
+          </label>
+        ))}
+      </div>
       <div className="mt-4 flex items-center gap-3">
         <Btn icon="check" onClick={() => void save()}>Salvar</Btn>
         {saved && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
@@ -312,9 +375,9 @@ function RepresentadasEditor({ inputCls }: { inputCls: string }): React.JSX.Elem
                 <Icon name={e.ativo ? 'check' : 'x'} size={16} />
               </button>
               <button onClick={() => setEditing(e.id)} aria-label="Editar"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="settings" size={16} /></button>
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
               <button onClick={() => void remove(e.id)} aria-label="Excluir"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={16} /></button>
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
             </div>
           </div>
         ))}
@@ -582,9 +645,9 @@ function ContatosEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <button onClick={() => setEditing(c.id)} aria-label="Editar"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="settings" size={16} /></button>
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
               <button onClick={() => void remove(c.id)} aria-label="Excluir"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={16} /></button>
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
             </div>
           </div>
         ))}

@@ -3,24 +3,37 @@ import { api } from '../lib/api.ts';
 import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, numStr } from '../lib/format.ts';
+import { brl, dec, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
-type Form = { nome: string; codigo: string; descricao: string; preco: string; represented_id: string };
-const EMPTY: Form = { nome: '', codigo: '', descricao: '', preco: '', represented_id: '' };
+// Alíquotas por produto. Vazio = não definido → o pedido cai no default da org.
+const TAX_FIELDS = [
+  ['icms_pct', 'ICMS'], ['ipi_pct', 'IPI'], ['st_pct', 'ICMS-ST'],
+  ['pis_pct', 'PIS'], ['cofins_pct', 'COFINS'], ['iss_pct', 'ISS'],
+] as const;
+type TaxKey = (typeof TAX_FIELDS)[number][0];
+
+type Form = { nome: string; codigo: string; descricao: string; preco: string; represented_id: string } & Record<TaxKey, string>;
+const EMPTY: Form = {
+  nome: '', codigo: '', descricao: '', preco: '', represented_id: '',
+  icms_pct: '', ipi_pct: '', st_pct: '', pis_pct: '', cofins_pct: '', iss_pct: '',
+};
 const toForm = (i: CatalogItem): Form => ({
   nome: i.nome, codigo: i.codigo ?? '', descricao: i.descricao ?? '',
   preco: numStr(i.preco), represented_id: i.represented_id != null ? String(i.represented_id) : '',
+  ...Object.fromEntries(TAX_FIELDS.map(([k]) => [k, numStr(i[k])])) as Record<TaxKey, string>,
 });
 function toBody(f: Form): Record<string, unknown> {
   const t = (s: string): string | null => (s.trim() === '' ? null : s.trim());
+  const taxNum = (s: string): number | null => (s.trim() === '' ? null : dec(s));
   return {
     nome: f.nome.trim(), codigo: t(f.codigo), descricao: t(f.descricao),
     preco: f.preco.trim() === '' ? null : Number(f.preco),
     represented_id: f.represented_id === '' ? null : Number(f.represented_id),
+    ...Object.fromEntries(TAX_FIELDS.map(([k]) => [k, taxNum(f[k])])),
   };
 }
 
@@ -145,9 +158,9 @@ export function Catalog(): React.JSX.Element {
                   <button onClick={() => void toggleAtivo(i)} title={i.ativo ? 'Desativar' : 'Ativar'}
                     className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name={i.ativo ? 'check' : 'x'} size={16} /></button>
                   <button onClick={() => setEditing(i.id)} aria-label="Editar"
-                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="settings" size={16} /></button>
+                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                   <button onClick={() => void remove(i.id)} aria-label="Excluir"
-                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={16} /></button>
+                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
                 </div>
               </div>
             ))}
@@ -184,6 +197,19 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
         </select>
       </div>
       <textarea value={f.descricao} onChange={set('descricao')} placeholder="Descrição" rows={2} className={cn(inputCls, 'resize-y')} />
+      <div>
+        <p className="mb-1.5 text-xs font-medium text-ink-500">Impostos (%) — vazio usa o default da org</p>
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
+          {TAX_FIELDS.map(([k, label]) => (
+            <label key={k} className="block">
+              <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{label}</span>
+              <input type="text" inputMode="decimal" value={f[k]} placeholder="—"
+                onChange={(e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d.,]/g, '') }))}
+                className={cn(inputCls, 'px-2 py-1.5 text-sm')} />
+            </label>
+          ))}
+        </div>
+      </div>
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
         <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>

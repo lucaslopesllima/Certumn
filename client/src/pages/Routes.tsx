@@ -476,9 +476,9 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
                   </span>
                 </span>
                 <button onClick={() => startEdit(v)} aria-label="Editar"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-700"><Icon name="pencil" size={15} /></button>
-                <button onClick={() => void remove(v.id)} aria-label="Remover"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-rose-50 hover:text-rose-600"><Icon name="trash" size={15} /></button>
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
+                <button onClick={() => void remove(v.id)} aria-label="Excluir"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
               </li>
             ))}
           </ul>

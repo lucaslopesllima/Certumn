@@ -441,7 +441,7 @@ function CategoriesModal({ categories, onClose, onChanged }: {
                 </div>
                 <button onClick={() => void remove(c)} aria-label={`Excluir ${c.nome}`}
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
-                  <Icon name="trash" size={15} />
+                  <Icon name="trash" size={16} />
                 </button>
               </div>
             ))}
