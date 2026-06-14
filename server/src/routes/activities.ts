@@ -33,9 +33,12 @@ export function activityRoutes(app: FastifyInstance): void {
     const rows = await query(
       `SELECT a.id, a.tipo, a.titulo, a.start_at, a.end_at, a.owner_user_id, a.company_id, a.status,
               a.checkin_lat, a.checkin_lon, a.checkin_at, a.relatorio,
-              c.razao_social
+              a.represented_id, a.contact_id,
+              c.razao_social, rc.nome AS represented_nome, ct.nome AS contact_nome
        FROM activities a
        LEFT JOIN companies c ON c.id = a.company_id
+       LEFT JOIN represented_companies rc ON rc.id = a.represented_id
+       LEFT JOIN contacts ct ON ct.id = a.contact_id
        WHERE ${where.join(' AND ')}
        ORDER BY a.start_at`,
       params,
@@ -55,6 +58,8 @@ export function activityRoutes(app: FastifyInstance): void {
           start_at: { type: 'string' },
           end_at: { type: ['string', 'null'] },
           company_id: { type: ['integer', 'null'] },
+          represented_id: { type: ['integer', 'null'] },
+          contact_id: { type: ['integer', 'null'] },
           owner_user_id: { type: ['integer', 'null'] },
           status: { type: 'string', enum: ['pendente', 'feito', 'cancelado'] },
         },
@@ -66,14 +71,15 @@ export function activityRoutes(app: FastifyInstance): void {
     if (invalidOwnerAssignment(req, b)) {
       return reply.code(403).send({ error: 'vendedor não atribui compromisso a outro usuário' });
     }
-    const badRef = await invalidOrgRef(orgId, b, ['owner_user_id']);
+    const badRef = await invalidOrgRef(orgId, b, ['owner_user_id', 'represented_id', 'contact_id']);
     if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const rows = await query(
-      `INSERT INTO activities (org_id, tipo, titulo, start_at, end_at, owner_user_id, company_id, status)
-       VALUES ($1, COALESCE($2,'tarefa'), $3, $4, $5, $6, $7, COALESCE($8::activity_status,'pendente'))
-       RETURNING id, tipo, titulo, start_at, end_at, owner_user_id, company_id, status`,
+      `INSERT INTO activities (org_id, tipo, titulo, start_at, end_at, owner_user_id, company_id, represented_id, contact_id, status)
+       VALUES ($1, COALESCE($2,'tarefa'), $3, $4, $5, $6, $7, $8, $9, COALESCE($10::activity_status,'pendente'))
+       RETURNING id, tipo, titulo, start_at, end_at, owner_user_id, company_id, represented_id, contact_id, status`,
       [orgId, b.tipo ?? null, b.titulo, b.start_at, b.end_at ?? null,
-        b.owner_user_id ?? req.auth!.userId, b.company_id ?? null, b.status ?? null],
+        b.owner_user_id ?? req.auth!.userId, b.company_id ?? null,
+        b.represented_id ?? null, b.contact_id ?? null, b.status ?? null],
     );
     return { activity: rows[0] };
   });
@@ -88,6 +94,7 @@ export function activityRoutes(app: FastifyInstance): void {
           tipo: { type: 'string' }, titulo: { type: 'string' },
           start_at: { type: 'string' }, end_at: { type: ['string', 'null'] },
           company_id: { type: ['integer', 'null'] }, owner_user_id: { type: ['integer', 'null'] },
+          represented_id: { type: ['integer', 'null'] }, contact_id: { type: ['integer', 'null'] },
           status: { type: 'string', enum: ['pendente', 'feito', 'cancelado'] },
         },
       },
@@ -106,11 +113,11 @@ export function activityRoutes(app: FastifyInstance): void {
     if (invalidOwnerAssignment(req, b)) {
       return reply.code(403).send({ error: 'vendedor não atribui compromisso a outro usuário' });
     }
-    const badRef = await invalidOrgRef(orgId, b, ['owner_user_id']);
+    const badRef = await invalidOrgRef(orgId, b, ['owner_user_id', 'represented_id', 'contact_id']);
     if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const sets: string[] = [];
     const params: unknown[] = [];
-    for (const k of ['tipo', 'titulo', 'start_at', 'end_at', 'company_id', 'owner_user_id', 'status'] as const) {
+    for (const k of ['tipo', 'titulo', 'start_at', 'end_at', 'company_id', 'represented_id', 'contact_id', 'owner_user_id', 'status'] as const) {
       if (k in b) {
         params.push(b[k]);
         sets.push(k === 'status' ? `${k} = $${params.length}::activity_status` : `${k} = $${params.length}`);
@@ -120,7 +127,7 @@ export function activityRoutes(app: FastifyInstance): void {
     params.push(id, orgId);
     const rows = await query(
       `UPDATE activities SET ${sets.join(', ')} WHERE id = $${params.length - 1} AND org_id = $${params.length}
-       RETURNING id, tipo, titulo, start_at, end_at, owner_user_id, company_id, status`,
+       RETURNING id, tipo, titulo, start_at, end_at, owner_user_id, company_id, represented_id, contact_id, status`,
       params,
     );
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });

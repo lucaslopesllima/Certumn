@@ -3,7 +3,7 @@ import { api, ApiError } from '../lib/api.ts';
 import type { Activity, KanbanCard, OptimizeResult } from '../lib/types.ts';
 import { Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
-import { ActivityCreateModal, VisitModal } from '../lib/activityModal.tsx';
+import { ActivityCreateModal, VisitModal, type RepresentedOption } from '../lib/activityModal.tsx';
 import { toast } from '../lib/toast.tsx';
 
 // "Adicionar" sem dia escolhido abre num horário comercial futuro: antes das 9h
@@ -44,6 +44,7 @@ type FunnelCompany = { company_id: number; label: string };
 export function Agenda(): React.JSX.Element {
   const [items, setItems] = useState<Activity[]>([]);
   const [funnel, setFunnel] = useState<FunnelCompany[]>([]);
+  const [represented, setRepresented] = useState<RepresentedOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
@@ -78,6 +79,12 @@ export function Agenda(): React.JSX.Element {
       opts.sort((a, b) => a.label.localeCompare(b.label));
       setFunnel(opts);
     }).catch(() => undefined);
+  }, []);
+
+  // Representadas para vincular numa atividade (com seus contatos no modal).
+  useEffect(() => {
+    void api.get<{ empresas: RepresentedOption[] }>('/api/represented')
+      .then((r) => setRepresented(r.empresas)).catch(() => undefined);
   }, []);
 
   const toggle = async (a: Activity): Promise<void> => {
@@ -228,7 +235,7 @@ export function Agenda(): React.JSX.Element {
       )}
 
       {addAt && (
-        <ActivityCreateModal preset={addAt} funnel={funnel} onClose={() => setAddAt(null)}
+        <ActivityCreateModal preset={addAt} funnel={funnel} represented={represented} onClose={() => setAddAt(null)}
           onSaved={() => { setAddAt(null); void load(); }} />
       )}
       {dayOpen && (
@@ -245,8 +252,9 @@ export function Agenda(): React.JSX.Element {
           onSaved={() => { setVisiting(null); void load(); }} />
       )}
       {editing && (
-        <ActivityCreateModal preset={new Date(editing.start_at)} funnel={funnel}
-          activity={{ id: editing.id, titulo: editing.titulo, tipo: editing.tipo, start_at: editing.start_at, company_id: editing.company_id }}
+        <ActivityCreateModal preset={new Date(editing.start_at)} funnel={funnel} represented={represented}
+          activity={{ id: editing.id, titulo: editing.titulo, tipo: editing.tipo, start_at: editing.start_at,
+            company_id: editing.company_id, represented_id: editing.represented_id, contact_id: editing.contact_id }}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); void load(); }} />
       )}
@@ -421,7 +429,7 @@ function Row({ a, onToggle, onRemove, onEdit, onVisit }: {
         </span>
         <div className="min-w-0 flex-1">
           <p className={cn('truncate text-sm font-semibold', done ? 'text-ink-400 line-through' : 'text-ink-800')}>{a.titulo}</p>
-          <p className="truncate text-xs text-ink-400">{fmtTime(a.start_at)} · {TIPO[a.tipo]?.label ?? a.tipo}{a.razao_social ? ` · ${a.razao_social}` : ''}</p>
+          <p className="truncate text-xs text-ink-400">{fmtTime(a.start_at)} · {TIPO[a.tipo]?.label ?? a.tipo}{a.razao_social ? ` · ${a.razao_social}` : ''}{a.represented_nome ? ` · ${a.represented_nome}` : ''}{a.contact_nome ? ` · ${a.contact_nome}` : ''}</p>
         </div>
       </button>
       {podeVisitar && (

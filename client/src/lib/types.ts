@@ -151,6 +151,8 @@ export interface VisitReport { resultado: string; proximo_passo: string | null; 
 export interface Activity {
   id: number; tipo: string; titulo: string; start_at: string; end_at: string | null;
   company_id: number | null; status: string; razao_social: string | null;
+  represented_id: number | null; contact_id: number | null;
+  represented_nome: string | null; contact_nome: string | null;
   checkin_lat?: number | null; checkin_lon?: number | null; checkin_at?: string | null;
   relatorio?: VisitReport | null;
 }

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api.ts';
 import { postField } from './offline.ts';
 import { Btn, Card, cn } from './ui.tsx';
@@ -17,16 +17,21 @@ const TIPOS: { v: string; label: string; icon: IconName; chip: string }[] = [
 ];
 
 export type FunnelCompany = { company_id: number; label: string };
+export type RepresentedOption = { id: number; nome: string };
+type ContactOption = { id: number; nome: string };
 
 const toLocalInput = (d: Date): string => {
   const p = (n: number): string => String(n).padStart(2, '0');
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
 };
 
-export type EditableActivity = { id: number; titulo: string; tipo: string; start_at: string; company_id: number | null };
+export type EditableActivity = {
+  id: number; titulo: string; tipo: string; start_at: string;
+  company_id: number | null; represented_id: number | null; contact_id: number | null;
+};
 
-export function ActivityCreateModal({ preset, funnel, presetCompanyId, activity, onClose, onSaved }: {
-  preset: Date; funnel: FunnelCompany[]; presetCompanyId?: number | null;
+export function ActivityCreateModal({ preset, funnel, represented, presetCompanyId, activity, onClose, onSaved }: {
+  preset: Date; funnel: FunnelCompany[]; represented: RepresentedOption[]; presetCompanyId?: number | null;
   activity?: EditableActivity;  // se presente → modo edição (PATCH)
   onClose: () => void; onSaved: () => void;
 }): React.JSX.Element {
@@ -35,7 +40,21 @@ export function ActivityCreateModal({ preset, funnel, presetCompanyId, activity,
   const [tipo, setTipo] = useState(activity?.tipo ?? 'tarefa');
   const [start, setStart] = useState(toLocalInput(activity ? new Date(activity.start_at) : preset));
   const [companyId, setCompanyId] = useState<number | null>(activity ? activity.company_id : (presetCompanyId ?? null));
+  const [representedId, setRepresentedId] = useState<number | null>(activity?.represented_id ?? null);
+  const [contactId, setContactId] = useState<number | null>(activity?.contact_id ?? null);
+  const [contacts, setContacts] = useState<ContactOption[]>([]);
   const [busy, setBusy] = useState(false);
+
+  // Contatos dependem da representada escolhida. Troca de representada zera o
+  // contato se ele não pertencer mais à lista.
+  useEffect(() => {
+    if (representedId == null) { setContacts([]); return; }
+    let alive = true;
+    void api.get<{ contacts: ContactOption[] }>(`/api/contacts?represented_id=${representedId}`)
+      .then((r) => { if (alive) setContacts(r.contacts); })
+      .catch(() => { if (alive) setContacts([]); });
+    return () => { alive = false; };
+  }, [representedId]);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -43,7 +62,10 @@ export function ActivityCreateModal({ preset, funnel, presetCompanyId, activity,
     if (!start) { toast.error('Informe a data e hora.'); return; }
     setBusy(true);
     try {
-      const body = { titulo: titulo.trim(), tipo, start_at: new Date(start).toISOString(), company_id: companyId };
+      const body = {
+        titulo: titulo.trim(), tipo, start_at: new Date(start).toISOString(),
+        company_id: companyId, represented_id: representedId, contact_id: contactId,
+      };
       if (editando) await api.patch(`/api/activities/${activity!.id}`, body);
       else await api.post('/api/activities', body);
       toast.success(editando ? 'Atividade salva.' : 'Atividade criada.');
@@ -82,6 +104,24 @@ export function ActivityCreateModal({ preset, funnel, presetCompanyId, activity,
               <select value={companyId ?? ''} onChange={(e) => setCompanyId(e.target.value === '' ? null : Number(e.target.value))} className={cn(inputCls, 'mt-1')}>
                 <option value="">Sem vínculo</option>
                 {funnel.map((f) => <option key={f.company_id} value={f.company_id}>{f.label}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-ink-600">Representada</span>
+              <select value={representedId ?? ''}
+                onChange={(e) => { const v = e.target.value === '' ? null : Number(e.target.value); setRepresentedId(v); setContactId(null); }}
+                className={cn(inputCls, 'mt-1')}>
+                <option value="">Sem vínculo</option>
+                {represented.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-xs font-semibold text-ink-600">Contato</span>
+              <select value={contactId ?? ''} disabled={representedId == null}
+                onChange={(e) => setContactId(e.target.value === '' ? null : Number(e.target.value))}
+                className={cn(inputCls, 'mt-1', representedId == null && 'opacity-50')}>
+                <option value="">{representedId == null ? 'Escolha a representada' : contacts.length ? 'Sem vínculo' : 'Nenhum contato'}</option>
+                {contacts.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </label>
             <div className="flex justify-end gap-2 pt-1">

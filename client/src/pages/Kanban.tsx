@@ -531,6 +531,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
       <ActivityCreateModal
         preset={hojeAs9()}
         funnel={[{ company_id: card.company_id, label: card.nome_fantasia || card.razao_social }]}
+        represented={reps}
         presetCompanyId={card.company_id}
         onClose={() => setCreatingActivity(false)}
         onSaved={() => setCreatingActivity(false)}
