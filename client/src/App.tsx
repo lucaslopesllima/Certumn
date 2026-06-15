@@ -63,7 +63,7 @@ type NavGroup = { label?: string; items: NavItem[] };
 const NAV_GROUPS: NavGroup[] = [
   { items: [{ to: '/', label: 'Dashboard', icon: 'gauge' }] },
   { label: 'Vendas', items: [
-    { to: '/prospeccao', label: 'Prospecção', icon: 'target' },
+    { to: '/prospeccao', label: 'Buscar Empresas', icon: 'target' },
     { to: '/funil', label: 'Funil', icon: 'columns' },
     { to: '/clientes', label: 'Clientes', icon: 'users' },
     { to: '/carteiras', label: 'Carteiras', icon: 'layers', admin: true },
@@ -175,7 +175,7 @@ function Sidebar(): React.JSX.Element {
               // recolhido: cabeçalho some, separador fino marca a fronteira do grupo
               ? <div className="mx-2 mb-1 border-t border-white/10" />
               : <button onClick={() => toggleGroup(g.label!)} aria-expanded={!isClosed}
-                  className="flex w-full items-center justify-between rounded-lg px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-500 transition-colors hover:text-ink-300">
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-1 text-xs font-semibold uppercase tracking-wider text-ink-500 transition-colors hover:text-ink-300">
                   {g.label}
                   <Icon name="chevronRight" size={14} className={cn('text-white transition-transform duration-200', !isClosed && 'rotate-90')} />
                 </button>
@@ -183,7 +183,7 @@ function Sidebar(): React.JSX.Element {
             {!isClosed && g.items.map((n) => (
               <NavLink key={n.to} to={n.to} end={n.to === '/'} title={collapsed ? n.label : undefined}
                 className={({ isActive }) => cn(
-                  'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                  'group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-base font-medium transition-colors',
                   collapsed && 'justify-center px-0',
                   isActive ? 'bg-white/10 text-white' : 'text-ink-300 hover:bg-white/5 hover:text-white')}>
                 {({ isActive }) => (

@@ -9,9 +9,12 @@ import { cn } from './ui.tsx';
 // cadastros (transportadoras, representadas, etc.). Digite CNPJ ou nome →
 // escolha um resultado → onPick recebe a empresa para popular o formulário.
 // Debounce de 300ms; aborta a requisição anterior a cada tecla.
-export function CompanySearch({ onPick, placeholder = 'Buscar empresa por CNPJ ou nome…' }: {
+export function CompanySearch({ onPick, placeholder = 'Buscar empresa por CNPJ ou nome…', disableInFunnel = false }: {
   onPick: (c: CompanyHit) => void;
   placeholder?: string;
+  // Quando true, empresas já no funil aparecem opacas/desativadas (com tooltip)
+  // em vez de selecionáveis. Usado onde duplicar relationship é proibido (Clientes).
+  disableInFunnel?: boolean;
 }): React.JSX.Element {
   const [q, setQ] = useState('');
   const [hits, setHits] = useState<CompanyHit[]>([]);
@@ -59,15 +62,26 @@ export function CompanySearch({ onPick, placeholder = 'Buscar empresa por CNPJ o
         <div className="absolute z-[1600] mt-1 max-h-72 w-full overflow-auto rounded-xl border border-ink-200 bg-white shadow-pop">
           {hits.length === 0 ? (
             <p className="px-3 py-4 text-center text-sm text-ink-400">{loading ? 'Buscando…' : 'Nenhuma empresa encontrada.'}</p>
-          ) : hits.map((c) => (
-            <button key={c.id} type="button" onClick={() => pick(c)}
-              className={cn('flex w-full flex-col items-start gap-0.5 border-b border-ink-50 px-3 py-2 text-left transition last:border-0 hover:bg-ink-50')}>
-              <span className="truncate text-sm font-medium text-ink-800">{c.nome_fantasia || c.razao_social}</span>
-              <span className="truncate text-[11px] text-ink-400">
-                {c.cnpj}{c.cidade ? ` · ${c.cidade}/${c.uf}` : ''}
-              </span>
-            </button>
-          ))}
+          ) : hits.map((c) => {
+            const blocked = disableInFunnel && c.in_funnel === true;
+            return (
+              <button key={c.id} type="button" disabled={blocked}
+                onClick={() => !blocked && pick(c)}
+                title={blocked ? 'Empresa já está no funil' : undefined}
+                className={cn(
+                  'flex w-full flex-col items-start gap-0.5 border-b border-ink-50 px-3 py-2 text-left transition last:border-0',
+                  blocked ? 'cursor-not-allowed opacity-50' : 'hover:bg-ink-50',
+                )}>
+                <span className="flex w-full items-center gap-1.5 truncate text-sm font-medium text-ink-800">
+                  <span className="truncate">{c.nome_fantasia || c.razao_social}</span>
+                  {blocked && <span className="shrink-0 rounded bg-ink-100 px-1.5 py-0.5 text-[10px] font-medium text-ink-500">no funil</span>}
+                </span>
+                <span className="truncate text-[11px] text-ink-400">
+                  {c.cnpj}{c.cidade ? ` · ${c.cidade}/${c.uf}` : ''}
+                </span>
+              </button>
+            );
+          })}
         </div>
       )}
     </div>

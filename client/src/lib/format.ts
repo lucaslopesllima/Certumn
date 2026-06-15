@@ -79,6 +79,15 @@ export const maskCNPJ = (v: string): string => {
 export const maskSearchCNPJ = (v: string): string =>
   /[a-zA-Z]/.test(v) || v.replace(/\D/g, '').length < 4 ? v : maskCNPJ(v);
 
+// Percentual 0–100 p/ inputs type="text" inputMode="decimal": mantém só
+// dígitos + 1 separador decimal (até 2 casas), normaliza p/ vírgula e capa
+// em 100. Guarda string editável; o caller faz dec() no submit. '' fica ''.
+export const maskPct = (v: string): string => {
+  const [int, ...rest] = v.replace(/[^\d.,]/g, '').replace(/[.,]/g, ',').split(',');
+  const out = rest.length ? `${int},${rest.join('').slice(0, 2)}` : int;
+  return dec(out) > 100 ? '100' : out;
+};
+
 // link wa.me (WhatsApp click-to-chat). Assume DDI Brasil (55) quando ausente.
 // Retorna null se não houver dígitos suficientes p/ um telefone válido.
 export const waLink = (tel: string | null | undefined): string | null => {

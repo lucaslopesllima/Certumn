@@ -7,7 +7,7 @@ import { useOptionalUser } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { ProfileForm } from './Profile.tsx';
 import { toast } from '../lib/toast.tsx';
-import { dec, maskCNPJ, maskPhone } from '../lib/format.ts';
+import { dec, maskCNPJ, maskPct, maskPhone } from '../lib/format.ts';
 
 type Section = 'perfil' | 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
@@ -32,15 +32,15 @@ export function Settings(): React.JSX.Element {
       <PageHeader title="Configurações" subtitle="Ajuste como o Prospecta funciona para a sua operação." />
       <div className="flex flex-col gap-4 sm:flex-row">
         {/* sub-nav */}
-        <nav className="flex gap-2 overflow-x-auto sm:w-56 sm:flex-col sm:gap-1">
+        <nav className="flex gap-2 overflow-x-auto sm:w-56 sm:flex-col sm:gap-1 sm:overflow-x-visible">
           {sections.map((s) => {
             const on = section === s.key;
             return (
               <button key={s.key} onClick={() => setSection(s.key)}
-                className={cn('flex items-center gap-3 whitespace-nowrap rounded-xl px-3 py-2.5 text-left transition-colors',
+                className={cn('flex items-center gap-3 whitespace-nowrap sm:whitespace-normal rounded-xl px-3 py-2.5 text-left transition-colors',
                   on ? 'bg-brand-600 text-white shadow-sm shadow-brand-600/20' : 'bg-white text-ink-600 shadow-card hover:bg-ink-50')}>
-                <Icon name={s.icon} size={18} className={on ? 'text-white' : 'text-ink-400'} />
-                <span className="text-sm font-semibold">
+                <Icon name={s.icon} size={18} className={cn('shrink-0', on ? 'text-white' : 'text-ink-400')} />
+                <span className="min-w-0 text-sm font-semibold">
                   {s.label}
                   <span className={cn('hidden text-xs font-normal sm:block', on ? 'text-brand-100' : 'text-ink-400')}>{s.desc}</span>
                 </span>
@@ -258,7 +258,7 @@ function AliquotasEditor({ inputCls }: { inputCls: string }): React.JSX.Element 
   }, []);
 
   const set = (k: keyof TaxDefaults) => (e: React.ChangeEvent<HTMLInputElement>): void =>
-    setTax((p) => ({ ...p!, [k]: e.target.value.replace(/[^\d.,]/g, '') }));
+    setTax((p) => ({ ...p!, [k]: maskPct(e.target.value) }));
 
   const save = async (): Promise<void> => {
     if (!tax) return;

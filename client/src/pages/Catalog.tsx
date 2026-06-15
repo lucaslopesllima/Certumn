@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts';
 import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, dec, numStr } from '../lib/format.ts';
+import { brl, dec, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 import { UNIDADES_MEDIDA_GRUPOS } from '../lib/units.ts';
@@ -215,7 +215,7 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
             <label key={k} className="block">
               <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{label}</span>
               <input type="text" inputMode="decimal" value={f[k]} placeholder="—"
-                onChange={(e) => setF((p) => ({ ...p, [k]: e.target.value.replace(/[^\d.,]/g, '') }))}
+                onChange={(e) => setF((p) => ({ ...p, [k]: maskPct(e.target.value) }))}
                 className={cn(inputCls, 'px-2 py-1.5 text-sm')} />
             </label>
           ))}

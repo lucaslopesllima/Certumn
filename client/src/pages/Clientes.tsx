@@ -140,7 +140,7 @@ export function Clientes(): React.JSX.Element {
             {adding && (
               <div className="mb-4 rounded-xl border border-brand-200 bg-brand-50/40 p-3">
                 <p className="mb-2 text-xs font-medium text-ink-500">Busque a empresa na base e selecione para vinculá-la como cliente.</p>
-                <CompanySearch onPick={(c) => void addCliente(c)} placeholder="Buscar empresa por CNPJ ou nome…" />
+                <CompanySearch onPick={(c) => void addCliente(c)} placeholder="Buscar empresa por CNPJ ou nome…" disableInFunnel />
                 <div className="mt-2 flex justify-end">
                   <Btn variant="ghost" size="sm" disabled={busy} onClick={() => setAdding(false)}>Fechar</Btn>
                 </div>

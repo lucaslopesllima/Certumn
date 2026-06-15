@@ -3,7 +3,7 @@ import { api } from '../lib/api.ts';
 import type { CatalogItem, PriceTable, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, fmtDate, numStr } from '../lib/format.ts';
+import { brl, dec, fmtDate, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -117,7 +117,7 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
     };
     const payloadItems = items.map((i) => ({
       catalog_item_id: i.catalog_item_id, preco: Number(i.preco),
-      desconto_max_pct: i.desconto_max_pct.trim() === '' ? null : Number(i.desconto_max_pct),
+      desconto_max_pct: i.desconto_max_pct.trim() === '' ? null : dec(i.desconto_max_pct),
     }));
     try {
       if (table) {
@@ -166,8 +166,8 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
                 <input type="number" min="0" step="0.01" value={i.preco} aria-label={`Preço ${cat?.nome ?? i.catalog_item_id}`}
                   onChange={(e) => setItem(idx, { preco: e.target.value })} placeholder="Preço *"
                   className="w-28 rounded-lg border border-ink-200 px-2 py-1.5 text-sm" />
-                <input type="number" min="0" max="100" step="0.01" value={i.desconto_max_pct} aria-label={`Desconto máx ${cat?.nome ?? i.catalog_item_id}`}
-                  onChange={(e) => setItem(idx, { desconto_max_pct: e.target.value })} placeholder="Desc. máx %"
+                <input type="text" inputMode="decimal" value={i.desconto_max_pct} aria-label={`Desconto máx ${cat?.nome ?? i.catalog_item_id}`}
+                  onChange={(e) => setItem(idx, { desconto_max_pct: maskPct(e.target.value) })} placeholder="Desc. máx %"
                   className="w-28 rounded-lg border border-ink-200 px-2 py-1.5 text-sm" />
                 <button type="button" aria-label="Remover item" onClick={() => setItems((xs) => xs.filter((_, j) => j !== idx))}
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={15} /></button>

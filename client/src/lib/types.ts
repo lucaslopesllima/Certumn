@@ -315,6 +315,7 @@ export interface CompanyHit {
   cep: string | null;
   uf: string;
   cidade: string | null;
+  in_funnel?: boolean; // já tem relationship no org atual (usado p/ desativar no CompanySearch)
 }
 
 export interface FinanceCategory {

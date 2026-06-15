@@ -6,7 +6,7 @@ import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, OrderStatus, PriceTable, RepresentedCompany, TaxDefaults } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, csvNum, dec, fmtDate, numStr, todayStr } from '../lib/format.ts';
+import { brl, csvNum, dec, fmtDate, maskPct, numStr, todayStr } from '../lib/format.ts';
 import { downloadCsv } from '../lib/export.ts';
 import { toast } from '../lib/toast.tsx';
 
@@ -519,7 +519,7 @@ function OrderModal({ order, reps, companies, catalog, carriers, prefill, onClos
                       <label key={k} className="block">
                         <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{lbl}</span>
                         <input type="text" inputMode="decimal" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
-                          onChange={(e) => setItem(idx, { [k]: e.target.value.replace(/[^\d.,]/g, '') })} placeholder={ph}
+                          onChange={(e) => setItem(idx, { [k]: k.endsWith('_pct') ? maskPct(e.target.value) : e.target.value.replace(/[^\d.,]/g, '') })} placeholder={ph}
                           className={cn(fieldCls(bad), 'w-full')} />
                       </label>
                       );

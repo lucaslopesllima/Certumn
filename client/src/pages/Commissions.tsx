@@ -9,7 +9,7 @@ import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard,
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
-import { brl, csvNum, fmtDate, todayStr } from '../lib/format.ts';
+import { brl, csvNum, dec, fmtDate, maskPct, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -464,8 +464,8 @@ function RuleForm({ reps, catalog, companies, users, rule, onClose, onSaved }: {
       catalog_item_id: alvo === 'produto' ? Number(alvoId) : null,
       company_id: alvo === 'cliente' ? Number(alvoId) : null,
       user_id: alvo === 'vendedor' ? Number(alvoId) : null,
-      percent: Number(percent),
-      vendedor_split_pct: split.trim() === '' ? 100 : Number(split),
+      percent: dec(percent),
+      vendedor_split_pct: split.trim() === '' ? 100 : dec(split),
       vigencia_inicio: inicio, vigencia_fim: fim || null, ativo,
     };
     try {
@@ -509,13 +509,13 @@ function RuleForm({ reps, catalog, companies, users, rule, onClose, onSaved }: {
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Comissão % *</span>
-            <input type="number" min="0" max="100" step="0.01" value={percent}
-              onChange={(e) => setPercent(e.target.value)} className={cn(inputCls, 'mt-1')} />
+            <input type="text" inputMode="decimal" value={percent}
+              onChange={(e) => setPercent(maskPct(e.target.value))} className={cn(inputCls, 'mt-1')} />
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Split vendedor %</span>
-            <input type="number" min="0" max="100" step="0.01" value={split}
-              onChange={(e) => setSplit(e.target.value)} className={cn(inputCls, 'mt-1')} />
+            <input type="text" inputMode="decimal" value={split}
+              onChange={(e) => setSplit(maskPct(e.target.value))} className={cn(inputCls, 'mt-1')} />
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Vigência início *</span>
