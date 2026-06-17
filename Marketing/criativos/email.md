@@ -15,8 +15,8 @@ Tom direto, 1 CTA por e-mail. (Depende de SMTP — ver `LANCAMENTO.md`.)
 > Bem-vindo à Praça. Você tem 14 dias com tudo liberado.
 >
 > O primeiro passo que mais dá retorno: **definir seu alvo**. Diga o ramo (CNAE), o porte e
-> o território — a Praça cruza com ~1,6 milhão de empresas da Receita e devolve sua primeira
-> lista quente, no mapa.
+> o território — a Praça cruza com toda empresa do Brasil (base completa da Receita) e devolve
+> sua primeira lista quente, no mapa.
 >
 > 👉 **[Definir meu alvo e ver a lista]**
 >

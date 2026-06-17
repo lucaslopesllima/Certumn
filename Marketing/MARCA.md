@@ -10,8 +10,11 @@
 Não é "um CRM de prospecção". É um **ERP de representação comercial** com todas as fases
 construídas (ver `docs/PLANEJAMENTO.md` — Fases 0 a 6 concluídas):
 
-- **Prospecção inteligente** — a partir da base da Receita Federal (~1,6 milhão de empresas),
-  recomenda quais empresas abordar por **CNAE-alvo + proximidade + porte**, dentro do
+- **Base nacional integrada** — **toda empresa do Brasil** está dentro do sistema: a base
+  completa da Receita Federal (+60 milhões de CNPJs, +20 milhões ativas) com CNAE, porte,
+  endereço e contato. É o grande diferencial — não é amostra, é o país inteiro.
+- **Prospecção inteligente** — sobre essa base, recomenda quais empresas abordar por
+  **CNAE-alvo + proximidade + porte**, dentro do
   território, com lista explicável e mapa.
 - **Funil / CRM** — kanban, perfil-alvo, atividades, motivo de descarte.
 - **Pedidos e cotações** — tabelas de preço por representada com vigência, máquina de

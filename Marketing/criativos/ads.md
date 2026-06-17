@@ -8,11 +8,11 @@ Respeitando limites de caracteres das plataformas.
 
 **Headlines (até 30 caracteres cada):**
 - ERP p/ Representação (19)
-- Sistema de Comissão e Pedido (28)
+- Toda Empresa do Brasil (22)
 - Prospecção na Base da Receita (29)
 
 **Descriptions (até 90 caracteres cada):**
-- Pedidos, comissão com split, financeiro e prospecção no mapa. 14 dias grátis. (76)
+- Toda empresa do Brasil na base. Prospecção, pedidos e comissão no mapa. Teste grátis. (85)
 - O sistema feito para escritório de representação comercial. Sem cartão. (70)
 
 **URL exibida:** praca.com.br/teste-gratis
@@ -26,7 +26,7 @@ Respeitando limites de caracteres das plataformas.
 **Headline (até 40):** Pare de prospectar no escuro (27)
 **Texto primário (até 125 recomendado):**
 > A Praça mostra as empresas mais quentes da sua praça — por ramo, porte e distância — sobre
-> ~1,6 mi de empresas da Receita. No mapa, pronto para visitar. 14 dias grátis.
+> toda empresa do Brasil (base completa da Receita). No mapa, pronto para visitar. 14 dias grátis.
 
 **Descrição (até 30):** ERP de representação (20)
 **CTA:** Cadastre-se

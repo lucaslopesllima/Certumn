@@ -28,8 +28,8 @@ Tom: direto, de quem é do ramo. Emoji com parcimônia. CTA sempre claro.
 
 > Você ainda escolhe quem visitar no achismo? 🗺️
 >
-> A Praça olha ~1,6 milhão de empresas da Receita e te mostra as mais quentes da SUA praça
-> — por ramo (CNAE), porte e distância. No mapa. Prontas para abordar.
+> A Praça tem TODA empresa do Brasil na base (Receita completa) e te mostra as mais quentes
+> da SUA praça — por ramo (CNAE), porte e distância. No mapa. Prontas para abordar.
 >
 > Lista quente > lista fria. Sempre.
 >
