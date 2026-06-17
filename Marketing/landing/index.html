@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Praça — O ERP do escritório de representação comercial</title>
+<meta name="description" content="Praça é o ERP de representação comercial: prospecção inteligente na base da Receita, pedidos, comissões, financeiro e campo — tudo num só lugar." />
+<meta property="og:title" content="Praça — O ERP do escritório de representação" />
+<meta property="og:description" content="Da prospecção à comissão, num só lugar. Pare de perder pedido, comissão e cliente na planilha." />
+<meta property="og:image" content="../criativos/og-image.svg" />
+<meta property="og:type" content="website" />
+<link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: {
+        primary: { DEFAULT: '#1B2559', 600: '#27357A' },
+        accent:  { DEFAULT: '#E8A23D', 600: '#CC8A28' },
+        teal:    '#14B8A6',
+        ink:     '#0F172A',
+        body:    '#475569',
+      },
+      fontFamily: {
+        display: ['Sora','system-ui','sans-serif'],
+        sans:    ['Inter','system-ui','sans-serif'],
+      },
+    }},
+  }
+</script>
+<style>
+  body{font-family:Inter,system-ui,sans-serif;color:#475569}
+  h1,h2,h3,.font-display{font-family:Sora,system-ui,sans-serif}
+  .hero-grad{background:linear-gradient(135deg,#27357A 0%,#1B2559 60%,#141C44 100%)}
+  .grid-dots{background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}
+</style>
+</head>
+<body class="bg-[#F8FAFC] text-body antialiased">
+
+<!-- NAV -->
+<header class="sticky top-0 z-30 bg-[#F8FAFC]/85 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+    <img src="../logo.svg" alt="Praça" class="h-9 w-auto" />
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-ink">
+      <a href="#valor" class="hover:text-primary">Por que Praça</a>
+      <a href="#como" class="hover:text-primary">Como funciona</a>
+      <a href="#planos" class="hover:text-primary">Planos</a>
+      <a href="#faq" class="hover:text-primary">Dúvidas</a>
+    </nav>
+    <div class="flex items-center gap-3">
+      <a href="#" class="hidden sm:inline text-sm font-semibold text-primary hover:text-primary-600">Entrar</a>
+      <a href="#planos" class="text-sm font-semibold bg-accent hover:bg-accent-600 text-primary px-4 py-2 rounded-lg">Testar grátis</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO -->
+<section class="hero-grad text-white relative overflow-hidden">
+  <div class="grid-dots absolute inset-0"></div>
+  <div class="max-w-6xl mx-auto px-5 py-20 md:py-28 relative grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase bg-white/10 border border-white/15 px-3 py-1.5 rounded-full">
+        <span class="w-1.5 h-1.5 rounded-full bg-teal"></span> ERP de representação comercial
+      </span>
+      <h1 class="mt-6 text-4xl md:text-6xl font-bold leading-[1.05] tracking-tight">
+        Da prospecção à comissão, <span class="text-accent">num só lugar.</span>
+      </h1>
+      <p class="mt-6 text-lg text-white/80 max-w-lg">
+        A Praça é o sistema que roda o escritório de representação: encontra os clientes
+        certos na sua praça, fecha pedido, calcula comissão e fecha o mês — sem planilha.
+      </p>
+      <div class="mt-8 flex flex-col sm:flex-row gap-3">
+        <a href="#planos" class="bg-accent hover:bg-accent-600 text-primary font-semibold px-6 py-3.5 rounded-xl text-center">Testar 14 dias grátis</a>
+        <a href="#como" class="border border-white/25 hover:bg-white/10 text-white font-semibold px-6 py-3.5 rounded-xl text-center">Ver como funciona</a>
+      </div>
+      <p class="mt-4 text-sm text-white/55">Sem cartão · ~1,6 milhão de empresas da Receita na base · LGPD</p>
+    </div>
+
+    <!-- mockup: mapa do território -->
+    <div class="relative">
+      <div class="bg-white rounded-2xl shadow-2xl border border-white/10 p-3">
+        <div class="flex items-center gap-1.5 px-2 pb-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="ml-2 text-xs text-slate-400 font-medium">Praça · Prospecção</span>
+        </div>
+        <svg viewBox="0 0 520 360" class="w-full rounded-xl" xmlns="http://www.w3.org/2000/svg">
+          <rect width="520" height="360" fill="#EEF2F7"/>
+          <g stroke="#DCE3EC" stroke-width="1">
+            <path d="M0 90 H520 M0 180 H520 M0 270 H520 M130 0 V360 M260 0 V360 M390 0 V360"/>
+          </g>
+          <path d="M40 70 C140 50 180 140 280 120 S470 90 500 170 L500 360 L40 360 Z" fill="#E2EAF3"/>
+          <path d="M90 200 C170 180 210 250 300 240 S430 250 470 300" fill="none" stroke="#CBD5E1" stroke-width="6"/>
+          <!-- radar do alvo -->
+          <circle cx="250" cy="160" r="58" fill="#14B8A6" fill-opacity="0.08"/>
+          <circle cx="250" cy="160" r="58" stroke="#14B8A6" stroke-opacity="0.4" fill="none"/>
+          <circle cx="250" cy="160" r="34" stroke="#E8A23D" stroke-opacity="0.5" fill="none"/>
+          <!-- pins de cobertura -->
+          <circle cx="150" cy="120" r="6" fill="#14B8A6"/>
+          <circle cx="360" cy="230" r="6" fill="#14B8A6"/>
+          <circle cx="410" cy="120" r="6" fill="#14B8A6"/>
+          <circle cx="190" cy="250" r="6" fill="#14B8A6"/>
+          <!-- pin alvo -->
+          <path d="M250 120c-14 0-25 11-25 24.5 0 18 25 39.5 25 39.5s25-21.5 25-39.5C275 131 264 120 250 120Z" fill="#1B2559"/>
+          <circle cx="250" cy="144" r="9" fill="#E8A23D"/>
+        </svg>
+        <div class="px-2 pt-3 pb-1 flex items-center justify-between">
+          <div>
+            <p class="text-sm font-semibold text-ink font-display">Metalúrgica Horizonte Ltda</p>
+            <p class="text-xs text-slate-400">CNAE 46.xx · Porte médio · 4,2 km</p>
+          </div>
+          <span class="text-xs font-bold text-teal bg-teal/10 px-2.5 py-1 rounded-full">match 92%</span>
+        </div>
+      </div>
+      <div class="absolute -bottom-5 -left-5 bg-white rounded-xl shadow-xl border border-slate-200 px-4 py-3 hidden sm:block">
+        <p class="text-xs text-slate-400 font-medium">Comissão do mês</p>
+        <p class="text-lg font-bold text-primary font-display">R$ 38.420 <span class="text-xs font-semibold text-success">conciliada</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- LOGOS / NÚMEROS -->
+<section class="border-b border-slate-200 bg-white">
+  <div class="max-w-6xl mx-auto px-5 py-8 grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
+    <div><p class="text-2xl font-bold text-primary font-display">~1,6 mi</p><p class="text-xs text-slate-500 mt-1">empresas da Receita na base</p></div>
+    <div><p class="text-2xl font-bold text-primary font-display">6 módulos</p><p class="text-xs text-slate-500 mt-1">prospecção a financeiro</p></div>
+    <div><p class="text-2xl font-bold text-primary font-display">100% web</p><p class="text-xs text-slate-500 mt-1">+ campo offline (PWA)</p></div>
+    <div><p class="text-2xl font-bold text-primary font-display">0 planilha</p><p class="text-xs text-slate-500 mt-1">comissão e DRE no sistema</p></div>
+  </div>
+</section>
+
+<!-- 3 PILARES -->
+<section id="valor" class="max-w-6xl mx-auto px-5 py-20">
+  <div class="max-w-2xl">
+    <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight">Feito para representação — não é mais um CRM genérico</h2>
+    <p class="mt-4 text-lg">CRM comum não conhece representada, comissão com split, nem praça. A Praça nasceu para o seu negócio.</p>
+  </div>
+  <div class="mt-12 grid md:grid-cols-3 gap-6">
+    <div class="bg-white border border-slate-200 rounded-2xl p-7">
+      <div class="w-11 h-11 rounded-xl bg-accent/15 flex items-center justify-center text-accent text-xl font-bold">%</div>
+      <h3 class="mt-5 text-xl font-semibold text-ink">Comissão sob controle</h3>
+      <p class="mt-3">Regras por precedência (produto > cliente > vendedor), split do vendedor e conciliação por CSV. A Praça aponta a divergência antes de você perder dinheiro com a representada.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7">
+      <div class="w-11 h-11 rounded-xl bg-teal/15 flex items-center justify-center text-teal text-xl font-bold">◎</div>
+      <h3 class="mt-5 text-xl font-semibold text-ink">Prospecção quente, não fria</h3>
+      <p class="mt-3">Sobre a base da Receita, a Praça recomenda as empresas certas por CNAE-alvo, proximidade e porte — dentro do território de cada vendedor, no mapa. Carteira nova sem garimpo.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7">
+      <div class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">▦</div>
+      <h3 class="mt-5 text-xl font-semibold text-ink">O escritório inteiro num lugar</h3>
+      <p class="mt-3">Pedidos e cotações, tabelas de preço por representada, metas por vendedor, fluxo de caixa e DRE, rota de campo com check-in. Sai da planilha, entra no controle.</p>
+    </div>
+  </div>
+</section>
+
+<!-- COMO FUNCIONA -->
+<section id="como" class="bg-white border-y border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20">
+    <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight text-center">Da praça ao fechamento do mês</h2>
+    <div class="mt-14 grid md:grid-cols-3 gap-10">
+      <div class="relative">
+        <div class="text-accent font-display font-bold text-5xl opacity-30">01</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Defina o alvo</h3>
+        <p class="mt-3">CNAE-alvo, porte e território de cada vendedor. A Praça cruza com a base da Receita e devolve a lista quente, explicável, no mapa.</p>
+      </div>
+      <div class="relative">
+        <div class="text-accent font-display font-bold text-5xl opacity-30">02</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Venda no campo</h3>
+        <p class="mt-3">Funil kanban, rota do dia, check-in com geolocalização e pedido no celular — até offline. Tabela de preço da representada aplicada automática.</p>
+      </div>
+      <div class="relative">
+        <div class="text-accent font-display font-bold text-5xl opacity-30">03</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Feche o mês</h3>
+        <p class="mt-3">Pedido faturado vira comissão prevista. Concilie o que a representada pagou, veja divergências, DRE e metas batidas — sem abrir uma planilha.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- PROVA SOCIAL (placeholder honesto) -->
+<section class="max-w-6xl mx-auto px-5 py-20">
+  <div class="bg-primary rounded-3xl p-10 md:p-14 text-white relative overflow-hidden">
+    <div class="grid-dots absolute inset-0"></div>
+    <div class="relative max-w-3xl">
+      <p class="text-2xl md:text-3xl font-display font-semibold leading-snug">
+        “A primeira coisa que a Praça pegou foi uma comissão divergente de quase R$ 5 mil
+        que tinha passado batido na planilha. O sistema se pagou no primeiro mês.”
+      </p>
+      <p class="mt-6 text-white/70 text-sm">— Depoimento ilustrativo · substituir por cliente real após os primeiros pilotos</p>
+    </div>
+  </div>
+</section>
+
+<!-- PLANOS -->
+<section id="planos" class="bg-white border-y border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20">
+    <div class="text-center max-w-2xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight">Planos que cabem no escritório</h2>
+      <p class="mt-4 text-lg">14 dias grátis, sem cartão. Anual com 2 meses grátis. Cancela quando quiser no mensal.</p>
+    </div>
+
+    <div class="mt-14 grid md:grid-cols-3 gap-6 items-start">
+      <!-- Solo -->
+      <div class="border border-slate-200 rounded-2xl p-7 bg-[#F8FAFC]">
+        <h3 class="text-lg font-semibold text-ink">Solo</h3>
+        <p class="text-sm text-slate-500 mt-1">Representante autônomo</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 149</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 1.490/ano</p>
+        <a href="#" class="mt-6 block text-center border border-primary text-primary font-semibold py-2.5 rounded-lg hover:bg-primary hover:text-white transition">Começar grátis</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> 1 vendedor · até 2 representadas</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Prospecção RFB no mapa</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Funil, pedidos e cotações</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Agenda, rota e check-in (PWA offline)</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Comissão da própria carteira</li>
+        </ul>
+      </div>
+
+      <!-- Equipe (popular) -->
+      <div class="border-2 border-accent rounded-2xl p-7 bg-white shadow-xl relative">
+        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-accent text-primary text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
+        <h3 class="text-lg font-semibold text-ink">Equipe</h3>
+        <p class="text-sm text-slate-500 mt-1">Escritório pequeno</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 690</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 6.900/ano · até 5 vendedores</p>
+        <a href="#" class="mt-6 block text-center bg-accent hover:bg-accent-600 text-primary font-semibold py-2.5 rounded-lg transition">Testar 14 dias grátis</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> Tudo do Solo · até 5 vendedores</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Multi-vendedor: carteira, RBAC, transferência</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Comissionamento completo + conciliação</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Metas por vendedor</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Financeiro: fluxo de caixa + DRE</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Relatórios: ABC, cobertura, alertas</li>
+          <li class="flex gap-2 text-slate-400"><span>+</span> Assento extra R$ 120/mês</li>
+        </ul>
+      </div>
+
+      <!-- Escritório -->
+      <div class="border border-slate-200 rounded-2xl p-7 bg-[#F8FAFC]">
+        <h3 class="text-lg font-semibold text-ink">Escritório</h3>
+        <p class="text-sm text-slate-500 mt-1">Escritório consolidado</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 1.490</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 14.900/ano · até 15 vendedores</p>
+        <a href="#" class="mt-6 block text-center border border-primary text-primary font-semibold py-2.5 rounded-lg hover:bg-primary hover:text-white transition">Falar com vendas</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> Tudo do Equipe · até 15 vendedores</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Onboarding assistido dedicado</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Suporte WhatsApp prioritário + SLA</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Backup gerenciado</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Treinamento da equipe</li>
+          <li class="flex gap-2 text-slate-400"><span>+</span> Assento extra R$ 90/mês</li>
+        </ul>
+      </div>
+    </div>
+    <p class="text-center text-sm text-slate-500 mt-8">Acima de 15 vendedores ou multi-filial? <a href="#" class="text-primary font-semibold underline">Plano Enterprise sob consulta.</a></p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="max-w-3xl mx-auto px-5 py-20">
+  <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight text-center">Dúvidas frequentes</h2>
+  <div class="mt-10 divide-y divide-slate-200">
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">De onde vêm as empresas para prospectar?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Da base pública da Receita Federal (~1,6 milhão de empresas), atualizada por ETL. A Praça cruza CNAE, porte e localização para recomendar quem abordar — você não importa lista nenhuma.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Funciona no celular, na rua?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Sim. É um PWA: instala como app, abre a agenda e a rota do dia mesmo sem sinal, e o check-in e o relatório de visita entram numa fila offline que sincroniza quando a internet volta.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Como a comissão é calculada?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Por regras com precedência (produto > cliente > vendedor > geral da representada) e split do vendedor. Quando o pedido é faturado, a comissão prevista é gerada; você concilia o que a representada pagou (inclusive por CSV) e a Praça aponta divergências.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Cada vendedor enxerga a carteira dos outros?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Não. Vendedor vê só a própria carteira, pedidos e comissão. O admin vê o consolidado, com filtro por vendedor e transferência de carteira quando alguém sai.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Tem WhatsApp integrado?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Hoje a Praça abre a conversa direto no WhatsApp (click-to-chat) a partir do telefone do contato. A API oficial do WhatsApp Business está no roadmap (fase 2).</p>
+    </details>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<section class="hero-grad text-white">
+  <div class="max-w-4xl mx-auto px-5 py-20 text-center relative">
+    <div class="grid-dots absolute inset-0"></div>
+    <div class="relative">
+      <h2 class="text-3xl md:text-5xl font-bold tracking-tight">Coloque sua praça inteira sob controle</h2>
+      <p class="mt-5 text-lg text-white/80 max-w-xl mx-auto">14 dias grátis com todos os recursos. Sem cartão. Comece pelo seu próprio território.</p>
+      <a href="#" class="mt-8 inline-block bg-accent hover:bg-accent-600 text-primary font-semibold px-8 py-4 rounded-xl">Testar a Praça grátis</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="bg-ink text-slate-400">
+  <div class="max-w-6xl mx-auto px-5 py-12 grid md:grid-cols-4 gap-8 text-sm">
+    <div class="md:col-span-2">
+      <img src="../logo-mono.svg" alt="Praça" class="h-8 w-auto brightness-0 invert opacity-90" />
+      <p class="mt-4 max-w-xs">O ERP do escritório de representação comercial. Da prospecção à comissão, num só lugar.</p>
+    </div>
+    <div>
+      <p class="text-white font-semibold mb-3">Produto</p>
+      <ul class="space-y-2">
+        <li><a href="#valor" class="hover:text-white">Por que Praça</a></li>
+        <li><a href="#planos" class="hover:text-white">Planos</a></li>
+        <li><a href="#faq" class="hover:text-white">Dúvidas</a></li>
+      </ul>
+    </div>
+    <div>
+      <p class="text-white font-semibold mb-3">Empresa</p>
+      <ul class="space-y-2">
+        <li><a href="#" class="hover:text-white">Contato</a></li>
+        <li><a href="#" class="hover:text-white">Termos de uso</a></li>
+        <li><a href="#" class="hover:text-white">Privacidade (LGPD)</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-6xl mx-auto px-5 py-5 text-xs flex flex-col sm:flex-row justify-between gap-2">
+      <span>© 2026 Praça. Todos os direitos reservados.</span>
+      <span>Feito para representantes comerciais no Brasil.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>
