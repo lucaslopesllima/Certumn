@@ -11,38 +11,39 @@ Tom: direto, de quem é do ramo. Emoji com parcimônia. CTA sempre claro.
 > No escritório de representação, o acerto com a representada é onde mais se perde dinheiro
 > — e ninguém percebe, porque está tudo numa planilha que só você entende.
 >
-> O Vértice calcula a comissão por regra (produto, cliente, vendedor), aplica o split e
-> concilia o que a representada pagou. Divergência aparece em vermelho, não some no mês.
+> O Vértice calcula a comissão por regra (produto, cliente, vendedor), separa a parte do vendedor
+> e confere o que a representada pagou. A diferença aparece em vermelho, não some no mês.
 >
-> É o ERP feito para representação — da prospecção ao fechamento.
+> É o sistema feito para representação — da prospecção ao fechamento.
 >
 > 👉 14 dias grátis: vertice.com.br
 >
-> #representacaocomercial #vendas #ERP
+> #representacaocomercial #vendas #gestao
 
-**Visual:** print do extrato de comissões com uma linha "divergente" destacada em vermelho.
+**Visual:** print do extrato de comissões com uma linha de diferença destacada em vermelho.
 
 ---
 
-## 2. Instagram — Prospecção no mapa (vendedor)
+## 2. Instagram — Cálculo de rotas (vendedor)
 
-> Você ainda escolhe quem visitar no achismo? 🗺️
+> Quanto tempo (e gasolina) você perde indo e voltando à toa? 🚗⛽
 >
-> Lista de CNPJ qualquer um compra. O Vértice é diferente: ela te diz QUEM abordar na SUA praça
-> — por ramo (CNAE), porte e distância — e já tira quem já está no seu funil. No mapa, pronto.
+> O Vértice monta a rota do seu dia: você diz quem visitar, ele coloca tudo no mapa na
+> melhor ordem — menos quilômetro rodado, mais visita por dia. Bate o ponto na hora da
+> visita e o pedido sai ali mesmo, até sem internet.
 >
-> Do dado ao cliente. Lista quente > lista fria. Sempre.
+> Sua praça rodada no menor caminho. Todo dia.
 >
 > Link na bio 👆
 
-**Visual:** vídeo curto/carrossel do mapa com pins e o card "match 92%".
+**Visual:** vídeo curto do mapa traçando a rota entre os pontos do dia, com o tempo/km estimado.
 
 ---
 
 ## 3. LinkedIn — Posicionamento de categoria
 
-> CRM genérico não sabe o que é uma "representada". Não tem comissão com split. Não conhece
-> sua praça.
+> Programa de vendas genérico não sabe o que é uma "representada". Não divide a comissão com o
+> vendedor. Não conhece sua praça.
 >
 > Por isso todo escritório de representação acaba com 4 planilhas e um WhatsApp bagunçado.
 >
@@ -53,7 +54,7 @@ Tom: direto, de quem é do ramo. Emoji com parcimônia. CTA sempre claro.
 >
 > 👉 vertice.com.br
 
-**Visual:** comparativo simples "CRM genérico ❌ vs. Vértice ✅" (representada, comissão split, praça/mapa, DRE).
+**Visual:** comparativo simples "Programa genérico ❌ vs. Vértice ✅" (representada, divisão de comissão, praça/mapa, resultado do mês).
 
 ---
 
@@ -61,8 +62,8 @@ Tom: direto, de quem é do ramo. Emoji com parcimônia. CTA sempre claro.
 
 > O escritório inteiro no seu bolso — até sem sinal. 📲
 >
-> Rota do dia, check-in na visita, pedido no celular. O Vértice funciona offline e sincroniza
-> quando a internet volta. Você roda a praça, ela cuida do resto.
+> Rota do dia, registro de visita, pedido no celular. O Vértice funciona sem internet e atualiza
+> sozinho quando o sinal volta. Você roda a praça, ele cuida do resto.
 >
 > #representantecomercial #vendaexterna
 
@@ -74,7 +75,7 @@ Tom: direto, de quem é do ramo. Emoji com parcimônia. CTA sempre claro.
 
 > "O sistema se pagou no primeiro mês."
 >
-> A primeira coisa que um escritório costuma encontrar no Vértice é uma comissão divergente
+> A primeira coisa que um escritório costuma encontrar no Vértice é uma comissão paga a menos
 > que passou batido — quase sempre maior que a mensalidade.
 >
 > Não é custo. É a comissão que você estava deixando na mesa.

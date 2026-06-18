@@ -11,7 +11,7 @@ Arquivos em `Marketing/`:
 
 - `logo.svg` — versão principal (colorida): badge índigo + radar âmbar/teal + pin branco + wordmark (o "é" em âmbar).
 - `logo-mono.svg` — monocromática (índigo sólido) para fundo claro / impressão 1 cor.
-- `favicon.svg` — só o símbolo, para aba do navegador / app icon (PWA).
+- `favicon.svg` — só o símbolo, para aba do navegador / ícone do aplicativo.
 
 **Conceito:** o badge é o **vértice** — o ponto onde tudo converge. Dentro, um **pin**
 (a empresa-alvo) no centro de **anéis de radar** (proximidade) com **nós** vizinhos (clientes
@@ -46,7 +46,7 @@ no mapa (sem competir com vermelho de erro).
 | Secundária | `--color-teal` | `#14B8A6` | Ativo no mapa, cobertura, badges positivos |
 | Sucesso | `--color-success` | `#16A34A` | Confirmação, meta batida |
 | Alerta | `--color-warning` | `#FB923C` | Inatividade, estagnação |
-| Erro | `--color-error` | `#DC2626` | Divergência crítica, falha |
+| Erro | `--color-error` | `#DC2626` | Erro crítico, falha |
 | Texto forte | `--color-slate-900` | `#0F172A` | Títulos no claro |
 | Texto médio | `--color-slate-600` | `#475569` | Corpo |
 | Borda | `--color-slate-200` | `#E2E8F0` | Linhas, cards |
@@ -82,7 +82,7 @@ Gradiente de marca (hero/badge): `linear-gradient(135deg, #27357A 0%, #1B2559 10
 
 - **Display / títulos:** **Sora** (geométrica, premium, moderna) — pesos 600/700.
 - **Corpo / UI:** **Inter** — 400/500/600. Já comum em apps; ótima leitura em tabela densa
-  (ERP tem muita grade).
+  (sistema de gestão tem muita tabela densa).
 - Ambas gratuitas (Google Fonts). Carregar só os pesos usados.
 
 Escala (web):

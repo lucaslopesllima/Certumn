@@ -1,39 +1,40 @@
 # Vértice — Estratégia de Marca
 
-> ERP completo para escritórios de representação comercial.
+> Sistema completo para escritórios de representação comercial.
 > Documento de marca. Público primário: **escritório / equipe de representação**. Posição: **premium**.
 
 ---
 
 ## 1. O que o produto é (honesto, baseado no código)
 
-Não é "um CRM de prospecção". É um **ERP de representação comercial** com todas as fases
+Não é "um programa de prospecção". É um **sistema completo para representação comercial**
+(um ERP de nicho, no jargão de mercado) com todas as fases
 construídas (ver `docs/PLANEJAMENTO.md` — Fases 0 a 6 concluídas):
 
 - **Base nacional integrada ao fluxo de venda** — **toda empresa do Brasil** dentro do sistema:
-  a base completa da Receita (+60 mi CNPJs, +20 mi ativas) com CNAE, porte, endereço e contato.
-  ⚠️ A base crua **não é o diferencial** (é pública, todo concorrente de mailing tem). O
+  a base completa da Receita (+60 mi CNPJs, +20 mi ativas) com ramo, porte, endereço e contato.
+  ⚠️ A base crua **não é o diferencial** (é pública, toda ferramenta de prospecção tem). O
   diferencial é a base **integrada à recomendação e ao fluxo**: recomenda quem abordar por
   território, exclui quem já está no funil, e leva do dado à comissão. Ver pilar 2.
 - **Prospecção inteligente** — sobre essa base, recomenda quais empresas abordar por
-  **CNAE-alvo + proximidade + porte**, dentro do
-  território, com lista explicável e mapa.
-- **Funil / CRM** — kanban, perfil-alvo, atividades, motivo de descarte.
+  **ramo-alvo + proximidade + porte**, dentro do
+  território, com lista explicada e mapa.
+- **Funil** — quadro visual, perfil-alvo, atividades, motivo de descarte.
 - **Pedidos e cotações** — tabelas de preço por representada com vigência, máquina de
   status (cotação → pedido → faturado), impressão/PDF.
-- **Comissionamento** — regras por precedência (produto > cliente > vendedor > geral),
-  split do vendedor, conciliação por CSV, divergências.
-- **Multi-vendedor** — carteira isolada por vendedor (RBAC), transferência de carteira,
+- **Comissão** — regras na ordem que definir (produto > cliente > vendedor > geral),
+  parte do vendedor, conferência por planilha, diferenças apontadas.
+- **Vários vendedores** — cada vendedor vê só a própria carteira, transferência de carteira,
   metas vs. realizado.
 - **Dashboard e relatórios** — funil, vendas vs. meta, curva ABC, mapa de cobertura,
   alertas de inatividade/estagnação.
-- **Campo** — check-in com geolocalização, rota do dia otimizada a partir da agenda,
-  PWA com fila offline.
-- **Financeiro** — fluxo de caixa projetado, DRE simplificado, recorrências, despesa de viagem.
-- **Comunicação** — WhatsApp click-to-chat (wa.me), notificações in-app.
+- **Campo** — registro de visita com a localização, rota do dia montada a partir da agenda,
+  funciona no celular até sem internet.
+- **Financeiro** — fluxo de caixa, resultado do mês (lucro/prejuízo), contas que se repetem, despesa de viagem.
+- **Comunicação** — abrir conversa no WhatsApp, avisos dentro do sistema.
 
-> Ainda **não** existe: WhatsApp Business API oficial, e-mail/SMTP (convite, reset),
-> import XML NF-e, app nativo/push. Não prometer no marketing como recurso atual.
+> Ainda **não** existe: integração oficial com o WhatsApp Business, e-mail (convite, troca de senha),
+> importar nota fiscal eletrônica (XML), aplicativo nativo/notificações. Não prometer no marketing como recurso atual.
 
 ---
 
@@ -58,10 +59,10 @@ topo da operação. Curto, premium, em português, fácil de falar e escrever, s
 | Nome | Significado | Prós | Contras | Domínio |
 |------|-------------|------|---------|---------|
 | **Vértice** ✅ | Ponto de convergência / ápice | Premium, curto, casa com o wedge (tudo converge) | Palavra comum p/ SEO; domínio disputado | `vertice.com.br` / `usevertice.com.br` |
-| **Praça** | Território/mercado de venda (jargão do rep) | Ressoa forte no público, BR | "Praça" subdimensiona p/ um ERP; SEO genérico | `praca.com.br` |
+| **Praça** | Território/mercado de venda (jargão do rep) | Ressoa forte no público, BR | "Praça" subdimensiona p/ um sistema completo; SEO genérico | `praca.com.br` |
 | **Comissio** | Comissão (o coração do negócio) | Liga no diferencial financeiro | Estreita o produto à comissão | `comissio.com.br` |
 | **Núcleo** | Núcleo da operação | Sólido, corporativo | Genérico, muitos homônimos | `nucleo.app` |
-| **Bússola** | Direção comercial | Evocativo, on-brand (mapa) | Soa mais "ferramenta" do que "ERP" | `bussola.app` |
+| **Bússola** | Direção comercial | Evocativo, on-brand (mapa) | Soa mais "ferramenta" do que "sistema completo" | `bussola.app` |
 
 > Trocar de nome é mecânico: aparece em `logo.svg`/`logo-mono.svg`/`favicon.svg` (wordmark/aria),
 > `landing/index.html`, `criativos/` e este doc. O jargão "praça" (= território) segue em uso no
@@ -72,12 +73,13 @@ topo da operação. Curto, premium, em português, fácil de falar e escrever, s
 ## 3. Posicionamento
 
 > **Para escritórios de representação comercial que perdem dinheiro com planilha, lista fria
-> e comissão no escuro, o Vértice é o ERP que conecta prospecção, pedidos, comissões e campo
+> e comissão no escuro, o Vértice é o sistema completo que conecta prospecção, pedidos, comissões e campo
 > num só lugar — diferente de CRMs genéricos que não entendem representação e de planilhas
 > que não escalam.**
 
-Categoria que reivindicamos: **"ERP de representação comercial"** (não "CRM"). É a diferença
-entre vender mais uma ferramenta e ser o sistema que roda o escritório.
+Categoria que reivindicamos: **"sistema completo de gestão para representação"** (internamente,
+um ERP de nicho — não um programa de vendas genérico). É a diferença entre vender mais uma
+ferramenta e ser o sistema que roda o escritório.
 
 **O wedge (onde ninguém mais está):** ferramentas de dados (Econodata, Speedio) param na lista;
 softwares de pedido (Mercos, Meus Pedidos) começam depois da lista; CRMs genéricos começam com
@@ -90,7 +92,7 @@ comissão". O ângulo defensável é a **integração**, não os dados.
 
 ## 4. Tagline
 
-- **Principal:** *O ERP do escritório de representação.*
+- **Principal:** *O sistema do escritório de representação.*
 - Reserva 1: *Da prospecção à comissão, num só lugar.*
 - Reserva 2: *Sua praça inteira sob controle.*
 
@@ -103,15 +105,15 @@ para representação.
 
 Três pilares (ordem de impacto para o gestor):
 
-1. **Comissão sob controle** — regras por precedência, split do vendedor, conciliação e
-   divergência apontada. O escritório para de perder dinheiro no acerto com a representada.
+1. **Comissão sob controle** — regras na ordem que definir, parte do vendedor, conferência e
+   diferença apontada. O escritório para de perder dinheiro no acerto com a representada.
 2. **A base inteira do Brasil virando carteira** — ter os dados da Receita qualquer ferramenta
-   de mailing tem; o diferencial defensável é o que o Vértice faz com eles: **recomenda quem
-   abordar** por CNAE + proximidade + porte, no território de cada vendedor, e **exclui quem já
-   está no funil**. Do dado ao cliente ao pedido à comissão, num fluxo só — sem comprar mailing
+   de prospecção tem; o diferencial defensável é o que o Vértice faz com eles: **recomenda quem
+   abordar** por ramo + proximidade + porte, no território de cada vendedor, e **exclui quem já
+   está no funil**. Do dado ao cliente ao pedido à comissão, num fluxo só — sem comprar lista
    nem pagar prospecção à parte (substitui Econodata/Speedio). É um diferencial difícil de copiar
-   porque exige todo o ERP por trás, não só a base.
-3. **O escritório inteiro num lugar** — pedidos, tabelas de preço, financeiro/DRE, metas,
+   porque exige todo o sistema por trás, não só a base.
+3. **O escritório inteiro num lugar** — pedidos, tabelas de preço, financeiro/resultado do mês, metas,
    rota de campo com check-in. Sai da planilha, entra no controle.
 
 ---
@@ -121,7 +123,7 @@ Três pilares (ordem de impacto para o gestor):
 Três adjetivos: **direto · confiável · de quem é do ramo**.
 
 Falamos como quem conhece representação — usamos "praça", "carteira", "representada",
-"comissão divergente", "faturado". Sem buzzword de startup, sem prometer o que não existe.
+"comissão paga a menos", "faturado". Sem buzzword de startup, sem prometer o que não existe.
 
 | Fala assim ✅ | Não assim ❌ |
 |--------------|-------------|
@@ -135,16 +137,16 @@ Falamos como quem conhece representação — usamos "praça", "carteira", "repr
 ### Persona 1 — Marcos, dono do escritório de representação (decisor / comprador)
 - 48 anos, representa 5 indústrias, 6 vendedores na rua, ~R$ 4 mi/ano em pedidos.
 - **Dores:** comissão batida na planilha (e erra), não sabe a cobertura de cada vendedor,
-  fecha o mês no escuro, perde tempo conciliando o que a representada pagou.
-- **Ganha com o Vértice:** comissão conciliada e auditável, DRE do escritório, metas por
+  fecha o mês no escuro, perde tempo conferindo o que a representada pagou.
+- **Ganha com o Vértice:** comissão conferida e com histórico, resultado do mês do escritório, metas por
   vendedor, mapa de cobertura. Compra pelo **controle financeiro**.
 
 ### Persona 2 — Júlia, vendedora externa (usuária diária)
 - 34 anos, roda 3 cidades, vive no carro e no celular.
 - **Dores:** lista fria, decide visita por achismo, faz pedido no papel/WhatsApp, esquece
   follow-up.
-- **Ganha com o Vértice:** prospecção no mapa do território dela, rota do dia, check-in,
-  pedido no celular (até offline), agenda com alerta. Adota pela **facilidade no campo**.
+- **Ganha com o Vértice:** cálculo de rotas no território dela, registro de visita,
+  pedido no celular (até sem internet), agenda com alerta. Adota pela **facilidade no campo**.
 
 > Venda é assistida (premium): o **comprador é o dono (Marcos)**, mas a **adoção depende da
 > vendedora (Júlia)**. Marketing fala com os dois — ROI/controle para o dono, facilidade

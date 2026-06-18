@@ -10,15 +10,15 @@
       "preco_mensal": 149,
       "preco_anual": 1490,
       "popular": false,
-      "assentos_inclusos": 1,
-      "assento_extra_mensal": null,
+      "usuarios_inclusos": 1,
+      "usuario_extra_mensal": null,
       "representadas": "até 2",
       "destaques": [
-        "Prospecção RFB no mapa (CNAE + proximidade + porte)",
+        "Cálculo de rotas no mapa",
         "Funil, pedidos, cotações e tabelas de preço",
-        "Agenda, rota do dia e check-in (PWA offline)",
+        "Agenda, rota do dia e registro de visita (no celular, sem internet)",
         "Comissão da própria carteira",
-        "Exportação CSV"
+        "Exportar para Excel"
       ],
       "cta": "Começar grátis"
     },
@@ -29,15 +29,15 @@
       "preco_mensal": 690,
       "preco_anual": 6900,
       "popular": true,
-      "assentos_inclusos": 5,
-      "assento_extra_mensal": 120,
+      "usuarios_inclusos": 5,
+      "usuario_extra_mensal": 120,
       "representadas": "ilimitadas",
       "destaques": [
         "Tudo do Solo, para até 5 vendedores",
-        "Multi-vendedor: carteira isolada, RBAC, transferência",
-        "Comissionamento completo: regras + split + conciliação",
+        "Vários vendedores: cada um vê só a sua carteira, com transferência",
+        "Comissão completa: regras + parte do vendedor + conferência",
         "Metas por vendedor (meta vs. realizado)",
-        "Financeiro: fluxo de caixa + DRE + recorrência",
+        "Financeiro: fluxo de caixa + resultado do mês + contas que se repetem",
         "Relatórios: curva ABC, mapa de cobertura, alertas",
         "Auditoria e onboarding guiado"
       ],
@@ -50,8 +50,8 @@
       "preco_mensal": 1490,
       "preco_anual": 14900,
       "popular": false,
-      "assentos_inclusos": 15,
-      "assento_extra_mensal": 90,
+      "usuarios_inclusos": 15,
+      "usuario_extra_mensal": 90,
       "representadas": "ilimitadas",
       "destaques": [
         "Tudo do Equipe, para até 15 vendedores",
@@ -64,15 +64,15 @@
     }
   ],
   "enterprise": {
-    "nome": "Enterprise",
-    "publico": "Acima de 15 vendedores / multi-filial",
+    "nome": "Sob consulta",
+    "publico": "Acima de 15 vendedores / mais de uma filial",
     "preco": "Sob consulta",
     "cta": "Falar com vendas"
   },
   "em_breve": [
-    "WhatsApp Business API oficial",
-    "Convite e reset de senha por e-mail",
-    "Importação de XML NF-e",
-    "App nativo + push"
+    "Integração oficial com o WhatsApp Business",
+    "Convite e troca de senha por e-mail",
+    "Importação da nota fiscal eletrônica",
+    "Aplicativo nativo + notificações"
   ]
 }

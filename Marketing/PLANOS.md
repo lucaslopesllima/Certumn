@@ -2,7 +2,7 @@
 
 > Posição **premium**, público **escritório de representação**. Preço ancorado em valor
 > (comissão recuperada + horas de planilha eliminadas paga o plano), não em custo.
-> Cobrança por escritório (org), com assentos de vendedor. **2 meses grátis no anual.**
+> Cobrança por escritório (org), com usuários (vendedores). **2 meses grátis no anual.**
 > Trial de **14 dias**, sem cartão.
 
 ---
@@ -15,11 +15,11 @@
 | **Mensal** | **R$ 149/mês** | **R$ 690/mês** | **R$ 1.490/mês** |
 | **Anual (2 meses grátis)** | R$ 1.490/ano | R$ 6.900/ano | R$ 14.900/ano |
 | Vendedores inclusos | 1 | até 5 | até 15 |
-| Assento extra | — | R$ 120/mês | R$ 90/mês |
+| Usuário extra | — | R$ 120/mês | R$ 90/mês |
 | Representadas | até 2 | ilimitadas | ilimitadas |
 
 > Âncora de valor: um único acerto de comissão errado no mês costuma passar de R$ 1.490.
-> O plano se paga na primeira divergência que o Vértice pega.
+> O plano se paga na primeira diferença de comissão que o Vértice pega.
 
 ---
 
@@ -27,28 +27,28 @@
 
 | Recurso | Solo | Equipe | Escritório |
 |--------|:----:|:------:|:----------:|
-| Prospecção RFB (CNAE + proximidade + porte, no mapa) | ✅ | ✅ | ✅ |
-| Funil / kanban + perfil-alvo + atividades | ✅ | ✅ | ✅ |
+| Prospecção na base do Brasil (ramo + proximidade + porte, no mapa) | ✅ | ✅ | ✅ |
+| Funil + perfil-alvo + atividades | ✅ | ✅ | ✅ |
 | Pedidos e cotações + tabelas de preço | ✅ | ✅ | ✅ |
 | Impressão / PDF de pedido | ✅ | ✅ | ✅ |
-| Agenda + rota do dia + check-in (campo/PWA offline) | ✅ | ✅ | ✅ |
-| WhatsApp click-to-chat | ✅ | ✅ | ✅ |
+| Agenda + rota do dia + registro de visita (no celular, sem internet) | ✅ | ✅ | ✅ |
+| Abrir conversa no WhatsApp | ✅ | ✅ | ✅ |
 | Comissão (cálculo da própria) | ✅ | ✅ | ✅ |
-| Multi-vendedor: carteira isolada, RBAC, transferência | — | ✅ | ✅ |
-| Comissionamento completo: regras por precedência + split | — | ✅ | ✅ |
-| Conciliação de comissão (CSV) + divergências | — | ✅ | ✅ |
+| Vários vendedores: cada um vê só a sua carteira, com transferência | — | ✅ | ✅ |
+| Comissão completa: regras na ordem que definir + parte do vendedor | — | ✅ | ✅ |
+| Conferência de comissão (importa planilha) + diferenças | — | ✅ | ✅ |
 | Metas por vendedor (meta vs. realizado) | — | ✅ | ✅ |
-| Financeiro: fluxo de caixa + DRE + recorrência | — | ✅ | ✅ |
-| Relatórios: curva ABC + mapa de cobertura + alertas | — | ✅ | ✅ |
-| Auditoria (histórico de alterações) | — | ✅ | ✅ |
-| Exportação CSV (Excel) | ✅ | ✅ | ✅ |
-| Onboarding | Self-service | Guiado | **Assistido dedicado** |
-| Suporte | E-mail | E-mail prioritário | **WhatsApp prioritário + SLA** |
+| Financeiro: fluxo de caixa + resultado do mês + contas que se repetem | — | ✅ | ✅ |
+| Relatórios: clientes que mais faturam + mapa de cobertura + alertas | — | ✅ | ✅ |
+| Histórico de alterações | — | ✅ | ✅ |
+| Exportar para Excel | ✅ | ✅ | ✅ |
+| Primeiros passos (onboarding) | Sozinho | Guiado | **Acompanhado de perto** |
+| Suporte | E-mail | E-mail prioritário | **WhatsApp prioritário + prazo garantido** |
 | Backup gerenciado | — | ✅ | ✅ |
 | Treinamento da equipe | — | — | ✅ |
 
 ⭐ **Equipe** = mais popular. É o tamanho típico do escritório de representação e o ponto
-onde comissão + multi-vendedor + DRE entregam o ROI inteiro.
+onde comissão + vários vendedores + resultado do mês entregam o retorno inteiro.
 
 ---
 
@@ -56,10 +56,10 @@ onde comissão + multi-vendedor + DRE entregam o ROI inteiro.
 
 Comunicado com honestidade no site como roadmap, **não** como recurso atual:
 
-- WhatsApp Business API oficial (hoje: link wa.me click-to-chat).
-- Convite de usuário e reset de senha por e-mail (depende de SMTP).
-- Importação de XML NF-e.
-- App nativo + push.
+- Integração oficial com o WhatsApp Business (hoje: abre a conversa direto no WhatsApp).
+- Convite de usuário e troca de senha por e-mail.
+- Importação da nota fiscal eletrônica (XML).
+- Aplicativo nativo + notificações.
 
 ---
 
@@ -67,13 +67,13 @@ Comunicado com honestidade no site como roadmap, **não** como recurso atual:
 
 - **Trial:** 14 dias com todos os recursos do plano Equipe, sem cartão.
 - **Upgrade/downgrade:** a qualquer momento; cobrança proporcional (pro rata).
-- **Assento extra:** adicionado no plano Equipe/Escritório conforme tabela.
-- **Acima de 15 vendedores / multi-filial:** plano **Enterprise** sob consulta
-  (preço por assento + SLA dedicado).
+- **Usuário extra:** adicionado no plano Equipe/Escritório conforme tabela.
+- **Acima de 15 vendedores / mais de uma filial:** plano **sob consulta**
+  (preço por vendedor + prazo de atendimento garantido).
 - **Pagamento:** cartão recorrente ou boleto/Pix (anual). Emissão de NF.
 - **Sem fidelidade** no mensal; anual é compromisso de 12 meses com os 2 meses grátis.
 
 > ⚠️ **Pendência de produto para cobrar de verdade:** o sistema ainda **não tem billing nem
-> enforcement de limites por plano** (assentos, representadas, recursos por tier). Ver
+> enforcement de limites por plano** (usuários, representadas, recursos por tier). Ver
 > `LANCAMENTO.md` → "Falta construir". Os planos acima são a **oferta comercial**; o gating
 > técnico precisa ser implementado antes do go-live pago.

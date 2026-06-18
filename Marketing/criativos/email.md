@@ -14,7 +14,7 @@ Tom direto, 1 CTA por e-mail. (Depende de SMTP — ver `LANCAMENTO.md`.)
 >
 > Bem-vindo ao Vértice. Você tem 14 dias com tudo liberado.
 >
-> O primeiro passo que mais dá retorno: **definir seu alvo**. Diga o ramo (CNAE), o porte e
+> O primeiro passo que mais dá retorno: **definir seu alvo**. Diga o ramo, o porte e
 > o território — o Vértice cruza com toda empresa do Brasil (base completa da Receita) e devolve
 > sua primeira lista quente, no mapa.
 >
@@ -34,13 +34,13 @@ Tom direto, 1 CTA por e-mail. (Depende de SMTP — ver `LANCAMENTO.md`.)
 > {{nome}}, viu sua lista de prospecção? Ótimo. Agora o pulo do gato:
 >
 > Crie um **pedido** (ou cotação) para um cliente. O Vértice aplica a tabela de preço da
-> representada, calcula o total e já mostra a **comissão prevista** — com o split do vendedor.
+> representada, calcula o total e já mostra a **comissão prevista** — já com a parte do vendedor.
 >
 > É aqui que o escritório sai da planilha.
 >
 > 👉 **[Criar meu primeiro pedido]**
 >
-> Está na rua? O Vértice funciona no celular, até offline.
+> Está na rua? O Vértice funciona no celular, até sem internet.
 >
 > — Equipe Vértice
 
@@ -74,4 +74,4 @@ Tom direto, 1 CTA por e-mail. (Depende de SMTP — ver `LANCAMENTO.md`.)
 - `{{nome}}`, `{{#se_...}}` são placeholders de personalização — preencher conforme o uso
   real do trial.
 - Sem SMTP hoje: para disparar, configurar provedor (ex. Resend/SES) — ver `LANCAMENTO.md`.
-- Não prometer recurso de fase 2 (WhatsApp API, push) nestes e-mails.
+- Não prometer recurso futuro (WhatsApp oficial, notificações) nestes e-mails.

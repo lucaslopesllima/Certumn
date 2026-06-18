@@ -7,7 +7,7 @@ Respeitando limites de caracteres das plataformas.
 ## 1. Google Search — intenção "sistema para representante comercial"
 
 **Headlines (até 30 caracteres cada):**
-- ERP p/ Representação (19)
+- Sistema p/ Representação (24)
 - Toda Empresa do Brasil (22)
 - Prospecção na Base da Receita (29)
 
@@ -26,9 +26,9 @@ Respeitando limites de caracteres das plataformas.
 **Headline (até 40):** Pare de prospectar no escuro (27)
 **Texto primário (até 125 recomendado):**
 > A base do Brasil inteiro vira sua carteira: o Vértice recomenda quem abordar na sua praça — por
-> ramo, porte e distância — e já tira quem está no funil. Sem comprar mailing. Teste 14 dias grátis.
+> ramo, porte e distância — e já tira quem está no funil. Sem comprar lista. Teste 14 dias grátis.
 
-**Descrição (até 30):** ERP de representação (20)
+**Descrição (até 30):** Sistema de representação (24)
 **CTA:** Cadastre-se
 
 **Criativo:** vídeo de 6–10s do mapa com pins e o card "match 92%".
@@ -39,14 +39,14 @@ Respeitando limites de caracteres das plataformas.
 
 **Headline (até 40):** Sua comissão sob controle (25)
 **Texto primário:**
-> Quanto você perde por mês em comissão errada na planilha? O Vértice calcula por regra, aplica
-> o split do vendedor e aponta divergência na conciliação. ERP feito para representação.
+> Quanto você perde por mês em comissão errada na planilha? O Vértice calcula por regra, separa
+> a parte do vendedor e mostra a diferença quando a representada paga a menos. Feito para representação.
 > Teste 14 dias, sem cartão.
 
 **Descrição (até 30):** Da prospecção à comissão (24)
 **CTA:** Saiba mais
 
-**Criativo:** print do extrato de comissões com linha divergente em destaque.
+**Criativo:** print do extrato de comissões com uma linha de diferença em destaque.
 
 ---
 

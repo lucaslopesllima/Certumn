@@ -56,12 +56,12 @@ Passos concretos para por a empresa no ar. Separado em **marca/marketing** (pron
 1. **Billing / assinatura (bloqueante).**
    - Integrar gateway BR: **Stripe** (cartão recorrente, bom DX) ou **Pagar.me/Iugu/Asaas**
      (boleto/Pix nativo, NF-e). Para anual com boleto/Pix, um gateway BR ajuda.
-   - Modelo: assinatura por `org`, com quantidade de assentos. Webhooks → estado da org
+   - Modelo: assinatura por `org`, com quantidade de usuários. Webhooks → estado da org
      (ativa/inadimplente/trial).
-   - Tabela `subscriptions` (org_id, plano, status, assentos, ciclo, trial_fim, gateway_id).
+   - Tabela `subscriptions` (org_id, plano, status, usuarios, ciclo, trial_fim, gateway_id).
 
 2. **Enforcement de limites por plano (bloqueante).**
-   - Gating dos recursos conforme `planos.json`: nº de assentos (vendedores), nº de
+   - Gating dos recursos conforme `planos.json`: nº de usuários (vendedores), nº de
      representadas (Solo = 2), e features por tier (multi-vendedor, comissão completa,
      financeiro/DRE, relatórios) liberadas só em Equipe/Escritório.
    - Middleware de plano: barrar criação de usuário acima do limite, esconder/bloquear rotas
