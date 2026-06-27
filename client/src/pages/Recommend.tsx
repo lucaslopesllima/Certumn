@@ -20,6 +20,7 @@ const MATCH_TONE: Record<string, Tone> = {
   classe: 'success', divisao: 'info', secao: 'brand', nenhum: 'neutral',
 };
 const FILTERS_OPEN_KEY = 'prospeccao:filtersOpen';
+const KPIS_OPEN_KEY = 'prospeccao:kpisOpen';
 
 function FitBounds({ pts, focus }: { pts: [number, number][]; focus: MapFocus | null }): null {
   const map = useMap();
@@ -117,6 +118,9 @@ export function Recommend(): React.JSX.Element {
   const [view, setView] = useState<'lista' | 'mapa'>('lista');
   const [filtersOpen, setFiltersOpen] = useState(() => {
     try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1'; } catch { return false; }
+  });
+  const [kpisOpen, setKpisOpen] = useState(() => {
+    try { return localStorage.getItem(KPIS_OPEN_KEY) !== '0'; } catch { return true; }
   });
   const [viewing, setViewing] = useState<number | null>(null);
   const [focus, setFocus] = useState<MapFocus | null>(null);
@@ -239,6 +243,11 @@ export function Recommend(): React.JSX.Element {
     try { localStorage.setItem(FILTERS_OPEN_KEY, filtersOpen ? '1' : '0'); } catch { /* storage indisponível */ }
   }, [filtersOpen]);
 
+  // Persiste se os indicadores (KPIs) estão expandidos.
+  useEffect(() => {
+    try { localStorage.setItem(KPIS_OPEN_KEY, kpisOpen ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [kpisOpen]);
+
   const addToFunnel = async (rec: Recommendation): Promise<void> => {
     try {
       await api.post('/api/relationships', { company_id: Number(rec.id) });
@@ -331,6 +340,15 @@ export function Recommend(): React.JSX.Element {
                     className={cn('transition-transform duration-300 ease-out', filtersOpen ? 'rotate-90' : 'rotate-0')} />
                 </Btn>
               )}
+              {view === 'lista' && (
+                <Btn variant="soft" icon="trendingUp"
+                  aria-expanded={kpisOpen} title={kpisOpen ? 'Recolher indicadores' : 'Expandir indicadores'}
+                  onClick={() => setKpisOpen((v) => !v)}>
+                  Indicadores
+                  <Icon name="chevronRight" size={15}
+                    className={cn('transition-transform duration-300 ease-out', kpisOpen ? 'rotate-90' : 'rotate-0')} />
+                </Btn>
+              )}
               <Segmented value={view} onChange={(v) => { setFocus(null); setView(v); }} options={[
                 { value: 'lista', label: 'Lista', icon: 'list' },
                 { value: 'mapa', label: 'Mapa', icon: 'map' },
@@ -350,11 +368,17 @@ export function Recommend(): React.JSX.Element {
         )}
 
         {view === 'lista' && (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            <StatCard label={filter.filtroAtivo ? 'Resultados (filtrados)' : 'Recomendações'} value={kpi.n} icon="building" tone="brand" />
-            <StatCard label="Score médio" value={(kpi.avg * 100).toFixed(0)} sub="de 100" icon="trendingUp" tone="success" />
-            <StatCard label="CNAE exato" value={kpi.exact} sub="match de classe" icon="target" tone="info" />
-            <StatCard label="Mais próxima" value={`${kpi.near.toFixed(0)} km`} icon="mapPin" tone="warn" />
+          <div className={cn('grid transition-[grid-template-rows] duration-[1000ms] ease-in-out',
+            kpisOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+            <div className={cn('overflow-hidden transition-opacity duration-[1000ms] ease-in-out',
+              kpisOpen ? 'opacity-100' : 'opacity-0')}>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <StatCard label={filter.filtroAtivo ? 'Resultados (filtrados)' : 'Recomendações'} value={kpi.n} icon="building" tone="brand" />
+                <StatCard label="Score médio" value={(kpi.avg * 100).toFixed(0)} sub="de 100" icon="trendingUp" tone="success" />
+                <StatCard label="CNAE exato" value={kpi.exact} sub="match de classe" icon="target" tone="info" />
+                <StatCard label="Mais próxima" value={`${kpi.near.toFixed(0)} km`} icon="mapPin" tone="warn" />
+              </div>
+            </div>
           </div>
         )}
       </div>

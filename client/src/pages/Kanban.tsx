@@ -19,6 +19,8 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const STATUS_OPTS = ['prospect', 'cliente', 'descartado'] as const;
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
+const FILTERS_OPEN_KEY = 'funil:filtersOpen';
+const KPIS_OPEN_KEY = 'funil:kpisOpen';
 
 export function Kanban(): React.JSX.Element {
   const [stages, setStages] = useState<Stage[]>([]);
@@ -37,7 +39,12 @@ export function Kanban(): React.JSX.Element {
   const [actions, setActions] = useState<NamedItem[]>([]);
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
 
-  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(() => {
+    try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1'; } catch { return false; }
+  });
+  const [kpisOpen, setKpisOpen] = useState(() => {
+    try { return localStorage.getItem(KPIS_OPEN_KEY) !== '0'; } catch { return true; }
+  });
   const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
   const sellers = useSellers();
   const filter = useCompanyFilter('funil');
@@ -58,6 +65,16 @@ export function Kanban(): React.JSX.Element {
       api.get<{ items: CatalogItem[] }>('/api/catalog').then((r) => setCatalog(r.items)),
     ]).catch(() => undefined);
   }, []);
+
+  // Persiste se a barra de filtros está aberta.
+  useEffect(() => {
+    try { localStorage.setItem(FILTERS_OPEN_KEY, filtersOpen ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [filtersOpen]);
+
+  // Persiste se os indicadores (KPIs) estão expandidos.
+  useEffect(() => {
+    try { localStorage.setItem(KPIS_OPEN_KEY, kpisOpen ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [kpisOpen]);
 
   const move = async (cardId: number, stageId: number | null): Promise<void> => {
     const card = cards.find((c) => c.id === cardId);
@@ -110,20 +127,43 @@ export function Kanban(): React.JSX.Element {
         <PageHeader title="Funil de vendas" subtitle="Arraste os cards ou use o botão → para mover entre etapas."
           actions={
             <div className="flex items-center gap-2">
-              <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
-              <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
+              <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search"
+                aria-expanded={filtersOpen} title={filtersOpen ? 'Recolher filtros' : 'Expandir filtros'}
+                onClick={() => setFiltersOpen((v) => !v)}>
                 Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
+                <Icon name="chevronRight" size={15}
+                  className={cn('transition-transform duration-300 ease-out', filtersOpen ? 'rotate-90' : 'rotate-0')} />
               </Btn>
+              <Btn variant="soft" icon="trendingUp"
+                aria-expanded={kpisOpen} title={kpisOpen ? 'Recolher indicadores' : 'Expandir indicadores'}
+                onClick={() => setKpisOpen((v) => !v)}>
+                Indicadores
+                <Icon name="chevronRight" size={15}
+                  className={cn('transition-transform duration-300 ease-out', kpisOpen ? 'rotate-90' : 'rotate-0')} />
+              </Btn>
+              <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
             </div>
           } />
 
-        {filtersOpen && <CompanyFilterBar f={filter} />}
+        <div className={cn('grid transition-[grid-template-rows] duration-[1500ms] ease-in-out',
+          filtersOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+          <div className={cn('overflow-hidden transition-opacity duration-[1500ms] ease-in-out',
+            filtersOpen ? 'opacity-100' : 'opacity-0')}>
+            <CompanyFilterBar f={filter} />
+          </div>
+        </div>
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatCard label={oculto > 0 ? 'Negócios (filtrados)' : 'Negócios'} value={visibleCards.length} icon="layers" tone="brand" />
-          <StatCard label="Valor em funil" value={brl(totalValor)} icon="trendingUp" tone="success" />
-          <StatCard label="Clientes" value={clientes} icon="users" tone="info" />
-          <StatCard label="Etapas" value={stages.length} icon="columns" tone="neutral" />
+        <div className={cn('grid transition-[grid-template-rows] duration-[1000ms] ease-in-out',
+          kpisOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+          <div className={cn('overflow-hidden transition-opacity duration-[1000ms] ease-in-out',
+            kpisOpen ? 'opacity-100' : 'opacity-0')}>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <StatCard label={oculto > 0 ? 'Negócios (filtrados)' : 'Negócios'} value={visibleCards.length} icon="layers" tone="brand" />
+              <StatCard label="Valor em funil" value={brl(totalValor)} icon="trendingUp" tone="success" />
+              <StatCard label="Clientes" value={clientes} icon="users" tone="info" />
+              <StatCard label="Etapas" value={stages.length} icon="columns" tone="neutral" />
+            </div>
+          </div>
         </div>
       </div>
 
