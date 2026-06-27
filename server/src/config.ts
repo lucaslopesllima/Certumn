@@ -37,4 +37,16 @@ export const config = {
   // uso real, apertado o bastante para inviabilizar brute force.
   authRateLimitMax: Number(process.env.AUTH_RATE_LIMIT_MAX ?? 10),
   authRateLimitWindow: process.env.AUTH_RATE_LIMIT_WINDOW ?? '1 minute',
+  // Evolution API (gateway WhatsApp não oficial). URL interna do container e a
+  // API key global (cria/opera instâncias). Vazio = integração desligada (os
+  // endpoints respondem 503). webhookUrl é onde a Evolution entrega os eventos
+  // (no docker aponta de volta pro serviço app); token opcional valida o POST.
+  evolutionApiUrl: process.env.EVOLUTION_API_URL ?? '',
+  evolutionApiKey: process.env.EVOLUTION_API_KEY ?? '',
+  whatsappWebhookUrl: process.env.WHATSAPP_WEBHOOK_URL ?? '',
+  whatsappWebhookToken: process.env.WHATSAPP_WEBHOOK_TOKEN ?? '',
+  // Diretório (volume) onde a mídia descriptografada do WhatsApp é gravada. Setado
+  // = grava em disco e guarda só o caminho no banco; vazio = mantém base64 no
+  // Postgres (comportamento legado). Ver mediaStore.ts.
+  whatsappMediaDir: process.env.WHATSAPP_MEDIA_DIR ?? '',
 };

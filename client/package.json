@@ -11,6 +11,8 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@chatscope/chat-ui-kit-react": "2.0.3",
+    "@chatscope/chat-ui-kit-styles": "1.4.0",
     "leaflet": "1.9.4",
     "react": "19.0.0",
     "react-dom": "19.0.0",

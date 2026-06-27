@@ -45,16 +45,19 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
   const [contacts, setContacts] = useState<ContactOption[]>([]);
   const [busy, setBusy] = useState(false);
 
-  // Contatos dependem da representada escolhida. Troca de representada zera o
-  // contato se ele não pertencer mais à lista.
+  // Contatos vêm da empresa do funil (prioridade) ou da representada escolhida.
+  // Empresa filtra por company_id; senão cai na representada. Troca de qualquer
+  // um zera o contato se ele não pertencer mais à lista.
   useEffect(() => {
-    if (representedId == null) { setContacts([]); return; }
+    const param = companyId != null ? `company_id=${companyId}`
+      : representedId != null ? `represented_id=${representedId}` : null;
+    if (param == null) { setContacts([]); return; }
     let alive = true;
-    void api.get<{ contacts: ContactOption[] }>(`/api/contacts?represented_id=${representedId}`)
+    void api.get<{ contacts: ContactOption[] }>(`/api/contacts?${param}`)
       .then((r) => { if (alive) setContacts(r.contacts); })
       .catch(() => { if (alive) setContacts([]); });
     return () => { alive = false; };
-  }, [representedId]);
+  }, [companyId, representedId]);
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
@@ -101,7 +104,7 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
             </label>
             <label className="block">
               <span className="text-xs font-semibold text-ink-600">Empresa do funil</span>
-              <select value={companyId ?? ''} onChange={(e) => setCompanyId(e.target.value === '' ? null : Number(e.target.value))} className={cn(inputCls, 'mt-1')}>
+              <select value={companyId ?? ''} onChange={(e) => { setCompanyId(e.target.value === '' ? null : Number(e.target.value)); setContactId(null); }} className={cn(inputCls, 'mt-1')}>
                 <option value="">Sem vínculo</option>
                 {funnel.map((f) => <option key={f.company_id} value={f.company_id}>{f.label}</option>)}
               </select>
@@ -117,10 +120,10 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
             </label>
             <label className="block">
               <span className="text-xs font-semibold text-ink-600">Contato</span>
-              <select value={contactId ?? ''} disabled={representedId == null}
+              <select value={contactId ?? ''} disabled={companyId == null && representedId == null}
                 onChange={(e) => setContactId(e.target.value === '' ? null : Number(e.target.value))}
-                className={cn(inputCls, 'mt-1', representedId == null && 'opacity-50')}>
-                <option value="">{representedId == null ? 'Escolha a representada' : contacts.length ? 'Sem vínculo' : 'Nenhum contato'}</option>
+                className={cn(inputCls, 'mt-1', companyId == null && representedId == null && 'opacity-50')}>
+                <option value="">{companyId == null && representedId == null ? 'Escolha empresa ou representada' : contacts.length ? 'Sem vínculo' : 'Nenhum contato'}</option>
                 {contacts.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
               </select>
             </label>

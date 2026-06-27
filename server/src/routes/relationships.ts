@@ -449,7 +449,7 @@ export function relationshipRoutes(app: FastifyInstance): void {
     const cards = await query(
       `SELECT ${REL_COLS}, r.owner_user_id, ${REL_LABELS},
               c.razao_social, c.nome_fantasia, c.uf, c.municipio_id, m.nome AS cidade,
-              c.cnpj, c.cnae_principal, c.porte, c.capital_social
+              c.cnpj, c.cnae_principal, c.porte, c.capital_social, c.telefone1
        FROM company_relationships r
        JOIN companies c ON c.id = r.company_id
        LEFT JOIN municipios m ON m.id = c.municipio_id

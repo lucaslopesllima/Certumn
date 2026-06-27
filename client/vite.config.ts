@@ -54,7 +54,8 @@ export default defineConfig({
     host: true, // listen on 0.0.0.0 so the container port is reachable
     port: 5173,
     proxy: {
-      '/api': { target: proxyTarget, changeOrigin: true },
+      // ws:true encaminha o WebSocket do espelho WhatsApp (/api/whatsapp/ws).
+      '/api': { target: proxyTarget, changeOrigin: true, ws: true },
     },
     watch: {
       // inotify works for bind mounts on native Linux; flip on if HMR misses changes (e.g. on a VM/WSL)

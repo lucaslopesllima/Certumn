@@ -1,5 +1,6 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import websocket from '@fastify/websocket';
 import { pool } from './db.ts';
 import { config } from './config.ts';
 import { authRoutes } from './routes/auth.ts';
@@ -31,6 +32,8 @@ import { sampleRequestRoutes } from './routes/sampleRequests.ts';
 import { taxRoutes } from './routes/tax.ts';
 import { emailScheduleRoutes } from './routes/emailSchedules.ts';
 import { settingsRoutes } from './routes/settings.ts';
+import { whatsappRoutes } from './routes/whatsapp.ts';
+import { webhookRoutes } from './routes/webhooks.ts';
 
 // Monta a app com todas as rotas de API, sem listen e sem estáticos —
 // index.ts (produção) adiciona o resto; os testes usam app.inject().
@@ -41,6 +44,8 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
 
   // global:false — só as rotas que declaram config.rateLimit (autenticação) limitam.
   await app.register(rateLimit, { global: false });
+  // WebSocket: espelho de chat WhatsApp ao vivo (rota /api/whatsapp/ws).
+  await app.register(websocket);
   app.decorate('authRateLimitMax', opts.authRateLimitMax ?? config.authRateLimitMax);
 
   app.get('/api/health', async () => {
@@ -77,6 +82,8 @@ export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: numb
   taxRoutes(app);
   emailScheduleRoutes(app);
   settingsRoutes(app);
+  whatsappRoutes(app);
+  webhookRoutes(app);
 
   return app;
 }

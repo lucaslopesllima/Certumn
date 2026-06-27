@@ -1,0 +1,96 @@
+/* Tema WhatsApp Web para o @chatscope/chat-ui-kit-react. Escopo em .wa-web para
+   não vazar pro resto do app. Cores oficiais do WhatsApp Web (modo claro). */
+
+.wa-web {
+  --wa-green: #00a884;
+  --wa-green-dark: #008069;
+  --wa-out: #d9fdd3;        /* balão enviado */
+  --wa-in: #ffffff;         /* balão recebido */
+  --wa-panel: #f0f2f5;      /* barras (header/input) */
+  --wa-bg: #efeae2;         /* fundo do chat (bege) */
+  --wa-hover: #f5f6f6;      /* hover de conversa */
+  --wa-active: #f0f2f5;     /* conversa selecionada */
+  --wa-ink: #111b21;        /* texto principal */
+  --wa-muted: #667781;      /* texto secundário */
+  --wa-border: #e9edef;     /* divisórias */
+}
+
+/* Containers ----------------------------------------------------------------*/
+.wa-web .cs-main-container { border: none; }
+.wa-web .cs-sidebar.cs-sidebar--left {
+  background: #fff;
+  border-right: 1px solid var(--wa-border);
+}
+.wa-web .cs-chat-container { background: var(--wa-bg); }
+
+/* Lista de mensagens: fundo bege com a textura do WhatsApp (doodle leve) ----*/
+.wa-web .cs-message-list,
+.wa-web .cs-message-list .cs-message-list__scroll-wrapper {
+  background-color: var(--wa-bg);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='%23000000' fill-opacity='0.025'%3E%3Ccircle cx='10' cy='10' r='2'/%3E%3Ccircle cx='40' cy='30' r='2'/%3E%3Ccircle cx='65' cy='12' r='2'/%3E%3Ccircle cx='20' cy='55' r='2'/%3E%3Ccircle cx='55' cy='60' r='2'/%3E%3Ccircle cx='70' cy='45' r='2'/%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* Busca da sidebar ----------------------------------------------------------*/
+.wa-web .cs-search {
+  background: var(--wa-panel);
+  border-radius: 8px;
+  margin: 8px 12px;
+}
+.wa-web .cs-search .cs-search__input { background: transparent; }
+
+/* Conversas (sidebar) -------------------------------------------------------*/
+.wa-web .cs-conversation { border-bottom: 1px solid var(--wa-border); padding: 10px 14px; }
+.wa-web .cs-conversation:hover { background: var(--wa-hover); }
+.wa-web .cs-conversation.cs-conversation--active { background: var(--wa-active); }
+.wa-web .cs-conversation__name { color: var(--wa-ink); font-weight: 500; }
+/* conversa selecionada: a lib pinta o nome de azul (#2b6a9b) — força a mesma cor */
+.wa-web .cs-conversation.cs-conversation--active .cs-conversation__name { color: var(--wa-ink); font-weight: 500; }
+.wa-web .cs-conversation__info { color: var(--wa-muted); }
+.wa-web .cs-conversation__last-activity-time { color: var(--wa-muted); font-size: 12px; }
+.wa-web .cs-conversation__unread {
+  background: var(--wa-green); color: #fff;
+}
+
+/* Header da conversa --------------------------------------------------------*/
+.wa-web .cs-conversation-header {
+  background: var(--wa-panel);
+  border-bottom: 1px solid var(--wa-border);
+}
+/* a lib põe um fundo claro (#f6fbff) atrás do nome/info no header — remove */
+.wa-web .cs-conversation-header__content .cs-conversation-header__user-name { color: var(--wa-ink); background: transparent; }
+.wa-web .cs-conversation-header__content .cs-conversation-header__info { color: var(--wa-muted); background: transparent; }
+.wa-web .cs-conversation-header__actions { background: transparent; }
+
+/* Balões --------------------------------------------------------------------*/
+.wa-web .cs-message__content { border-radius: 8px; box-shadow: 0 1px 0.5px rgba(11,20,26,.13); }
+.wa-web .cs-message--incoming .cs-message__content { background: var(--wa-in); color: var(--wa-ink); }
+.wa-web .cs-message--outgoing .cs-message__content { background: var(--wa-out); color: var(--wa-ink); }
+.wa-web .cs-message__content { font-size: 14.2px; }
+
+/* Separador de data ---------------------------------------------------------*/
+.wa-web .cs-message-separator {
+  color: var(--wa-muted);
+  border: none;
+}
+.wa-web .cs-message-separator::before,
+.wa-web .cs-message-separator::after { display: none; }
+.wa-web .cs-message-separator {
+  background: rgba(255,255,255,.85);
+  border-radius: 8px;
+  box-shadow: 0 1px 0.5px rgba(11,20,26,.13);
+  padding: 5px 12px;
+  margin: 10px auto;
+  width: fit-content;
+  font-size: 12.5px;
+  text-transform: uppercase;
+}
+
+/* Barra de digitação --------------------------------------------------------*/
+.wa-web .cs-message-input { background: var(--wa-panel); border-top: none; padding: 8px 12px; }
+.wa-web .cs-message-input__content-editor-wrapper { background: #fff; border-radius: 8px; }
+.wa-web .cs-message-input__content-editor { background: #fff; }
+.wa-web .cs-button--send { color: var(--wa-green); }
+.wa-web .cs-button--attachment { color: var(--wa-muted); }
+
+/* Indicador de digitação ----------------------------------------------------*/
+.wa-web .cs-typing-indicator { background: transparent; }

@@ -63,10 +63,19 @@ services:
       JWT_SECRET: dev-secret
       PORT: "8080"
       RECOMMEND_WORK_MEM: 64MB
+      # WhatsApp (Evolution API). URL interna do container + key global. O webhook
+      # aponta de volta pro próprio app; o token valida o POST de entrada.
+      EVOLUTION_API_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-dev-evolution-key}
+      WHATSAPP_WEBHOOK_URL: http://app:8080/api/webhooks/whatsapp?token=${WHATSAPP_WEBHOOK_TOKEN:-dev-webhook-token}
+      WHATSAPP_WEBHOOK_TOKEN: ${WHATSAPP_WEBHOOK_TOKEN:-dev-webhook-token}
+      # Mídia do WhatsApp gravada em disco (volume) em vez de base64 no Postgres.
+      WHATSAPP_MEDIA_DIR: /data/wa-media
       # CLIENT_DIR fica vazio: no dev a UI é servida pelo vite, não pelo Fastify
     volumes:
       - ./server:/app
       - app_node_modules:/app/node_modules
+      - wa_media_dev:/data/wa-media
     command: sh -c "npm install && node scripts/migrate.ts && node --watch src/index.ts"
     ports:
       - "8080:8080"
@@ -86,7 +95,57 @@ services:
     ports:
       - "5173:5173"
 
+  # Gateway WhatsApp não oficial (Baileys por baixo). Expõe REST + entrega
+  # webhooks pro app. Painel/Swagger em http://localhost:8081 (apikey = key acima).
+  evolution:
+    image: atendai/evolution-api:v2.1.1
+    depends_on:
+      evolution_db:
+        condition: service_healthy
+    environment:
+      SERVER_URL: http://evolution:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-evolution-key}
+      # Versão do WhatsApp Web anunciada no handshake. Desatualizada = WhatsApp
+      # fecha a conexão com statusReason 405 e o QR nunca gera. Mantenha alinhada
+      # à versão atual do Baileys (raw.githubusercontent WhiskeySockets/Baileys
+      # src/Defaults/baileys-version.json). Atualize se o QR parar de gerar.
+      CONFIG_SESSION_PHONE_VERSION: ${WA_WEB_VERSION:-2.3000.1035194821}
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://postgres:postgres@evolution_db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: evolution
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "true"
+      DATABASE_SAVE_MESSAGE_UPDATE: "true"
+      DATABASE_SAVE_DATA_CONTACTS: "true"
+      DATABASE_SAVE_DATA_CHATS: "true"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      # entrega global de webhook (além do por-instância configurado no create)
+      WEBHOOK_GLOBAL_ENABLED: "false"
+    volumes:
+      - evolution_instances:/evolution/instances
+    ports:
+      - "8081:8080"
+
+  evolution_db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: evolution
+    volumes:
+      - evolution_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d evolution"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
 volumes:
   pgdata_dev:
   app_node_modules:
   web_node_modules:
+  evolution_instances:
+  evolution_pgdata:
+  wa_media_dev:

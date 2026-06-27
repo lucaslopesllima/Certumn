@@ -21,6 +21,7 @@ const TIPO: Record<string, { label: string; icon: IconName; dot: string; chip: s
   ligacao: { label: 'Ligação',  icon: 'phone',  dot: '#0284c7', chip: 'bg-sky-50 text-sky-700' },
   visita:  { label: 'Visita',   icon: 'mapPin', dot: '#d97706', chip: 'bg-amber-50 text-amber-700' },
   reuniao: { label: 'Reunião',  icon: 'users',  dot: '#7c3aed', chip: 'bg-violet-50 text-violet-700' },
+  whatsapp: { label: 'WhatsApp', icon: 'whatsapp', dot: '#25D366', chip: 'bg-emerald-50 text-emerald-700' },
 };
 const TIPOS = Object.keys(TIPO);
 const WEEKDAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];

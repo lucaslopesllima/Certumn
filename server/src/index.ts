@@ -4,6 +4,7 @@ import { config } from './config.ts';
 import { buildApp } from './app.ts';
 import { materializeRecurrences } from './recurrence.ts';
 import { processDueEmails } from './email.ts';
+import { processDueWhatsapp } from './whatsappScheduler.ts';
 
 const app = await buildApp();
 
@@ -26,6 +27,16 @@ const runDueEmails = (): void => {
 };
 runDueEmails();
 setInterval(runDueEmails, 60_000).unref();
+
+// Processador de mensagens WhatsApp agendadas (Fase 2). Mesmo padrão dos e-mails.
+const runDueWhatsapp = (): void => {
+  processDueWhatsapp().then(
+    (n) => { if (n > 0) app.log.info(`whatsapp agendados: ${n} enviado(s)`); },
+    (e) => app.log.error({ err: e }, 'falha ao processar whatsapp agendados'),
+  );
+};
+runDueWhatsapp();
+setInterval(runDueWhatsapp, 60_000).unref();
 
 // Serve the built React app (Dockerfile sets CLIENT_DIR). SPA fallback for client routes.
 if (config.clientDir && existsSync(config.clientDir)) {

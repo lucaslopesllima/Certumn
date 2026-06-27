@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../lib/api.ts';
+import { api, ApiError } from '../lib/api.ts';
 import type { Brand, CatalogItem, Contact, KanbanCard, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
 import { Badge, Btn, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
@@ -273,6 +273,17 @@ export function Kanban(): React.JSX.Element {
                         className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
                         <Icon name="flask" size={13} /> +Amostra
                       </button>
+                      {c.telefone1 && (
+                        <button type="button" title="Abrir conversa no WhatsApp"
+                          onClick={() => {
+                            void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: c.company_id, numero: c.telefone1 })
+                              .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+                              .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-emerald-50 hover:text-emerald-700">
+                          <Icon name="phone" size={13} /> WhatsApp
+                        </button>
+                      )}
                     </div>
                   </div>
                 ))}

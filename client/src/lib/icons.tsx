@@ -46,6 +46,7 @@ const PATHS: Record<string, string> = {
   alertTriangle: 'M12 9v4m0 4h.01M10.3 3.8 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.8a2 2 0 0 0-3.4 0Z',
   arrowRight: 'M5 12h14m-7-7 7 7-7 7',
   wifiOff: 'M3 3l18 18M9 17h.01M12 20h.01M5 12.5a10 10 0 0 1 4-2.4M2 8.8a15 15 0 0 1 5-3.2m6.5-.1A15 15 0 0 1 22 8.8M16 12.3a10 10 0 0 1 3 .2',
+  whatsapp: 'M21 11.5a8.5 8.5 0 0 1-12.7 7.4L3 20l1.1-5.3A8.5 8.5 0 1 1 21 11.5Z',
 };
 
 export type IconName = keyof typeof PATHS;

@@ -38,6 +38,7 @@ export interface KanbanCard {
   valor_estimado: string | null; notas: string | null; razao_social: string; nome_fantasia: string | null;
   uf: string; municipio_id: number; cidade: string | null;
   cnpj: string; cnae_principal: number; porte: string; capital_social: string;
+  telefone1: string | null;
   // FKs into the prospecção cadastros + their joined labels.
   represented_id: number | null; representada: string | null;
   marca_id: number | null; marca: string | null;
@@ -357,4 +358,45 @@ export interface Notification {
   payload: Record<string, unknown>;
   lida: boolean;
   created_at: string;
+}
+
+// WhatsApp (Evolution API). Status da conexão da instância da org.
+export type WaStatus = 'desconectado' | 'conectando' | 'conectado';
+
+export interface WaChat {
+  id: number;
+  remote_jid: string;
+  numero: string | null;
+  nome: string | null;
+  foto_url: string | null;
+  last_message_at: string | null;
+  last_preview: string | null;
+  lid: string | null;
+  nao_lidas: number;
+  company_id: number | null;
+  relationship_id: number | null;
+  company_nome: string | null;
+  company_fantasia: string | null;
+  represented_id: number | null;
+  represented_nome: string | null;
+}
+
+export interface WaSchedule {
+  id: number;
+  chat_id: number | null;
+  corpo: string;
+  agendado_para: string;
+  status: string;
+}
+
+export interface WaMessage {
+  id: number;
+  evolution_id: string | null;
+  from_me: boolean;
+  tipo: string; // texto|imagem|audio|video|documento
+  corpo: string | null;
+  status: string | null; // enviado|entregue|lido
+  momento: string;
+  mime: string | null;
+  file_name: string | null;
 }
