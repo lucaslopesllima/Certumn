@@ -424,9 +424,10 @@ interface GroupData { subject: string | null; desc: string | null; size: number 
 // Painel lateral de dados do contato/grupo (estilo WhatsApp Web): avatar grande,
 // identificadores, empresa vinculada, mídia compartilhada e — em grupo —
 // descrição + participantes.
-function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber }: {
+function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, onOpenContact }: {
   chat: WaChat; messages: WaMessage[]; onClose: () => void;
   onLink: () => void; onOrder: () => void; onNumber: () => void;
+  onOpenContact: (chatId: number) => void;
 }): React.JSX.Element {
   const isGroup = chat.remote_jid.endsWith('@g.us');
   const [group, setGroup] = useState<GroupData | null>(null);
@@ -444,6 +445,17 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber }: 
     void api.get<{ contacts: Contact[] }>(`/api/contacts?company_id=${chat.company_id}`)
       .then((r) => setContatos(r.contacts)).catch(() => undefined);
   }, [chat.company_id, isGroup]);
+
+  // Abre (cria/vincula) uma conversa com um contato vinculado pelo telefone dele.
+  const startContactChat = async (ct: Contact): Promise<void> => {
+    if (!ct.telefone || chat.company_id == null) { toast.error('Contato sem telefone cadastrado.'); return; }
+    try {
+      const r = await api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: chat.company_id, numero: ct.telefone, nome: ct.nome });
+      onOpenContact(r.chat.id);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir conversa');
+    }
+  };
 
   const media = useMemo(() => messages.filter((m) => m.tipo === 'imagem' || m.tipo === 'video'), [messages]);
   const needsNumber = !chat.numero && chat.remote_jid.endsWith('@lid');
@@ -514,18 +526,28 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber }: 
             ) : (
               <div className="space-y-1.5">
                 {contatos.map((ct) => (
-                  <button key={ct.id} onClick={() => setContactModal({ contact: ct })}
-                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-ink-100 px-3 py-2 text-left transition hover:bg-ink-50">
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm text-ink-700">{ct.nome}{ct.cargo ? ` · ${ct.cargo}` : ''}</span>
-                      {(ct.telefone || ct.email) && (
-                        <span className="block truncate text-[11px] text-ink-400">
-                          {[ct.telefone && maskPhone(ct.telefone), ct.email].filter(Boolean).join(' · ')}
-                        </span>
-                      )}
-                    </span>
-                    <Icon name="pencil" size={14} className="shrink-0 text-ink-400" />
-                  </button>
+                  <div key={ct.id}
+                    className="flex items-center gap-1 rounded-lg border border-ink-100 px-3 py-2 transition hover:bg-ink-50">
+                    <button onClick={() => setContactModal({ contact: ct })}
+                      className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm text-ink-700">{ct.nome}{ct.cargo ? ` · ${ct.cargo}` : ''}</span>
+                        {(ct.telefone || ct.email) && (
+                          <span className="block truncate text-[11px] text-ink-400">
+                            {[ct.telefone && maskPhone(ct.telefone), ct.email].filter(Boolean).join(' · ')}
+                          </span>
+                        )}
+                      </span>
+                      <Icon name="pencil" size={14} className="shrink-0 text-ink-400" />
+                    </button>
+                    {ct.telefone && (
+                      <button type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
+                        onClick={() => void startContactChat(ct)}
+                        className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-emerald-600 transition hover:bg-emerald-50">
+                        <Icon name="whatsapp" size={15} />
+                      </button>
+                    )}
+                  </div>
                 ))}
               </div>
             )}
@@ -626,7 +648,9 @@ export function WhatsApp(): React.JSX.Element {
   useEffect(() => {
     if (openedParam.current) return;
     const c = sp.get('chat');
-    if (c && chats.some((x) => x.id === Number(c))) { openChat(Number(c)); openedParam.current = true; }
+    // id vem bigint do pg => string em runtime; coage os dois lados e abre com o id real.
+    const target = c ? chats.find((x) => Number(x.id) === Number(c)) : null;
+    if (target) { openChat(target.id); openedParam.current = true; }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chats, sp]);
 
@@ -674,13 +698,13 @@ export function WhatsApp(): React.JSX.Element {
         if (msg.event === 'chat-foto') { void loadChats(); return; }
         if (msg.event === 'chat-removed') {
           const rid = msg.data.chat_id;
-          setChats((cs) => cs.filter((c) => c.id !== rid));
-          if (activeRef.current === rid) { setActiveId(null); setMessages([]); }
+          setChats((cs) => cs.filter((c) => Number(c.id) !== Number(rid)));
+          if (Number(activeRef.current) === Number(rid)) { setActiveId(null); setMessages([]); }
           return;
         }
         if (msg.event === 'merged') {
           void loadChats();
-          if (activeRef.current === msg.data.removed_id && msg.data.chat_id != null) { setActiveId(msg.data.chat_id); }
+          if (Number(activeRef.current) === Number(msg.data.removed_id) && msg.data.chat_id != null) { setActiveId(msg.data.chat_id); }
           return;
         }
         if (msg.event === 'presence') { setTypingJid(msg.data.typing ? (msg.data.remote_jid ?? null) : null); return; }
@@ -691,7 +715,7 @@ export function WhatsApp(): React.JSX.Element {
         if (msg.event === 'message' && msg.data.message) {
           const m = msg.data.message;
           void loadChats();
-          if (Number(msg.data.chat_id) === activeRef.current) {
+          if (Number(msg.data.chat_id) === Number(activeRef.current)) {
             setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
           }
         }
@@ -967,7 +991,8 @@ export function WhatsApp(): React.JSX.Element {
           <ContactDetails chat={active} messages={messages} onClose={() => setDetailsOpen(false)}
             onLink={() => { setDetailsOpen(false); setLinkOpen(true); }}
             onOrder={() => { setDetailsOpen(false); setOrderOpen(true); }}
-            onNumber={() => { setDetailsOpen(false); setNumberOpen(true); }} />
+            onNumber={() => { setDetailsOpen(false); setNumberOpen(true); }}
+            onOpenContact={(id) => { setDetailsOpen(false); void loadChats().then(() => openChat(id)); }} />
         )}
       </div>
       {active && linkOpen && (

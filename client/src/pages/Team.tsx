@@ -155,7 +155,7 @@ function Usuarios(): React.JSX.Element {
             </thead>
             <tbody>
               {users.map((u) => {
-                const self = u.id === Number(me?.id);
+                const self = Number(u.id) === Number(me?.id);
                 return (
                   <tr key={u.id} className={cn('border-b border-ink-50 last:border-0', !u.ativo && 'opacity-60')}>
                     <td className="px-4 py-3 font-medium text-ink-900">

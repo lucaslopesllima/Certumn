@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { api } from './api.ts';
+import { api, ApiError } from './api.ts';
 import type { CompanyDetail, Socio } from './types.ts';
 import { Spinner } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { Cnae, seedCnae } from './cnae.tsx';
 import { waLink } from './format.ts';
+import { toast } from './toast.tsx';
 
 // Modal só-leitura com TODOS os dados da empresa no banco (RFB) + quadro societário.
 const PORTE_LABEL: Record<string, string> = {
@@ -30,17 +31,6 @@ const fmtTel = (s: string | null): string | null => {
   if (!s) return null;
   const d = s.replace(/\D/g, '');
   return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : s;
-};
-// Telefone formatado + link wa.me (WhatsApp click-to-chat) quando válido. Fase 6.2.
-const telWa = (s: string | null): React.ReactNode => {
-  const fmt = fmtTel(s);
-  if (!fmt) return null;
-  const link = waLink(s);
-  return link ? (
-    <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-emerald-600 hover:underline">
-      {fmt}<Icon name="phone" size={13} />
-    </a>
-  ) : fmt;
 };
 function fmtEndereco(c: CompanyDetail): string {
   const linha1 = [c.logradouro, c.numero].filter(Boolean).join(', ');
@@ -113,6 +103,25 @@ export function CompanyModal({ companyId, onClose }: { companyId: number; onClos
   }, [companyId]);
 
   const raw = data?.raw_data && Object.keys(data.raw_data).length > 0 ? data.raw_data : null;
+
+  // Telefone formatado que abre a conversa direto na tela do WhatsApp (cria/vincula
+  // o chat pela empresa), mesmo comportamento do funil — não usa mais o wa.me externo.
+  const telWa = (s: string | null): React.ReactNode => {
+    const fmt = fmtTel(s);
+    if (!fmt) return null;
+    if (!waLink(s)) return fmt;
+    return (
+      <button type="button" title="Abrir conversa no WhatsApp"
+        onClick={() => {
+          void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: companyId, numero: s! })
+            .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+            .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
+        }}
+        className="inline-flex items-center gap-1 text-emerald-600 hover:underline">
+        {fmt}<Icon name="whatsapp" size={13} />
+      </button>
+    );
+  };
 
   return (
     <div className="fixed inset-0 z-[1200] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>

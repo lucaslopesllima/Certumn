@@ -60,7 +60,7 @@ export function Carteiras(): React.JSX.Element {
 
   const nomeVendedor = (id: number | null): string => {
     if (id == null) return 'Sem vendedor';
-    const u = users.find((x) => x.id === id);
+    const u = users.find((x) => Number(x.id) === Number(id));
     return u ? (u.nome ?? u.email) : `#${id}`;
   };
 

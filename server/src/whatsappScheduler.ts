@@ -70,7 +70,7 @@ export async function processDueWhatsapp(now = new Date()): Promise<number> {
         await query("UPDATE activities SET status = 'feito' WHERE id = $1 AND org_id = $2", [s.activity_id, orgId]);
       }
       sent++;
-      if (msg) broadcast(orgId, 'message', { chat_id: chatId, message: msg });
+      if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
     } catch (err) {
       // Integração desligada globalmente também trava (não marca erro).
       if (err instanceof evo.EvolutionDisabledError) continue;

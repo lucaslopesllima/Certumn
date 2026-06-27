@@ -225,7 +225,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
       const evolutionId = sent.key?.id ?? null;
       const msg = await insertMessage(orgId, chatId, { evolutionId, fromMe: true, corpo: text, status: 'enviado' });
       await upsertChat(orgId, chat.remote_jid, { preview: text, incNaoLidas: false });
-      if (msg) broadcast(orgId, 'message', { chat_id: chatId, message: msg });
+      if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
       return { message: msg };
     } catch (e) {
       if (e instanceof evo.EvolutionDisabledError) return reply.code(503).send({ error: e.message });
@@ -284,7 +284,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
         await query('UPDATE whatsapp_messages SET media_path = $2 WHERE id = $1', [msg.id, rel]);
       }
       await upsertChat(orgId, chat.remote_jid, { preview: b.caption || `[${tipo}]`, incNaoLidas: false });
-      if (msg) broadcast(orgId, 'message', { chat_id: chatId, message: msg });
+      if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
       return { message: msg };
     } catch (e) {
       if (e instanceof evo.EvolutionDisabledError) return reply.code(503).send({ error: e.message });
@@ -404,18 +404,20 @@ export function whatsappRoutes(app: FastifyInstance): void {
     schema: {
       body: {
         type: 'object', required: ['company_id', 'numero'],
-        properties: { company_id: { type: 'integer' }, numero: { type: 'string', minLength: 8 } },
+        properties: { company_id: { type: 'integer' }, numero: { type: 'string', minLength: 8 }, nome: { type: 'string' } },
       },
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
-    const { company_id, numero } = req.body as { company_id: number; numero: string };
+    const { company_id, numero, nome: nomeBody } = req.body as { company_id: number; numero: string; nome?: string };
     const jid = numeroToJid(numero);
     if (jid.replace(/[^0-9]/g, '').length < 12) return reply.code(400).send({ error: 'número inválido' });
     const co = await one<{ razao_social: string; nome_fantasia: string | null }>(
       'SELECT razao_social, nome_fantasia FROM companies WHERE id = $1', [company_id],
     );
-    const nome = co ? (co.nome_fantasia || co.razao_social) : null;
+    // Nome explícito (ex.: conversa iniciada por um contato vinculado) tem prioridade
+    // sobre o nome da empresa, pra a conversa exibir o contato e não a empresa.
+    const nome = nomeBody?.trim() || (co ? (co.nome_fantasia || co.razao_social) : null);
     const chat = await upsertChat(orgId, jid, { nome, incNaoLidas: false });
     const rel = await relationshipForCompany(orgId, company_id);
     await query('UPDATE whatsapp_chats SET company_id = $3, relationship_id = $4 WHERE id = $1 AND org_id = $2',

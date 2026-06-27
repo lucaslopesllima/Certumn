@@ -122,11 +122,11 @@ export function webhookRoutes(app: FastifyInstance): void {
             mime: meta.mime,
             fileName: meta.fileName,
           });
-          if (msg) broadcast(orgId, 'message', { chat_id: chat.id, message: msg, chat });
+          if (msg) broadcast(orgId, 'message', { chat_id: Number(chat.id), message: msg, chat });
           // Foto de perfil na 1ª aparição da conversa (best-effort, assíncrono).
           if (!chat.foto_url && jid.endsWith('@s.whatsapp.net')) {
             evo.profilePicture(instanceName(orgId), jidToNumero(jid)).then(
-              (url) => { if (url) { void updateFoto(orgId, jid, url); broadcast(orgId, 'chat-foto', { chat_id: chat.id, foto_url: url }); } },
+              (url) => { if (url) { void updateFoto(orgId, jid, url); broadcast(orgId, 'chat-foto', { chat_id: Number(chat.id), foto_url: url }); } },
               () => undefined,
             );
           }
@@ -140,7 +140,7 @@ export function webhookRoutes(app: FastifyInstance): void {
                 (g) => {
                   if (g.subject) void updateNome(orgId, chat.id, g.subject);
                   if (g.pictureUrl) void updateFoto(orgId, jid, g.pictureUrl);
-                  if (g.subject || g.pictureUrl) broadcast(orgId, 'chat-foto', { chat_id: chat.id });
+                  if (g.subject || g.pictureUrl) broadcast(orgId, 'chat-foto', { chat_id: Number(chat.id) });
                 },
                 () => { groupNameDone.delete(key); }, // permite nova tentativa depois
               );
@@ -194,7 +194,7 @@ export function webhookRoutes(app: FastifyInstance): void {
           const chatId = await resolveChatId(orgId, jid);
           if (!chatId) continue; // contato sem conversa: ignora
           await updateFotoById(orgId, chatId, url);
-          broadcast(orgId, 'chat-foto', { chat_id: chatId, foto_url: url });
+          broadcast(orgId, 'chat-foto', { chat_id: Number(chatId), foto_url: url });
         }
         return reply.code(200).send({ ok: true });
       }

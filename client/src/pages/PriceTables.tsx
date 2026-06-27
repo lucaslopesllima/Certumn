@@ -95,9 +95,9 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
   );
   const [busy, setBusy] = useState(false);
 
-  const disponiveis = catalog.filter((c) => c.ativo && !items.some((i) => i.catalog_item_id === c.id));
+  const disponiveis = catalog.filter((c) => c.ativo && !items.some((i) => Number(i.catalog_item_id) === Number(c.id)));
   const addItem = (id: number): void => {
-    const cat = catalog.find((c) => c.id === id);
+    const cat = catalog.find((c) => Number(c.id) === Number(id));
     setItems((xs) => [...xs, { catalog_item_id: id, preco: numStr(cat?.preco), desconto_max_pct: '' }]);
   };
   const setItem = (idx: number, patch: Partial<ItemDraft>): void =>

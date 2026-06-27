@@ -60,10 +60,13 @@ describe('financeiro: fluxo de caixa', () => {
     await inj(a, 'POST', '/api/finance', { kind: 'receber', descricao: 'Venda', valor: 800, vencimento: shiftDays(5) });
     await inj(a, 'POST', '/api/finance', { kind: 'pagar', descricao: 'Conta', valor: 300, vencimento: shiftDays(6) });
 
-    const cf = await inj(a, 'GET', '/api/finance/cashflow?months=1');
+    // months=2: a janela do cashflow vai do 1º dia do mês atual até o fim do mês
+    // seguinte. Com months=1, vencimentos de +5/+6 dias caem fora quando o teste
+    // roda nos últimos dias do mês (viram mês seguinte) — usa 2 p/ não flakar.
+    const cf = await inj(a, 'GET', '/api/finance/cashflow?months=2');
     expect(cf.statusCode).toBe(200);
     const j = cf.json() as { months: number; semanas: { receber: number; pagar: number; comissao_prevista: number; saldo: number }[] };
-    expect(j.months).toBe(1);
+    expect(j.months).toBe(2);
     const totReceber = j.semanas.reduce((s, w) => s + w.receber, 0);
     const totPagar = j.semanas.reduce((s, w) => s + w.pagar, 0);
     expect(totReceber).toBeGreaterThanOrEqual(800);

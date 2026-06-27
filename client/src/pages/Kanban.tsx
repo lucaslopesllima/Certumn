@@ -485,6 +485,17 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
                     {selecionados.map((c) => (
                       <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-700">
                         {c.nome}{c.cargo ? ` · ${c.cargo}` : ''}
+                        {c.telefone && (
+                          <button type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
+                            onClick={() => {
+                              void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: card.company_id, numero: c.telefone, nome: c.nome })
+                                .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+                                .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
+                            }}
+                            className="text-emerald-600 hover:text-emerald-700">
+                            <Icon name="whatsapp" size={13} />
+                          </button>
+                        )}
                         <button type="button" onClick={() => setContatoIds((ids) => ids.filter((x) => x !== c.id))}
                           className="text-ink-400 hover:text-rose-500" aria-label="Remover">
                           <Icon name="x" size={13} />

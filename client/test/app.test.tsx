@@ -24,6 +24,12 @@ vi.mock('../src/pages/Finance.tsx', () => ({ Finance: () => <div>PAGE-FIN</div> 
 vi.mock('../src/pages/Team.tsx', () => ({ Team: () => <div>PAGE-EQUIPE</div> }));
 vi.mock('../src/pages/Login.tsx', () => ({ Login: () => <div>PAGE-LOGIN</div> }));
 vi.mock('../src/pages/ChangePassword.tsx', () => ({ ChangePassword: () => <div>PAGE-TROCAR-SENHA</div> }));
+// theme usa window.matchMedia (ausente no jsdom); o alvo aqui é roteamento.
+vi.mock('../src/lib/theme.tsx', () => ({
+  ThemeProvider: ({ children }: { children?: React.ReactNode }) => <>{children}</>,
+  ThemeToggle: () => null,
+  useTheme: () => ({ theme: 'light', setTheme: vi.fn(), toggle: vi.fn() }),
+}));
 
 const useAuthMock = vi.mocked(useAuth);
 

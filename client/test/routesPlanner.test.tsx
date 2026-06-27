@@ -9,6 +9,7 @@ vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children?: React.ReactNode }) => <div data-testid="map">{children}</div>,
   TileLayer: () => null, CircleMarker: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   Polyline: () => null, Tooltip: ({ children }: { children?: React.ReactNode }) => <span>{children}</span>,
+  Popup: ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
   useMap: () => ({ fitBounds: vi.fn() }),
 }));
 vi.mock('../src/lib/api.ts', async (orig) => {
