@@ -140,6 +140,11 @@ select:-webkit-autofill {
 
 .leaflet-container { font: inherit; }
 
+/* popup do Leaflet segue o tema (default é branco fixo → texto some no escuro) */
+.dark .leaflet-popup-content-wrapper,
+.dark .leaflet-popup-tip { background: var(--color-surface); color: var(--color-ink-800); }
+.dark .leaflet-popup-close-button { color: var(--color-ink-400); }
+
 /* toast entra deslizando do topo */
 @keyframes toastIn {
   from { opacity: 0; transform: translateY(-8px); }

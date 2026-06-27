@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Polyline, Tooltip, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, Tooltip, useMap } from 'react-leaflet';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';
-import type { FunnelCompany, Vehicle, OptimizeResult, SavedRoute } from '../lib/types.ts';
+import type { FunnelCompany, Vehicle, OptimizeResult, RouteStop, SavedRoute } from '../lib/types.ts';
 import { Btn, Badge, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, maskPlaca } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+
+// Navega até um ponto único. Origem omitida de propósito → no celular o Maps usa
+// o GPS atual como ponto de partida; no desktop abre a aba com o destino.
+const navTo = (lat: number, lon: number): void => {
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`, '_blank', 'noopener');
+};
 
 // Modal genérico de entrada — substitui window.prompt nativo nas rotas (nome,
 // data, valor de despesa). Prefill visível, validação e visual da app.
@@ -70,6 +76,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [result, setResult] = useState<OptimizeResult | null>(null);
+  const [openedId, setOpenedId] = useState<number | null>(null);
   const [saved, setSaved] = useState<SavedRoute[]>([]);
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const nomePadraoData = (): string => new Date().toLocaleDateString('pt-BR');
@@ -103,7 +110,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
 
   const optimize = async (): Promise<void> => {
     if (sel.size < 1) return;
-    setBusy(true); setErr(''); setResult(null);
+    setBusy(true); setErr(''); setResult(null); setOpenedId(null);
     try {
       const body = {
         company_ids: [...sel],
@@ -180,6 +187,30 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
     } catch (e) {
       toast.error(e instanceof ApiError ? e.message : 'Falha ao reusar a rota.');
     }
+  };
+
+  // Abre uma rota salva no mapa (igual ao Otimizar): busca o detalhe (origem +
+  // geometria + paradas) e popula `result`. Valores numéricos vêm string do pg.
+  const openSaved = async (r: SavedRoute): Promise<void> => {
+    setBusy(true); setErr(''); setOpenedId(r.id);
+    const num = (v: unknown): number => Number(v ?? 0);
+    const numN = (v: unknown): number | null => (v == null ? null : Number(v));
+    try {
+      const { route, stops } = await api.get<{ route: Record<string, unknown>; stops: RouteStop[] }>(`/api/routes/${r.id}`);
+      setResult({
+        origem: { lat: num(route.origem_lat), lon: num(route.origem_lon) },
+        stops: stops.map((s) => ({
+          ...s, lat: num(s.lat), lon: num(s.lon),
+          leg_dist_km: numN(s.leg_dist_km), leg_dur_min: numN(s.leg_dur_min),
+        })),
+        dist_km: num(route.dist_km), dur_min: num(route.dur_min),
+        preco_litro: numN(route.preco_litro), litros: numN(route.litros), custo_total: numN(route.custo_total),
+        geometry: (route.geometry as OptimizeResult['geometry']) ?? { coordinates: [] },
+        skipped: [],
+      });
+    } catch (e) {
+      setErr(e instanceof ApiError ? e.message : 'Falha ao abrir a rota.');
+    } finally { setBusy(false); }
   };
 
   // Marca/desmarca como template (rota recorrente reutilizável). O PATCH já
@@ -325,6 +356,14 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                     <CircleMarker key={s.company_id} center={[s.lat, s.lon]} radius={11}
                       pathOptions={{ color: '#fff', weight: 2, fillColor: '#039855', fillOpacity: 1 }}>
                       <Tooltip permanent direction="center" className="!bg-transparent !border-0 !shadow-none !p-0 !text-[11px] !font-bold !text-white">{s.seq + 1}</Tooltip>
+                      <Popup>
+                        <span className="block text-sm font-semibold text-ink-800">{s.seq + 1}. {s.nome_fantasia || s.razao_social}</span>
+                        <span className="mb-1.5 block text-xs text-ink-500">{[s.cidade, s.uf].filter(Boolean).join(' · ')}</span>
+                        <button onClick={() => navTo(s.lat, s.lon)}
+                          className="inline-flex items-center gap-1 text-xs font-semibold text-brand-600 hover:underline">
+                          <Icon name="mapPin" size={13} /> Navegar até aqui
+                        </button>
+                      </Popup>
                     </CircleMarker>
                   ))}
                 </MapContainer>
@@ -336,9 +375,18 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             </Card>
 
             <Card className="p-0">
-              <div className="flex items-center justify-between border-b border-ink-100 px-4 py-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-ink-100 px-4 py-3">
                 <p className="text-sm font-semibold text-ink-700">Sequência de visitas</p>
-                <Btn size="sm" icon="check" onClick={() => void save()} disabled={busy}>Salvar rota</Btn>
+                <div className="flex items-center gap-2">
+                  {/* URL universal do Google Maps: no celular abre o app; no desktop, nova aba.
+                      Round trip — volta à origem (ida e volta). */}
+                  <Btn size="sm" variant="soft" icon="mapPin" onClick={() => {
+                    const o = `${result.origem.lat},${result.origem.lon}`;
+                    const wp = result.stops.map((s) => `${s.lat},${s.lon}`).join('|');
+                    window.open(`https://www.google.com/maps/dir/?api=1&origin=${o}&destination=${o}&waypoints=${encodeURIComponent(wp)}&travelmode=driving`, '_blank', 'noopener');
+                  }}>Usar rota</Btn>
+                  <Btn size="sm" icon="check" onClick={() => void save()} disabled={busy}>Salvar rota</Btn>
+                </div>
               </div>
               <ol className="divide-y divide-ink-100">
                 {result.stops.map((s) => (
@@ -349,6 +397,10 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                       <span className="block truncate text-[11px] text-ink-400">{[s.cidade, s.uf].filter(Boolean).join(' · ')}</span>
                     </span>
                     {s.leg_dist_km != null && <span className="shrink-0 text-[11px] tabular-nums text-ink-400">+{km(s.leg_dist_km)}</span>}
+                    <button onClick={() => navTo(s.lat, s.lon)} title="Navegar até esta parada"
+                      className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/15">
+                      <Icon name="mapPin" size={16} />
+                    </button>
                   </li>
                 ))}
               </ol>
@@ -361,19 +413,21 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             <p className="border-b border-ink-100 px-4 py-3 text-sm font-semibold text-ink-700">Rotas salvas</p>
             <ul className="divide-y divide-ink-100">
               {saved.map((r) => (
-                <li key={r.id} className="flex items-center gap-2 px-4 py-2.5">
-                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600"><Icon name="route" size={16} /></span>
-                  <span className="min-w-0 flex-1">
-                    <span className="flex items-center gap-1.5">
-                      <span className="truncate text-sm font-medium text-ink-800">{r.nome}</span>
-                      {r.template && <Badge tone="brand">Template</Badge>}
+                <li key={r.id} className={cn('flex items-center gap-2 px-4 py-2.5', openedId === r.id && 'bg-brand-50 dark:bg-brand-500/15')}>
+                  <button onClick={() => void openSaved(r)} title="Abrir no mapa" className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400"><Icon name="route" size={16} /></span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium text-ink-800">{r.nome}</span>
+                        {r.template && <Badge tone="brand">Template</Badge>}
+                      </span>
+                      <span className="block truncate text-[11px] text-ink-400">
+                        {r.paradas} parada(s) · {km(r.dist_km != null ? Number(r.dist_km) : null)}
+                        {r.custo_total != null && ` · ${brl(Number(r.custo_total))}`}
+                        {r.veiculo && ` · ${r.veiculo}`}
+                      </span>
                     </span>
-                    <span className="block truncate text-[11px] text-ink-400">
-                      {r.paradas} parada(s) · {km(r.dist_km != null ? Number(r.dist_km) : null)}
-                      {r.custo_total != null && ` · ${brl(Number(r.custo_total))}`}
-                      {r.veiculo && ` · ${r.veiculo}`}
-                    </span>
-                  </span>
+                  </button>
                   <button onClick={() => void agendar(r)} aria-label="Criar compromissos" title="Criar compromissos na Agenda"
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
                     <Icon name="calendar" size={15} />
