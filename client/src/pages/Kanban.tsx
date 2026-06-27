@@ -4,8 +4,12 @@ import type { Brand, CatalogItem, Contact, KanbanCard, NamedItem, RepresentedCom
 import { Badge, Btn, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
+import { SampleRequestModal, SampleListModal } from '../lib/sampleModal.tsx';
+import { brl0 as brl, maskPhone, numStr } from '../lib/format.ts';
+import { toast } from '../lib/toast.tsx';
 
 const STATUS_TONE: Record<string, Tone> = {
   prospect: 'info', cliente: 'success', descartado: 'neutral',
@@ -15,7 +19,6 @@ const STATUS_LABEL: Record<string, string> = {
 };
 const STATUS_OPTS = ['prospect', 'cliente', 'descartado'] as const;
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
-const brl = (n: number): string => n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
 export function Kanban(): React.JSX.Element {
   const [stages, setStages] = useState<Stage[]>([]);
@@ -24,7 +27,10 @@ export function Kanban(): React.JSX.Element {
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<number | 'none' | null>(null);
   const [editing, setEditing] = useState<KanbanCard | null>(null);
+  const [moveFor, setMoveFor] = useState<number | null>(null); // card com menu "mover" aberto
   const [viewing, setViewing] = useState<number | null>(null); // company_id em visualização
+  const [sampleFor, setSampleFor] = useState<KanbanCard | null>(null); // card criando amostra
+  const [samplesView, setSamplesView] = useState<KanbanCard | null>(null); // card vendo/editando amostras
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [scenarios, setScenarios] = useState<NamedItem[]>([]);
@@ -32,6 +38,8 @@ export function Kanban(): React.JSX.Element {
   const [catalog, setCatalog] = useState<CatalogItem[]>([]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const filter = useCompanyFilter('funil');
 
   const load = async (): Promise<void> => {
@@ -59,22 +67,30 @@ export function Kanban(): React.JSX.Element {
       await api.patch(`/api/relationships/${cardId}`, { stage_id: stageId });
     } catch {
       void load(); // revert from server on failure
+      toast.error('Não foi possível mover o card.');
     }
   };
 
   const saveEdit = async (id: number, patch: EditPatch): Promise<void> => {
-    await api.patch(`/api/relationships/${id}`, patch);
-    await load(); // refetch so the joined dropdown labels (marca, contato, etc.) come back fresh
-    setEditing(null);
+    try {
+      await api.patch(`/api/relationships/${id}`, patch);
+      await load(); // refetch so the joined dropdown labels (marca, contato, etc.) come back fresh
+      setEditing(null);
+      toast.success('Prospecção atualizada.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
   };
 
   const removeFromFunnel = async (id: number): Promise<void> => {
     setCards((cs) => cs.filter((c) => c.id !== id)); // optimista
     setEditing(null);
-    try { await api.del(`/api/relationships/${id}`); } catch { void load(); }
+    try { await api.del(`/api/relationships/${id}`); toast.success('Empresa removida do funil.'); }
+    catch { void load(); toast.error('Não foi possível remover do funil.'); }
   };
 
-  const visibleCards = useMemo(() => filter.apply(cards), [filter.apply, cards]);
+  const visibleCards = useMemo(
+    () => filter.apply(cards).filter((c) => ownerId === 'todos' || c.owner_user_id === ownerId),
+    [filter.apply, cards, ownerId],
+  );
 
   if (loading) return <div className="p-6"><Spinner /></div>;
 
@@ -91,11 +107,14 @@ export function Kanban(): React.JSX.Element {
   return (
     <div className="flex h-full flex-col">
       <div className="space-y-4 p-4 sm:p-6">
-        <PageHeader title="Funil de vendas" subtitle="Arraste os cards entre as etapas."
+        <PageHeader title="Funil de vendas" subtitle="Arraste os cards ou use o botão → para mover entre etapas."
           actions={
-            <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
-              Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
-            </Btn>
+            <div className="flex items-center gap-2">
+              <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
+              <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
+                Filtros{oculto > 0 ? ` · ${oculto} ocultos` : ''}
+              </Btn>
+            </div>
           } />
 
         {filtersOpen && <CompanyFilterBar f={filter} />}
@@ -135,12 +154,37 @@ export function Kanban(): React.JSX.Element {
                     onDragEnd={() => { setDragId(null); setOver(null); }}
                     className={cn('group relative cursor-grab rounded-xl border border-ink-200/70 bg-white p-3 shadow-card transition active:cursor-grabbing',
                       dragId === c.id && 'opacity-50')}>
-                    <button type="button"
-                      onClick={() => setEditing(c)}
-                      title="Editar prospecção"
-                      className="absolute right-2 top-2 rounded-lg p-1 text-ink-300 opacity-0 transition hover:bg-ink-100 hover:text-ink-600 group-hover:opacity-100 focus:opacity-100">
-                      <Icon name="pencil" size={14} />
-                    </button>
+                    <div className="absolute right-2 top-2 flex items-center gap-0.5">
+                      <button type="button"
+                        onClick={() => setMoveFor((m) => (m === c.id ? null : c.id))}
+                        aria-label="Mover para outra etapa" aria-haspopup="menu" aria-expanded={moveFor === c.id}
+                        title="Mover para…"
+                        className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                        <Icon name="arrowRight" size={14} />
+                      </button>
+                      <button type="button"
+                        onClick={() => setEditing(c)}
+                        title="Editar prospecção"
+                        className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+                        <Icon name="pencil" size={14} />
+                      </button>
+                    </div>
+                    {moveFor === c.id && (
+                      <>
+                        <div className="fixed inset-0 z-[40]" onClick={() => setMoveFor(null)} />
+                        <div role="menu" className="absolute right-2 top-9 z-[50] w-44 overflow-hidden rounded-xl border border-ink-200 bg-white py-1 shadow-pop">
+                          <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Mover para</p>
+                          {stages.map((s) => (
+                            <button key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
+                              onClick={() => { void move(c.id, s.id); setMoveFor(null); }}
+                              className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                                c.stage_id === s.id ? 'font-semibold text-brand-600' : 'text-ink-700 hover:bg-ink-50')}>
+                              {c.stage_id === s.id && <Icon name="check" size={13} />}{s.nome}
+                            </button>
+                          ))}
+                        </div>
+                      </>
+                    )}
                     <div className="flex items-center gap-1 pr-6">
                       <p className="truncate text-sm font-semibold text-ink-800">{c.nome_fantasia || c.razao_social}</p>
                       <button type="button"
@@ -162,6 +206,14 @@ export function Kanban(): React.JSX.Element {
                         <span className="truncate">{c.catalogo.map((x) => x.nome).join(', ')}</span>
                       </p>
                     )}
+                    {c.amostras.length > 0 && (
+                      <button type="button" onClick={() => setSamplesView(c)}
+                        title="Ver/editar amostras solicitadas"
+                        className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+                        <Icon name="flask" size={12} className="shrink-0" />
+                        <span className="truncate">{c.amostras.length} amostra{c.amostras.length > 1 ? 's' : ''}</span>
+                      </button>
+                    )}
                     {c.valor_estimado && Number(c.valor_estimado) > 0 && (
                       <p className="tabnums mt-1 text-xs font-semibold text-emerald-600">{brl(Number(c.valor_estimado))}</p>
                     )}
@@ -171,6 +223,18 @@ export function Kanban(): React.JSX.Element {
                         <Icon name="mapPin" size={12} className="shrink-0" />
                         <span className="truncate">{[c.cidade, c.uf].filter(Boolean).join(' · ')}</span>
                       </span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                      {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
+                      <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
+                        title="Novo pedido"
+                        className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+                        <Icon name="plus" size={13} /> Pedido
+                      </a>
+                      <button type="button" onClick={() => setSampleFor(c)} title="Solicitar amostra"
+                        className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+                        <Icon name="flask" size={13} /> +Amostra
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -195,6 +259,22 @@ export function Kanban(): React.JSX.Element {
       {viewing !== null && (
         <CompanyModal companyId={viewing} onClose={() => setViewing(null)} />
       )}
+      {sampleFor && (
+        <SampleRequestModal
+          card={{ id: sampleFor.id, company_id: sampleFor.company_id, label: sampleFor.nome_fantasia || sampleFor.razao_social }}
+          catalog={catalog}
+          onClose={() => setSampleFor(null)}
+          onSaved={() => { setSampleFor(null); void load(); }}
+        />
+      )}
+      {samplesView && (
+        <SampleListModal
+          card={{ id: samplesView.id, company_id: samplesView.company_id, label: samplesView.nome_fantasia || samplesView.razao_social }}
+          catalog={catalog}
+          onClose={() => setSamplesView(null)}
+          onChanged={() => { void load(); }}
+        />
+      )}
     </div>
   );
 }
@@ -203,7 +283,7 @@ interface EditPatch {
   stage_id: number | null; status: string; valor_estimado: number | null; notas: string | null;
   represented_id: number | null; marca_id: number | null; contato_ids: number[]; catalogo_ids: number[];
   cenario_id: number | null; acao_id: number | null;
-  data_contato: string | null; previsao_data: string | null;
+  data_contato: string | null; previsao_data: string | null; motivo_descarte: string | null;
 }
 
 const txt = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -224,7 +304,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
 }): React.JSX.Element {
   const [stageId, setStageId] = useState<number | null>(card.stage_id);
   const [status, setStatus] = useState<string>(card.status);
-  const [valor, setValor] = useState<string>(card.valor_estimado ?? '');
+  const [valor, setValor] = useState<string>(numStr(card.valor_estimado));
   const [representadaId, setRepresentadaId] = useState<number | null>(card.represented_id);
   const [marcaId, setMarcaId] = useState<number | null>(card.marca_id);
   const [contatoIds, setContatoIds] = useState<number[]>(card.contatos.map((c) => c.id));
@@ -233,6 +313,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
   const [acaoId, setAcaoId] = useState<number | null>(card.acao_id);
   const [dataContato, setDataContato] = useState<string>(card.data_contato ?? '');
   const [previsaoData, setPrevisaoData] = useState<string>(card.previsao_data ?? '');
+  const [motivoDescarte, setMotivoDescarte] = useState<string>(card.motivo_descarte ?? '');
   const [notas, setNotas] = useState<string>(card.notas ?? '');
   const [busy, setBusy] = useState(false);
 
@@ -284,6 +365,8 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
         acao_id: acaoId,
         data_contato: dataContato === '' ? null : dataContato,
         previsao_data: previsaoData === '' ? null : previsaoData,
+        // motivo só faz sentido em descartado; nos demais status limpa o campo.
+        motivo_descarte: status === 'descartado' ? txt(motivoDescarte) : null,
         notas: txt(notas),
       });
     } finally { setBusy(false); }
@@ -325,6 +408,12 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
                   {STATUS_OPTS.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
                 </select>
               </Field>
+              {status === 'descartado' && (
+                <Field label="Motivo do descarte">
+                  <input value={motivoDescarte} onChange={(e) => setMotivoDescarte(e.target.value)}
+                    placeholder="ex.: Preço alto, sem fit, concorrente" className={inputCls} />
+                </Field>
+              )}
               <Field label="Representada">
                 <select value={representadaId ?? ''}
                   onChange={(e) => { setRepresentadaId(numOrNull(e.target.value)); setMarcaId(null); }}
@@ -442,6 +531,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
       <ActivityCreateModal
         preset={hojeAs9()}
         funnel={[{ company_id: card.company_id, label: card.nome_fantasia || card.razao_social }]}
+        represented={reps}
         presetCompanyId={card.company_id}
         onClose={() => setCreatingActivity(false)}
         onSaved={() => setCreatingActivity(false)}
@@ -475,8 +565,10 @@ function NovoContato({ companyId, onCreated, onCancel }: {
       const r = await api.post<{ contact: Contact }>('/api/contacts', {
         nome: nome.trim(), cargo: txt(cargo), telefone: txt(telefone), email: txt(email), company_id: companyId,
       });
+      toast.success('Contato criado.');
       onCreated(r.contact);
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o contato.'); }
+    finally { setBusy(false); }
   };
 
   return (
@@ -493,7 +585,7 @@ function NovoContato({ companyId, onCreated, onCancel }: {
           <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} />
           <div className="grid gap-2.5 sm:grid-cols-2">
             <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className={inputCls} />
-            <input value={telefone} onChange={(e) => setTelefone(e.target.value)} placeholder="Telefone" className={inputCls} />
+            <input value={telefone} onChange={(e) => setTelefone(maskPhone(e.target.value))} placeholder="Telefone" inputMode="tel" className={inputCls} />
           </div>
           <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className={inputCls} />
         </div>
@@ -525,8 +617,10 @@ function NovoProduto({ reps, onCreated, onCancel }: {
         preco: preco.trim() === '' ? null : Number(preco),
         represented_id: repId === '' ? null : Number(repId),
       });
+      toast.success('Produto criado.');
       onCreated(r.item);
-    } finally { setBusy(false); }
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível criar o produto.'); }
+    finally { setBusy(false); }
   };
 
   return (

@@ -48,10 +48,10 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
 
   // $1 cnaes, $2 municipios, $3 orgId, $4 normMeters, $5 wCnae, $6 wProx, $7 wPorte,
   // $8 capitalRef, $9 limit, $10 offset, $11 divisoesAlvo, $12 secoesAlvo,
-  // $13 pruneDivisoes, $14+ filtros (server-side, sobre a base toda)
+  // $13+ poda/filtros (só os usados — parâmetro sem referência no SQL dá 42P18)
   const params: unknown[] = [
     cnaes, municipios, orgId, normMeters, wCnae, wProx, wPorte, CAPITAL_REF, limit, offset,
-    args.divisoesAlvo, args.secoesAlvo, args.pruneDivisoes,
+    args.divisoesAlvo, args.secoesAlvo,
   ];
 
   const territoryPredicate = radiusMode
@@ -61,14 +61,15 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   // Filtros server-side: viram WHERE sobre TODA a base (dentro do território/alvo),
   // não só a página carregada. CNAE explícito dispensa a poda por divisões-alvo.
   const f = args.filters ?? {};
-  let p = params.length; // último índice usado (=13)
+  let p = params.length; // último índice usado (=12)
   const extra: string[] = [];
 
   let cnaePredicate: string;
   if (f.cnae && f.cnae.length > 0) {
     params.push(f.cnae); cnaePredicate = `c.cnae_principal = ANY($${++p}::int[])`;
   } else {
-    cnaePredicate = `(cardinality($1::int[]) = 0 OR c.cnae_divisao = ANY($13::smallint[]))`;
+    params.push(args.pruneDivisoes);
+    cnaePredicate = `(cardinality($1::int[]) = 0 OR c.cnae_divisao = ANY($${++p}::smallint[]))`;
   }
   if (f.uf && f.uf.length > 0) { params.push(f.uf); extra.push(`c.uf = ANY($${++p}::text[])`); }
   if (f.porte) { params.push(f.porte); extra.push(`c.porte = $${++p}::porte_emp`); }

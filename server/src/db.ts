@@ -1,6 +1,12 @@
 import pg from 'pg';
 import { config } from './config.ts';
 
+// Colunas DATE (OID 1082) voltam como string 'YYYY-MM-DD', não como Date — o
+// parser padrão do pg cria um Date em meia-noite LOCAL, que ao virar JSON
+// (toISOString) ganha um horário/fuso e quebra inputs type=date e fmtDate no
+// front (data de vencimento sumindo). Mantém o valor cru, sem shift de fuso.
+pg.types.setTypeParser(1082, (v) => v);
+
 // Single shared pool. Raw parameterized SQL everywhere — no ORM.
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,

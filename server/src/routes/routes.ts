@@ -1,8 +1,9 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { one, query, withClient } from '../db.ts';
 import { requireAuth } from '../auth.ts';
 import { geocodeAddr } from '../geocode.ts';
 import { fuelEstimate } from '../fuel.ts';
+import { scopeOwner, canWriteOwned } from '../scope.ts';
 
 // Planejador de rota. Empresas selecionadas (do funil) -> melhor ordem de visita
 // (TSP via OSRM /trip público) -> distância/duração ida-e-volta -> custo de combustível
@@ -65,6 +66,24 @@ async function geocodeCompany(id: number): Promise<Geo | null> {
   return null;
 }
 
+// Geocode em lote. O caminho comum (todas as empresas já cacheadas) resolve em
+// UMA query em vez de N round-trips; só os cache-miss caem no geocodeCompany
+// sequencial (que respeita o throttle do Nominatim).
+async function geocodeManyCompanies(ids: number[]): Promise<Record<number, Geo>> {
+  const geo: Record<number, Geo> = {};
+  if (ids.length === 0) return geo;
+  const cached = await query<{ company_id: string; lat: number; lon: number }>(
+    'SELECT company_id, lat, lon FROM company_geocode WHERE company_id = ANY($1::bigint[])', [ids],
+  );
+  for (const r of cached) geo[Number(r.company_id)] = { lat: r.lat, lon: r.lon };
+  for (const id of ids) {
+    if (geo[id]) continue;
+    const g = await geocodeCompany(id);
+    if (g) geo[id] = g;
+  }
+  return geo;
+}
+
 interface OsrmTrip {
   distance: number; duration: number;
   geometry: { coordinates: [number, number][] };
@@ -112,6 +131,146 @@ async function osrmTrip(pts: Geo[]): Promise<{
   };
 }
 
+type RouteResult = {
+  origem: Geo;
+  stops: {
+    seq: number; company_id: number; razao_social: string; nome_fantasia: string | null;
+    uf: string; cidade: string | null; lat: number; lon: number;
+    leg_dist_km: number | null; leg_dur_min: number | null;
+  }[];
+  dist_km: number; dur_min: number;
+  preco_litro: number | null; litros: number | null; custo_total: number | null;
+  geometry: { coordinates: [number, number][] };
+  skipped: number[];
+};
+
+// Núcleo do planejador, compartilhado por /optimize e /:id/reuse. Resolve
+// origem, veículo, geocode e TSP. Retorna { ok:false, code } nos erros de
+// negócio (origem ausente, veículo alheio, nada geolocalizado, OSRM fora).
+async function computeRoute(
+  req: FastifyRequest,
+  orgId: number,
+  company_ids: number[],
+  vehicle_id: number | null | undefined,
+  preco_litro: number | null | undefined,
+): Promise<{ ok: true; result: RouteResult } | { ok: false; code: 400 | 404 | 502; error: string }> {
+  const ids = [...new Set(company_ids)];
+
+  const origem = await resolveOrigem(orgId);
+  if (!origem) return { ok: false, code: 400, error: 'Cadastre o endereço da sua conta para definir a origem da rota.' };
+
+  // veículo (consumo/preço) — opcional. Validado por org.
+  let consumoKml: number | null = null;
+  let preco = preco_litro ?? null;
+  if (vehicle_id != null) {
+    const v = await one<{ consumo_kml: number; preco_litro: number | null }>(
+      'SELECT consumo_kml, preco_litro FROM vehicles WHERE id = $1 AND org_id = $2', [vehicle_id, orgId],
+    );
+    if (!v) return { ok: false, code: 404, error: 'veículo não encontrado' };
+    consumoKml = Number(v.consumo_kml);
+    if (preco == null) preco = v.preco_litro != null ? Number(v.preco_litro) : null;
+  }
+
+  // geocode em lote: cache numa query só; cache-miss vai sequencial ao Nominatim.
+  const geo = await geocodeManyCompanies(ids);
+  const located = ids.filter((id) => geo[id]);
+  if (located.length === 0) return { ok: false, code: 400, error: 'Nenhuma empresa selecionada tem localização.' };
+
+  // metadados das empresas p/ exibir na lista de paradas
+  const meta = await query<{ id: string; razao_social: string; nome_fantasia: string | null; uf: string; cidade: string | null }>(
+    `SELECT c.id, c.razao_social, c.nome_fantasia, c.uf, m.nome AS cidade
+     FROM companies c LEFT JOIN municipios m ON m.id = c.municipio_id
+     WHERE c.id = ANY($1::bigint[])`, [located],
+  );
+  const metaById = new Map(meta.map((m) => [String(m.id), m]));
+
+  const pts: Geo[] = [origem, ...located.map((id) => geo[id]!)];
+
+  let trip: Awaited<ReturnType<typeof osrmTrip>>;
+  try {
+    trip = await osrmTrip(pts);
+  } catch (e) {
+    req.log.error({ err: e }, 'OSRM trip falhou');
+    return { ok: false, code: 502, error: 'Não foi possível calcular a rota (serviço de roteamento indisponível).' };
+  }
+
+  // pts index (>=1) -> company_id
+  const idByPt = new Map<number, number>(located.map((id, i) => [i + 1, id]));
+  const stops = trip.order.map((ptIdx, seq) => {
+    const cid = idByPt.get(ptIdx)!;
+    const m = metaById.get(String(cid));
+    const leg = trip.legByPt[ptIdx];
+    return {
+      seq,
+      company_id: cid,
+      razao_social: m?.razao_social ?? '',
+      nome_fantasia: m?.nome_fantasia ?? null,
+      uf: m?.uf ?? '', cidade: m?.cidade ?? null,
+      lat: geo[cid]!.lat, lon: geo[cid]!.lon,
+      leg_dist_km: leg ? Number(leg.distKm.toFixed(2)) : null,
+      leg_dur_min: leg ? Number(leg.durMin.toFixed(1)) : null,
+    };
+  });
+
+  const fuel = fuelEstimate({ distKm: trip.distKm, consumoKml, precoLitro: preco });
+  const skipped = ids.filter((id) => !geo[id]);
+
+  return {
+    ok: true,
+    result: {
+      origem,
+      stops,
+      dist_km: Number(trip.distKm.toFixed(2)),
+      dur_min: Number(trip.durMin.toFixed(1)),
+      preco_litro: preco,
+      litros: fuel ? Number(fuel.litros.toFixed(2)) : null,
+      custo_total: fuel?.custo != null ? Number(fuel.custo.toFixed(2)) : null,
+      geometry: { coordinates: trip.coords },
+      skipped, // empresas sem localização (ignoradas no cálculo)
+    },
+  };
+}
+
+// Persiste uma rota (resultado de computeRoute) numa transação. Reaproveitado
+// por POST /api/routes e POST /api/routes/:id/reuse.
+async function persistRoute(
+  orgId: number, ownerUserId: number,
+  r: {
+    nome: string; vehicle_id?: number | null; origem_lat: number; origem_lon: number;
+    dist_km?: number | null; dur_min?: number | null; preco_litro?: number | null;
+    litros?: number | null; custo_total?: number | null; geometry?: unknown;
+    template?: boolean; recorrencia?: string | null;
+    stops: { company_id: number; seq: number; lat: number; lon: number; leg_dist_km?: number | null; leg_dur_min?: number | null }[];
+  },
+): Promise<{ id: number }> {
+  return withClient(async (c) => {
+    await c.query('BEGIN');
+    try {
+      const ins = await c.query(
+        `INSERT INTO routes (org_id, owner_user_id, vehicle_id, nome, origem_lat, origem_lon,
+                             dist_km, dur_min, preco_litro, litros, custo_total, geometry, template, recorrencia)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING id`,
+        [orgId, ownerUserId, r.vehicle_id ?? null, r.nome, r.origem_lat, r.origem_lon,
+          r.dist_km ?? null, r.dur_min ?? null, r.preco_litro ?? null, r.litros ?? null, r.custo_total ?? null,
+          r.geometry != null ? JSON.stringify(r.geometry) : null, r.template ?? false, r.recorrencia ?? null],
+      );
+      const routeId = ins.rows[0]!.id as number;
+      for (const s of r.stops) {
+        await c.query(
+          `INSERT INTO route_stops (route_id, company_id, seq, lat, lon, leg_dist_km, leg_dur_min)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [routeId, s.company_id, s.seq, s.lat, s.lon, s.leg_dist_km ?? null, s.leg_dur_min ?? null],
+        );
+      }
+      await c.query('COMMIT');
+      return { id: routeId };
+    } catch (e) {
+      await c.query('ROLLBACK');
+      throw e;
+    }
+  });
+}
+
 export function routePlanRoutes(app: FastifyInstance): void {
   // Calcula a melhor rota para as empresas selecionadas (preview, não persiste).
   app.post('/api/routes/optimize', {
@@ -128,86 +287,12 @@ export function routePlanRoutes(app: FastifyInstance): void {
       },
     },
   }, async (req, reply) => {
-    const orgId = req.auth!.orgId;
     const { company_ids, vehicle_id, preco_litro } = req.body as {
       company_ids: number[]; vehicle_id?: number | null; preco_litro?: number | null;
     };
-    const ids = [...new Set(company_ids)];
-
-    const origem = await resolveOrigem(orgId);
-    if (!origem) return reply.code(400).send({ error: 'Cadastre o endereço da sua conta para definir a origem da rota.' });
-
-    // veículo (consumo/preço) — opcional. Validado por org.
-    let consumoKml: number | null = null;
-    let preco = preco_litro ?? null;
-    if (vehicle_id != null) {
-      const v = await one<{ consumo_kml: number; preco_litro: number | null }>(
-        'SELECT consumo_kml, preco_litro FROM vehicles WHERE id = $1 AND org_id = $2', [vehicle_id, orgId],
-      );
-      if (!v) return reply.code(404).send({ error: 'veículo não encontrado' });
-      consumoKml = Number(v.consumo_kml);
-      if (preco == null) preco = v.preco_litro != null ? Number(v.preco_litro) : null;
-    }
-
-    // geocoda cada empresa (sequencial: respeita o throttle do Nominatim em geocode.ts)
-    const geo: Record<number, Geo> = {};
-    for (const id of ids) {
-      const g = await geocodeCompany(id);
-      if (g) geo[id] = g;
-    }
-    const located = ids.filter((id) => geo[id]);
-    if (located.length === 0) return reply.code(400).send({ error: 'Nenhuma empresa selecionada tem localização.' });
-
-    // metadados das empresas p/ exibir na lista de paradas
-    const meta = await query<{ id: string; razao_social: string; nome_fantasia: string | null; uf: string; cidade: string | null }>(
-      `SELECT c.id, c.razao_social, c.nome_fantasia, c.uf, m.nome AS cidade
-       FROM companies c LEFT JOIN municipios m ON m.id = c.municipio_id
-       WHERE c.id = ANY($1::bigint[])`, [located],
-    );
-    const metaById = new Map(meta.map((m) => [String(m.id), m]));
-
-    const pts: Geo[] = [origem, ...located.map((id) => geo[id]!)];
-
-    let trip: Awaited<ReturnType<typeof osrmTrip>>;
-    try {
-      trip = await osrmTrip(pts);
-    } catch (e) {
-      req.log.error({ err: e }, 'OSRM trip falhou');
-      return reply.code(502).send({ error: 'Não foi possível calcular a rota (serviço de roteamento indisponível).' });
-    }
-
-    // pts index (>=1) -> company_id
-    const idByPt = new Map<number, number>(located.map((id, i) => [i + 1, id]));
-    const stops = trip.order.map((ptIdx, seq) => {
-      const cid = idByPt.get(ptIdx)!;
-      const m = metaById.get(String(cid));
-      const leg = trip.legByPt[ptIdx];
-      return {
-        seq,
-        company_id: cid,
-        razao_social: m?.razao_social ?? '',
-        nome_fantasia: m?.nome_fantasia ?? null,
-        uf: m?.uf ?? '', cidade: m?.cidade ?? null,
-        lat: geo[cid]!.lat, lon: geo[cid]!.lon,
-        leg_dist_km: leg ? Number(leg.distKm.toFixed(2)) : null,
-        leg_dur_min: leg ? Number(leg.durMin.toFixed(1)) : null,
-      };
-    });
-
-    const fuel = fuelEstimate({ distKm: trip.distKm, consumoKml, precoLitro: preco });
-    const skipped = ids.filter((id) => !geo[id]);
-
-    return {
-      origem,
-      stops,
-      dist_km: Number(trip.distKm.toFixed(2)),
-      dur_min: Number(trip.durMin.toFixed(1)),
-      preco_litro: preco,
-      litros: fuel ? Number(fuel.litros.toFixed(2)) : null,
-      custo_total: fuel?.custo != null ? Number(fuel.custo.toFixed(2)) : null,
-      geometry: { coordinates: trip.coords },
-      skipped, // empresas sem localização (ignoradas no cálculo)
-    };
+    const out = await computeRoute(req, req.auth!.orgId, company_ids, vehicle_id, preco_litro);
+    if (!out.ok) return reply.code(out.code).send({ error: out.error });
+    return out.result;
   });
 
   // Persiste uma rota já otimizada (resultado de /optimize).
@@ -228,6 +313,8 @@ export function routePlanRoutes(app: FastifyInstance): void {
           litros: { type: ['number', 'null'] },
           custo_total: { type: ['number', 'null'] },
           geometry: {},
+          template: { type: 'boolean' },
+          recorrencia: { type: ['string', 'null'] },
           stops: {
             type: 'array', minItems: 1,
             items: {
@@ -247,12 +334,7 @@ export function routePlanRoutes(app: FastifyInstance): void {
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
-    const b = req.body as {
-      nome: string; vehicle_id?: number | null; origem_lat: number; origem_lon: number;
-      dist_km?: number | null; dur_min?: number | null; preco_litro?: number | null;
-      litros?: number | null; custo_total?: number | null; geometry?: unknown;
-      stops: { company_id: number; seq: number; lat: number; lon: number; leg_dist_km?: number | null; leg_dur_min?: number | null }[];
-    };
+    const b = req.body as Parameters<typeof persistRoute>[2];
 
     // valida o veículo (se houver) pela org
     if (b.vehicle_id != null) {
@@ -260,43 +342,27 @@ export function routePlanRoutes(app: FastifyInstance): void {
       if (!v) return reply.code(404).send({ error: 'veículo não encontrado' });
     }
 
-    const route = await withClient(async (c) => {
-      await c.query('BEGIN');
-      try {
-        const r = await c.query(
-          `INSERT INTO routes (org_id, vehicle_id, nome, origem_lat, origem_lon, dist_km, dur_min, preco_litro, litros, custo_total, geometry)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
-          [orgId, b.vehicle_id ?? null, b.nome, b.origem_lat, b.origem_lon,
-            b.dist_km ?? null, b.dur_min ?? null, b.preco_litro ?? null, b.litros ?? null, b.custo_total ?? null,
-            b.geometry != null ? JSON.stringify(b.geometry) : null],
-        );
-        const routeId = r.rows[0]!.id as number;
-        for (const s of b.stops) {
-          await c.query(
-            `INSERT INTO route_stops (route_id, company_id, seq, lat, lon, leg_dist_km, leg_dur_min)
-             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-            [routeId, s.company_id, s.seq, s.lat, s.lon, s.leg_dist_km ?? null, s.leg_dur_min ?? null],
-          );
-        }
-        await c.query('COMMIT');
-        return { id: routeId };
-      } catch (e) {
-        await c.query('ROLLBACK');
-        throw e;
-      }
-    });
+    const route = await persistRoute(orgId, req.auth!.userId, b);
     return reply.code(201).send({ route });
   });
 
-  // Lista as rotas salvas da org.
-  app.get('/api/routes', { preHandler: requireAuth }, async (req) => {
+  // Lista as rotas salvas da org. Rep vê as próprias + as compartilhadas
+  // (owner NULL, criadas antes da Fase 3); admin tudo + filtro por vendedor.
+  app.get('/api/routes', {
+    preHandler: requireAuth,
+    schema: { querystring: { type: 'object', properties: { owner_user_id: { type: 'integer' } } } },
+  }, async (req) => {
     const orgId = req.auth!.orgId;
+    const { owner_user_id } = req.query as { owner_user_id?: number };
+    const where: string[] = ['r.org_id = $1'];
+    const params: unknown[] = [orgId];
+    scopeOwner(req, where, params, 'r.owner_user_id', owner_user_id, { nullVisible: true });
     const routes = await query(
-      `SELECT r.id, r.nome, r.vehicle_id, v.nome AS veiculo, r.dist_km, r.dur_min,
-              r.litros, r.custo_total, r.created_at,
+      `SELECT r.id, r.nome, r.owner_user_id, r.vehicle_id, v.nome AS veiculo, r.dist_km, r.dur_min,
+              r.litros, r.custo_total, r.template, r.recorrencia, r.created_at,
               (SELECT count(*) FROM route_stops s WHERE s.route_id = r.id) AS paradas
        FROM routes r LEFT JOIN vehicles v ON v.id = r.vehicle_id
-       WHERE r.org_id = $1 ORDER BY r.created_at DESC`, [orgId],
+       WHERE ${where.join(' AND ')} ORDER BY r.created_at DESC`, params,
     );
     return { routes };
   });
@@ -308,13 +374,17 @@ export function routePlanRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
-    const route = await one(
-      `SELECT r.id, r.nome, r.vehicle_id, v.nome AS veiculo, r.origem_lat, r.origem_lon,
-              r.dist_km, r.dur_min, r.preco_litro, r.litros, r.custo_total, r.geometry, r.created_at
+    const route = await one<Record<string, unknown> & { owner_user_id: string | null }>(
+      `SELECT r.id, r.nome, r.owner_user_id, r.vehicle_id, v.nome AS veiculo, r.origem_lat, r.origem_lon,
+              r.dist_km, r.dur_min, r.preco_litro, r.litros, r.custo_total, r.geometry,
+              r.template, r.recorrencia, r.created_at
        FROM routes r LEFT JOIN vehicles v ON v.id = r.vehicle_id
        WHERE r.id = $1 AND r.org_id = $2`, [id, orgId],
     );
     if (!route) return reply.code(404).send({ error: 'rota não encontrada' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(404).send({ error: 'rota não encontrada' });
+    }
     const stops = await query(
       `SELECT s.seq, s.company_id, s.lat, s.lon, s.leg_dist_km, s.leg_dur_min,
               c.razao_social, c.nome_fantasia, c.uf, m.nome AS cidade
@@ -326,12 +396,204 @@ export function routePlanRoutes(app: FastifyInstance): void {
     return { route, stops };
   });
 
+  // Marca/desmarca uma rota como template (e edita nome/recorrência). Fase 5.3.
+  app.patch('/api/routes/:id', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        properties: {
+          nome: { type: 'string', minLength: 1 },
+          template: { type: 'boolean' },
+          recorrencia: { type: ['string', 'null'] },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const b = req.body as { nome?: string; template?: boolean; recorrencia?: string | null };
+    const route = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(403).send({ error: 'rota de outro vendedor' });
+    }
+    const sets: string[] = [];
+    const params: unknown[] = [];
+    for (const k of ['nome', 'template', 'recorrencia'] as const) {
+      if (k in b) { params.push(b[k]); sets.push(`${k} = $${params.length}`); }
+    }
+    if (sets.length === 0) return reply.code(400).send({ error: 'nada para atualizar' });
+    params.push(id, orgId);
+    const rows = await query(
+      `UPDATE routes SET ${sets.join(', ')} WHERE id = $${params.length - 1} AND org_id = $${params.length}
+       RETURNING id, nome, template, recorrencia`,
+      params,
+    );
+    return { route: rows[0] };
+  });
+
+  // Reusar rota (Fase 5.3): re-otimiza as paradas de uma rota existente
+  // (template ou não) — as empresas podem ter mudado de endereço — e persiste
+  // uma rota nova, do vendedor logado. Reaproveita o mesmo veículo.
+  app.post('/api/routes/:id/reuse', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: { type: 'object', properties: { nome: { type: 'string', minLength: 1 } } },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const b = req.body as { nome?: string };
+    const route = await one<{ owner_user_id: string | null; nome: string; vehicle_id: string | null }>(
+      'SELECT owner_user_id, nome, vehicle_id FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(404).send({ error: 'não encontrado' });
+    }
+    const stops = await query<{ company_id: string }>(
+      'SELECT company_id FROM route_stops WHERE route_id = $1 ORDER BY seq', [id],
+    );
+    if (stops.length === 0) return reply.code(400).send({ error: 'rota sem paradas' });
+    const companyIds = stops.map((s) => Number(s.company_id));
+    // Veículo da rota original pode ter sido excluído desde então: reusa sem
+    // veículo em vez de abortar o reuse inteiro com 404 "veículo não encontrado".
+    let vehicleId = route.vehicle_id != null ? Number(route.vehicle_id) : null;
+    if (vehicleId != null) {
+      const v = await one('SELECT id FROM vehicles WHERE id = $1 AND org_id = $2', [vehicleId, orgId]);
+      if (!v) vehicleId = null;
+    }
+
+    const out = await computeRoute(req, orgId, companyIds, vehicleId, null);
+    if (!out.ok) return reply.code(out.code).send({ error: out.error });
+    const r = out.result;
+    const saved = await persistRoute(orgId, req.auth!.userId, {
+      nome: b.nome ?? `${route.nome} (cópia)`,
+      vehicle_id: vehicleId,
+      origem_lat: r.origem.lat, origem_lon: r.origem.lon,
+      dist_km: r.dist_km, dur_min: r.dur_min, preco_litro: r.preco_litro,
+      litros: r.litros, custo_total: r.custo_total, geometry: r.geometry,
+      stops: r.stops.map((s) => ({
+        company_id: s.company_id, seq: s.seq, lat: s.lat, lon: s.lon,
+        leg_dist_km: s.leg_dist_km, leg_dur_min: s.leg_dur_min,
+      })),
+    });
+    return reply.code(201).send({ route: { id: saved.id }, skipped: r.skipped });
+  });
+
+  // Criar compromissos a partir de uma rota (Fase 5.2 — caminho inverso): uma
+  // activity de visita por parada, com horário estimado a partir do leg_dur_min
+  // somado em sequência. As atividades são do vendedor logado.
+  app.post('/api/routes/:id/agenda', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: {
+        type: 'object',
+        required: ['start_at'],
+        properties: { start_at: { type: 'string' } },
+      },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const { start_at } = req.body as { start_at: string };
+    const route = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(404).send({ error: 'não encontrado' });
+    }
+    const stops = await query<{ company_id: string; razao_social: string; nome_fantasia: string | null; leg_dur_min: string | null }>(
+      `SELECT s.company_id, s.leg_dur_min, c.razao_social, c.nome_fantasia
+       FROM route_stops s JOIN companies c ON c.id = s.company_id
+       WHERE s.route_id = $1 ORDER BY s.seq`, [id],
+    );
+    if (stops.length === 0) return reply.code(400).send({ error: 'rota sem paradas' });
+
+    const base = new Date(start_at);
+    if (Number.isNaN(base.getTime())) return reply.code(400).send({ error: 'start_at inválido' });
+
+    // Monta os horários em sequência (deslocamento + 30 min de visita por parada).
+    const titulos: string[] = [];
+    const starts: string[] = [];
+    const companyIds: number[] = [];
+    let cursor = base.getTime();
+    for (const s of stops) {
+      titulos.push(`Visita: ${s.nome_fantasia || s.razao_social}`);
+      starts.push(new Date(cursor).toISOString());
+      companyIds.push(Number(s.company_id));
+      const legMin = s.leg_dur_min != null ? Number(s.leg_dur_min) : 30;
+      cursor += (legMin + 30) * 60_000;
+    }
+    // INSERT multi-row único: 1 round-trip e atômico por si só (tudo-ou-nada,
+    // sem precisar de transação explícita) — se um FK estourar, nada é criado.
+    const rows = await query<{ id: string }>(
+      `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, status)
+       SELECT $1, 'visita', t.titulo, t.start_at::timestamptz, $2, t.company_id, 'pendente'
+       FROM unnest($3::text[], $4::text[], $5::bigint[]) AS t(titulo, start_at, company_id)
+       RETURNING id`,
+      [orgId, req.auth!.userId, titulos, starts, companyIds],
+    );
+    const created = rows.map((r) => Number(r.id));
+    return reply.code(201).send({ created: created.length, ids: created });
+  });
+
+  // Lançar despesa de viagem (Fase 6.1): cria um finance_entry pagar/viagem com
+  // o custo de combustível da rota. Idempotente por rota — segunda chamada
+  // devolve 409 com o lançamento existente (evita duplicar o custo).
+  app.post('/api/routes/:id/expense', {
+    preHandler: requireAuth,
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      body: { type: 'object', properties: { vencimento: { type: 'string' }, valor: { type: 'number', minimum: 0 } } },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const { id } = req.params as { id: number };
+    const b = req.body as { vencimento?: string; valor?: number };
+    const route = await one<{ owner_user_id: string | null; nome: string; custo_total: string | null }>(
+      'SELECT owner_user_id, nome, custo_total FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(403).send({ error: 'rota de outro vendedor' });
+    }
+    const existing = await one<{ id: string }>('SELECT id FROM finance_entries WHERE route_id = $1 AND org_id = $2', [id, orgId]);
+    if (existing) return reply.code(409).send({ error: 'despesa desta rota já lançada', finance_id: Number(existing.id) });
+
+    const valor = b.valor ?? (route.custo_total != null ? Number(route.custo_total) : null);
+    if (valor == null || valor <= 0) return reply.code(400).send({ error: 'rota sem custo calculado; informe um valor' });
+    const owner = route.owner_user_id != null ? Number(route.owner_user_id) : req.auth!.userId;
+    const rows = await query<{ id: string }>(
+      `INSERT INTO finance_entries
+         (org_id, kind, descricao, valor, vencimento, status, categoria, route_id, owner_user_id)
+       VALUES ($1, 'pagar', $2, $3, COALESCE($4::date, current_date), 'pendente', 'viagem', $5, $6)
+       RETURNING id`,
+      [orgId, `Viagem: ${route.nome}`, valor, b.vencimento ?? null, id, owner],
+    );
+    return reply.code(201).send({ finance_id: Number(rows[0]!.id) });
+  });
+
   app.delete('/api/routes/:id', {
     preHandler: requireAuth,
     schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
+    const route = await one<{ owner_user_id: string | null }>(
+      'SELECT owner_user_id FROM routes WHERE id = $1 AND org_id = $2', [id, orgId],
+    );
+    if (!route) return reply.code(404).send({ error: 'não encontrado' });
+    if (!canWriteOwned(req, route.owner_user_id === null ? null : Number(route.owner_user_id), { nullWritable: true })) {
+      return reply.code(403).send({ error: 'rota de outro vendedor' });
+    }
     const rows = await query('DELETE FROM routes WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
     return { deleted: true };

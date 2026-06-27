@@ -1,12 +1,15 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { api, setToken, getToken } from './api.ts';
+import { clearQueue } from './offline.ts';
 
 export interface User {
   id: number | string;
   email: string;
+  nome?: string | null;
   role: string;
   org_id: number | string;
   org_nome?: string;
+  must_change_password?: boolean;
 }
 
 interface AuthState {
@@ -14,6 +17,7 @@ interface AuthState {
   loading: boolean;
   login: (email: string, senha: string) => Promise<void>;
   register: (org_nome: string, email: string, senha: string) => Promise<void>;
+  refresh: () => Promise<void>;
   logout: () => void;
 }
 
@@ -25,10 +29,12 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
 
   useEffect(() => {
     if (!getToken()) { setLoading(false); return; }
-    api.get<{ user: User }>('/api/auth/me')
+    const ac = new AbortController();
+    api.get<{ user: User }>('/api/auth/me', { signal: ac.signal })
       .then((r) => setUser(r.user))
-      .catch(() => setToken(null))
-      .finally(() => setLoading(false));
+      .catch((e) => { if (!ac.signal.aborted) setToken(null); void e; })
+      .finally(() => { if (!ac.signal.aborted) setLoading(false); });
+    return () => ac.abort();
   }, []);
 
   const login = async (email: string, senha: string): Promise<void> => {
@@ -43,17 +49,32 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setUser(r.user);
   };
 
+  // Recarrega o usuário do servidor (ex.: após trocar a senha provisória).
+  const refresh = async (): Promise<void> => {
+    const r = await api.get<{ user: User }>('/api/auth/me');
+    setUser(r.user);
+  };
+
   const logout = (): void => {
     setToken(null);
     setUser(null);
+    // Limpa a fila offline antes de sair: em dispositivo compartilhado a próxima
+    // conta não pode reenviar ações de campo enfileiradas por este usuário.
+    void clearQueue();
     location.href = '/login';
   };
 
-  return <AuthCtx.Provider value={{ user, loading, login, register, logout }}>{children}</AuthCtx.Provider>;
+  return <AuthCtx.Provider value={{ user, loading, login, register, refresh, logout }}>{children}</AuthCtx.Provider>;
 }
 
 export function useAuth(): AuthState {
   const ctx = useContext(AuthCtx);
   if (!ctx) throw new Error('useAuth fora do AuthProvider');
   return ctx;
+}
+
+// Variante que não lança quando renderizado fora do AuthProvider (ex.: páginas
+// montadas isoladas em testes). Devolve só o usuário, ou null.
+export function useOptionalUser(): User | null {
+  return useContext(AuthCtx)?.user ?? null;
 }

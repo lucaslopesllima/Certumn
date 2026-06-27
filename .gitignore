@@ -9,3 +9,10 @@ dist/
 
 # Base de dados CNPJ (dados de atualização — não versionar, vão pra VPS via rsync/scp)
 dados_cnpj/
+
+# cobertura de testes
+coverage/
+
+# backups e config rclone de produção
+backups/
+rclone/

@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, useMap } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';
 import type { Recommendation, GeocodeResult } from '../lib/types.ts';
@@ -9,6 +9,8 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { Cnae } from '../lib/cnae.tsx';
+import { useSellers, SellerFilter } from '../lib/sellers.tsx';
+import { toast } from '../lib/toast.tsx';
 
 const MATCH_COLOR: Record<string, string> = {
   classe: '#039855', divisao: '#0284c7', secao: '#12b76a', nenhum: '#94a3b8',
@@ -51,6 +53,62 @@ function FitRoute({ coords }: { coords: [number, number][] }): null {
   return null;
 }
 
+type Ponto = { r: Recommendation; lat: number; lon: number; exato?: boolean };
+type Cluster = { key: string; n: number; lat: number; lon: number };
+
+// Acima deste nº de pontos, agrupa por célula de grade (~1/4 de tile no zoom
+// atual) — centenas de CircleMarkers individuais pesam no DOM. Clique no
+// cluster aproxima; ao dar zoom a grade refina e os grupos se abrem.
+const CLUSTER_THRESHOLD = 150;
+
+function RecMarkers({ pontos, focus, renderMarker }: {
+  pontos: Ponto[]; focus: MapFocus | null; renderMarker: (p: Ponto) => React.JSX.Element;
+}): React.JSX.Element {
+  const map = useMap();
+  const [zoom, setZoom] = useState(map.getZoom());
+  useMapEvents({ zoomend: () => setZoom(map.getZoom()) });
+
+  const { singles, clusters } = useMemo(() => {
+    if (pontos.length <= CLUSTER_THRESHOLD) return { singles: pontos, clusters: [] as Cluster[] };
+    const cell = 360 / Math.pow(2, zoom + 2);
+    const buckets = new Map<string, Ponto[]>();
+    const singles: Ponto[] = [];
+    for (const p of pontos) {
+      if (focus?.id === p.r.id) { singles.push(p); continue; } // foco nunca clusteriza
+      const k = `${Math.floor(p.lat / cell)}:${Math.floor(p.lon / cell)}`;
+      const b = buckets.get(k);
+      if (b) b.push(p); else buckets.set(k, [p]);
+    }
+    const clusters: Cluster[] = [];
+    for (const [key, b] of buckets) {
+      if (b.length === 1) { singles.push(b[0]!); continue; }
+      clusters.push({
+        key, n: b.length,
+        lat: b.reduce((s, p) => s + p.lat, 0) / b.length,
+        lon: b.reduce((s, p) => s + p.lon, 0) / b.length,
+      });
+    }
+    return { singles, clusters };
+  }, [pontos, zoom, focus]);
+
+  return (
+    <>
+      {singles.map(renderMarker)}
+      {clusters.map((c) => (
+        <CircleMarker key={`cluster:${c.key}`} center={[c.lat, c.lon]}
+          radius={Math.min(20, 11 + Math.log2(c.n) * 1.5)}
+          pathOptions={{ color: '#1d4ed8', fillColor: '#3b82f6', fillOpacity: 0.8, weight: 2 }}
+          eventHandlers={{ click: () => map.setView([c.lat, c.lon], Math.min(zoom + 2, 16)) }}>
+          <Tooltip permanent direction="center"
+            className="!rounded-full !border-0 !bg-transparent !p-0 !shadow-none text-xs font-bold !text-white">
+            {c.n}
+          </Tooltip>
+        </CircleMarker>
+      ))}
+    </>
+  );
+}
+
 export function Recommend(): React.JSX.Element {
   const [recs, setRecs] = useState<Recommendation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,6 +117,9 @@ export function Recommend(): React.JSX.Element {
   const [done, setDone] = useState(false);
   const [added, setAdded] = useState<Set<string>>(new Set());
   const [view, setView] = useState<'lista' | 'mapa'>('lista');
+  // simulação de vendedor (admin): vê a recomendação com o território/CNAEs do vendedor.
+  const [simUser, setSimUser] = useState<'todos' | number>('todos');
+  const sellers = useSellers();
   const [filtersOpen, setFiltersOpen] = useState(() => {
     try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1'; } catch { return false; }
   });
@@ -96,7 +157,7 @@ export function Recommend(): React.JSX.Element {
 
   // Rota (OSRM público) da localização atual do rep até a empresa escolhida.
   const traceRoute = async (rec: Recommendation): Promise<void> => {
-    if (rec.lat == null || rec.lon == null) { alert('Empresa sem localização geográfica.'); return; }
+    if (rec.lat == null || rec.lon == null) { toast.error('Empresa sem localização geográfica.'); return; }
     setRoutingId(rec.id);
     try {
       // origem = endereço do usuário logado (org) no banco, geocodificado;
@@ -108,7 +169,7 @@ export function Recommend(): React.JSX.Element {
       } catch { /* ignora, tenta fallback */ }
       if (!o) o = origemFixa;
       if (!o) {
-        if (!navigator.geolocation) { alert('Cadastre seu endereço em Configurações (conta) para traçar rotas.'); return; }
+        if (!navigator.geolocation) { toast.error('Cadastre seu endereço em Configurações (conta) para traçar rotas.'); return; }
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
           navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 10000 }));
         o = { lat: pos.coords.latitude, lon: pos.coords.longitude };
@@ -117,7 +178,7 @@ export function Recommend(): React.JSX.Element {
       const url = `https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=full&geometries=geojson`;
       const resp = await fetch(url);
       const j = await resp.json() as { code: string; routes?: { distance: number; duration: number; geometry: { coordinates: [number, number][] } }[] };
-      if (j.code !== 'Ok' || !j.routes?.length) { alert('Não foi possível traçar a rota.'); return; }
+      if (j.code !== 'Ok' || !j.routes?.length) { toast.error('Não foi possível traçar a rota.'); return; }
       const rt = j.routes[0]!;
       setRoute({
         destId: rec.id,
@@ -129,7 +190,7 @@ export function Recommend(): React.JSX.Element {
       setView('mapa');
       setFocus(null);
     } catch (e) {
-      alert(e instanceof GeolocationPositionError ? 'Permissão de localização negada.' : 'Falha ao traçar rota.');
+      toast.error(e instanceof GeolocationPositionError ? 'Permissão de localização negada.' : 'Falha ao traçar rota.');
     } finally { setRoutingId(null); }
   };
 
@@ -139,7 +200,13 @@ export function Recommend(): React.JSX.Element {
     .filter(Boolean).length;
   const semFiltro = nFiltros === 0;
 
+  // Aborta a busca anterior antes de disparar a próxima — sem isso uma resposta
+  // lenta de filtro antigo pode sobrescrever a da busca atual (race).
+  const loadCtl = useRef<AbortController | null>(null);
   const load = async (off: number): Promise<void> => {
+    loadCtl.current?.abort();
+    const ac = new AbortController();
+    loadCtl.current = ac;
     setLoading(true);
     setErr('');
     try {
@@ -148,30 +215,34 @@ export function Recommend(): React.JSX.Element {
       if (filter.fCnae.trim()) qs.set('cnae', filter.fCnae.trim());
       if (filter.fUf.trim()) qs.set('uf', filter.fUf.trim());
       if (filter.fPorte) qs.set('porte', filter.fPorte);
+      if (simUser !== 'todos') qs.set('user_id', String(simUser));
       const r = await api.get<{ results: Recommendation[]; page: { count: number } }>(
-        `/api/recommend?${qs.toString()}`,
+        `/api/recommend?${qs.toString()}`, { signal: ac.signal },
       );
       setRecs((prev) => (off === 0 ? r.results : [...prev, ...r.results]));
       setDone(r.results.length < LIMIT);
       setOffset(off + r.results.length);
     } catch (e) {
+      if (ac.signal.aborted) return; // busca substituída/página fechada — ignora
       setErr(e instanceof ApiError ? e.message : 'Erro ao buscar recomendações');
     } finally {
-      setLoading(false);
+      if (!ac.signal.aborted) setLoading(false);
     }
   };
+  useEffect(() => () => loadCtl.current?.abort(), []);
 
   // recarrega do servidor (página 0) ao mudar qualquer filtro — busca na BASE TODA,
   // com debounce p/ não disparar a cada tecla. Roda também no mount.
   useEffect(() => {
     if (semFiltro) {  // sem filtro -> tela vazia, sem consultar
       setRecs([]); setDone(true); setOffset(0); setErr('');
+      setLoading(false); // sem isso o spinner inicial nunca dá lugar ao empty state
       return;
     }
     const t = setTimeout(() => { void load(0); }, 350);
     return () => clearTimeout(t);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte]);
+  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte, simUser]);
 
   // No mapa, plota só o que já está carregado na lista — sem auto-paginar.
 
@@ -184,13 +255,14 @@ export function Recommend(): React.JSX.Element {
     try {
       await api.post('/api/relationships', { company_id: Number(rec.id) });
       setAdded((s) => new Set(s).add(rec.id));
+      toast.success(`${rec.nome_fantasia || rec.razao_social} adicionada ao funil.`);
     } catch (e) {
-      alert((e as Error).message);
+      toast.error((e as Error).message || 'Não foi possível adicionar ao funil.');
     }
   };
 
   const verNoMapa = async (rec: Recommendation): Promise<void> => {
-    if (rec.lat == null || rec.lon == null) { alert('Empresa sem localização geográfica.'); return; }
+    if (rec.lat == null || rec.lon == null) { toast.error('Empresa sem localização geográfica.'); return; }
     setView('mapa');
     const g = await geocodeRec(rec); // pino exato (geocode do endereço)
     setFocus({ id: rec.id, lat: g.lat, lon: g.lon });
@@ -261,6 +333,7 @@ export function Recommend(): React.JSX.Element {
           subtitle={semFiltro ? 'Selecione um filtro para buscar empresas' : `${recs.length} resultado(s) · ranqueados por fit`}
           actions={
             <div className="flex items-center gap-2">
+              <SellerFilter value={simUser} onChange={setSimUser} sellers={sellers} />
               {view === 'lista' && (
                 <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search" onClick={() => setFiltersOpen((v) => !v)}>
                   Filtros{filter.filtroAtivo ? ' · ativos' : ''}
@@ -301,7 +374,7 @@ export function Recommend(): React.JSX.Element {
               <TileLayer attribution='&copy; OpenStreetMap' url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
               <FitBounds pts={bounds} focus={focus} />
               <FlyTo focus={focus} />
-              {pontos.map(({ r, lat, lon }) => {
+              <RecMarkers pontos={pontos} focus={focus} renderMarker={({ r, lat, lon }) => {
                 const isFocus = focus?.id === r.id;
                 return (
                 <CircleMarker key={r.id} center={[lat, lon]} radius={isFocus ? 11 : 7}
@@ -326,7 +399,7 @@ export function Recommend(): React.JSX.Element {
                   </Popup>
                 </CircleMarker>
                 );
-              })}
+              }} />
               {route && (
                 <>
                   <Polyline positions={route.coords} pathOptions={{ color: '#2563eb', weight: 5, opacity: 0.8 }} />

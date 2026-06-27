@@ -4,6 +4,7 @@ import type { CompanyDetail, Socio } from './types.ts';
 import { Spinner } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { Cnae, seedCnae } from './cnae.tsx';
+import { waLink } from './format.ts';
 
 // Modal só-leitura com TODOS os dados da empresa no banco (RFB) + quadro societário.
 const PORTE_LABEL: Record<string, string> = {
@@ -29,6 +30,17 @@ const fmtTel = (s: string | null): string | null => {
   if (!s) return null;
   const d = s.replace(/\D/g, '');
   return d.length >= 10 ? `(${d.slice(0, 2)}) ${d.slice(2)}` : s;
+};
+// Telefone formatado + link wa.me (WhatsApp click-to-chat) quando válido. Fase 6.2.
+const telWa = (s: string | null): React.ReactNode => {
+  const fmt = fmtTel(s);
+  if (!fmt) return null;
+  const link = waLink(s);
+  return link ? (
+    <a href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-emerald-600 hover:underline">
+      {fmt}<Icon name="phone" size={13} />
+    </a>
+  ) : fmt;
 };
 function fmtEndereco(c: CompanyDetail): string {
   const linha1 = [c.logradouro, c.numero].filter(Boolean).join(', ');
@@ -153,8 +165,8 @@ export function CompanyModal({ companyId, onClose }: { companyId: number; onClos
               </Section>
 
               <Section title="Contato">
-                <InfoRow label="Telefone 1" value={fmtTel(data.telefone1)} />
-                <InfoRow label="Telefone 2" value={fmtTel(data.telefone2)} />
+                <InfoRow label="Telefone 1" value={telWa(data.telefone1)} />
+                <InfoRow label="Telefone 2" value={telWa(data.telefone2)} />
                 <InfoRow label="Fax" value={fmtTel(data.fax)} />
                 <InfoRow label="E-mail" value={data.email} />
               </Section>

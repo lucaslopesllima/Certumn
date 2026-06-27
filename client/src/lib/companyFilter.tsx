@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from './api.ts';
 import type { Profile } from './types.ts';
+import { maskSearchCNPJ } from './format.ts';
 import { Btn, cn } from './ui.tsx';
 
 // Filtro de empresas reutilizado no Funil e na Prospecção (Recomendadas).
@@ -109,7 +110,7 @@ export function CompanyFilterBar({ f }: { f: CompanyFilter }): React.JSX.Element
       <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
-          <input value={f.fq} onChange={(e) => f.setFq(e.target.value)} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
+          <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
         </label>
         <label className="block">
           <span className="mb-1 block text-xs font-medium text-ink-500">CNAE (códigos)</span>

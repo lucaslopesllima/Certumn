@@ -192,10 +192,17 @@ def baixar_todos(s, mes, zips, saida, workers):
 def extrair_todos(saida, zips):
     pasta = os.path.join(saida, "csv")
     os.makedirs(pasta, exist_ok=True)
+    destino = os.path.realpath(pasta)
     for nome in zips:
         cz = os.path.join(saida, nome)
         try:
             with zipfile.ZipFile(cz) as z:
+                # Zip-slip: valida que cada membro fica dentro de `pasta` antes
+                # de extrair (nome com ../ ou caminho absoluto escaparia).
+                for membro in z.namelist():
+                    alvo = os.path.realpath(os.path.join(destino, membro))
+                    if alvo != destino and not alvo.startswith(destino + os.sep):
+                        sys.exit(f"[zip inseguro] {nome}: membro fora do destino: {membro}")
                 z.extractall(pasta)
         except zipfile.BadZipFile:
             sys.exit(f"[zip ruim] {nome} — abortando")
@@ -538,8 +545,15 @@ def carregar_cnae_ref(cur, csv_dir):
     print(f"ref cnae_reference: {cur.fetchone()[0]}")
 
 
+# Janela em que o CLUSTER (lock ACCESS EXCLUSIVE, trava o app por minutos) é
+# permitido sem flag: madrugada, 22:00–06:59. Fora dela cai em VACUUM.
+def dentro_janela_cluster(agora=None):
+    h = (agora or datetime.datetime.now()).hour
+    return h >= 22 or h < 7
+
+
 # ═══════════════════════ UPSERT ═══════════════════════
-def carregar_banco(dburl, csv_dir, seed, desativar=True):
+def carregar_banco(dburl, csv_dir, seed, desativar=True, permitir_cluster=False):
     conn = psycopg2.connect(dburl)
     conn.autocommit = False
     try:
@@ -666,7 +680,11 @@ def carregar_banco(dburl, csv_dir, seed, desativar=True):
         # VACUUM/CLUSTER+ANALYZE fora de transação -> autocommit temporário.
         conn.autocommit = True
         cur.execute("SELECT 1 FROM pg_indexes WHERE indexname='companies_municipio_full_idx'")
-        if cur.fetchone():
+        if not (permitir_cluster or dentro_janela_cluster()):
+            # fora da janela: CLUSTER travaria o app em horário de uso.
+            print("fora da janela 22:00–07:00 — pulando CLUSTER (use --permitir-cluster p/ forçar); VACUUM…")
+            cur.execute("VACUUM companies")
+        elif cur.fetchone():
             print("CLUSTER companies (ordem por município)…")
             cur.execute("CLUSTER companies USING companies_municipio_full_idx")
         else:
@@ -789,6 +807,8 @@ def main():
     ap.add_argument("--so-checar", action="store_true", help="só verifica se há atualização e sai")
     ap.add_argument("--sem-desativar", action="store_true",
                     help="não marca como 'baixada' as empresas que saíram do snapshot")
+    ap.add_argument("--permitir-cluster", action="store_true",
+                    help="roda o CLUSTER pós-carga mesmo fora da janela 22:00–07:00 (trava o app)")
     args = ap.parse_args()
 
     s = sessao()
@@ -816,7 +836,8 @@ def main():
     baixar_todos(s, mes, zips, args.saida, args.workers)
     csv_dir = extrair_todos(args.saida, zips)
 
-    carregar_banco(args.db, csv_dir, args.seed, desativar=not args.sem_desativar)
+    carregar_banco(args.db, csv_dir, args.seed, desativar=not args.sem_desativar,
+                   permitir_cluster=args.permitir_cluster)
 
     escrever_manifesto(man_path, atual)
     print(f"Manifesto salvo: {man_path}")

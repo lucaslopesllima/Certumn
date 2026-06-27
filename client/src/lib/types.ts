@@ -23,6 +23,7 @@ export interface Recommendation {
 
 export interface Profile {
   org_id: string;
+  user_id: number | null;
   cnaes_alvo: number[];
   territorio_municipios: number[];
   territorio_raio_km: number | null;
@@ -45,6 +46,7 @@ export interface RepresentedCompany {
 }
 export interface KanbanCard {
   id: number; company_id: number; stage_id: number | null; status: string;
+  owner_user_id: number | null;
   valor_estimado: string | null; notas: string | null; razao_social: string; nome_fantasia: string | null;
   uf: string; municipio_id: number; cidade: string | null;
   cnpj: string; cnae_principal: number; porte: string; capital_social: string;
@@ -53,9 +55,11 @@ export interface KanbanCard {
   marca_id: number | null; marca: string | null;
   contatos: { id: number; nome: string; cargo: string | null }[];
   catalogo: { id: number; nome: string; codigo: string | null; preco: string | null }[];
+  amostras: { id: number; produto: string; status: string }[];
   cenario_id: number | null; cenario: string | null;
   acao_id: number | null; acao: string | null;
   data_contato: string | null; previsao_data: string | null;
+  motivo_descarte: string | null;
 }
 
 export interface Socio {
@@ -93,7 +97,21 @@ export interface GeocodeResult {
 
 export interface CatalogItem {
   id: number; nome: string; codigo: string | null; descricao: string | null;
-  preco: string | null; represented_id: number | null; ativo: boolean;
+  preco: string | null; unidade_medida: string | null; represented_id: number | null; ativo: boolean;
+  // alíquotas por produto (numeric vem string do pg). null = não definido →
+  // pedido cai no default da org. Ver TaxDefaults.
+  icms_pct: string | null; ipi_pct: string | null; st_pct: string | null;
+  pis_pct: string | null; cofins_pct: string | null; iss_pct: string | null;
+}
+
+export type SampleStatus = 'solicitada' | 'enviada' | 'recebida' | 'cancelada';
+export interface SampleRequest {
+  id: number; relationship_id: number; catalog_item_id: number | null; produto_snapshot: string;
+  contact_id: number | null; activity_id: number | null; owner_user_id: number | null;
+  status: SampleStatus; quantidade: string | null;
+  data_solicitacao: string | null; data_prevista: string | null; notas: string | null;
+  created_at: string; produto_codigo: string | null; contato: string | null;
+  atividade_titulo: string | null; atividade_start: string | null;
 }
 
 export interface Brand { id: number; represented_id: number; nome: string }
@@ -115,9 +133,28 @@ export interface Relationship {
   valor_estimado: string | null; notas: string | null; razao_social: string;
 }
 
+// Cliente = company_relationship com status='cliente'. NÃO duplica a empresa:
+// só referencia o registro global (company_id) e guarda o estado do tenant.
+// Os campos da empresa (razao_social, cnpj, uf…) vêm do JOIN, são read-only.
+export interface Cliente {
+  id: number; company_id: number; status: string; ativo: boolean;
+  valor_estimado: string | null; notas: string | null;
+  owner_user_id: number | null; represented_id: number | null;
+  representada: string | null; updated_at: string;
+  contatos: { id: number; nome: string; cargo: string | null }[];
+  // espelho da empresa global (apenas leitura)
+  razao_social: string; nome_fantasia: string | null; cnpj: string;
+  cnae_principal: number; municipio_id: number | null; uf: string;
+}
+
+export interface VisitReport { resultado: string; proximo_passo: string | null; texto: string | null }
 export interface Activity {
   id: number; tipo: string; titulo: string; start_at: string; end_at: string | null;
   company_id: number | null; status: string; razao_social: string | null;
+  represented_id: number | null; contact_id: number | null;
+  represented_nome: string | null; contact_nome: string | null;
+  checkin_lat?: number | null; checkin_lon?: number | null; checkin_at?: string | null;
+  relatorio?: VisitReport | null;
 }
 
 export interface Vehicle {
@@ -150,7 +187,89 @@ export interface OptimizeResult {
 export interface SavedRoute {
   id: number; nome: string; vehicle_id: number | null; veiculo: string | null;
   dist_km: string | null; dur_min: string | null; litros: string | null;
-  custo_total: string | null; created_at: string; paradas: string;
+  custo_total: string | null; template?: boolean; recorrencia?: string | null;
+  created_at: string; paradas: string;
+}
+
+export interface PriceTableItem {
+  id: number; catalog_item_id: number; preco: string; desconto_max_pct: string | null;
+  catalog_nome: string; codigo: string | null;
+}
+export interface PriceTable {
+  id: number; represented_id: number; nome: string;
+  vigencia_inicio: string; vigencia_fim: string | null; ativo: boolean;
+  created_at: string; represented_nome: string; itens: number;
+  items?: PriceTableItem[];
+}
+
+export interface Carrier {
+  id: number; nome: string; cnpj: string | null; telefone: string | null;
+  email: string | null; contato: string | null; observacoes: string | null; ativo: boolean;
+}
+
+export type OrderStatus = 'cotacao' | 'rascunho' | 'enviado' | 'faturado' | 'entregue' | 'cancelado';
+export interface OrderItem {
+  id: number; catalog_item_id: number | null; descricao_snapshot: string;
+  unidade_medida_snapshot: string | null;
+  qtd: string; preco_unit: string; desconto_pct: string;
+  icms_pct: string; ipi_pct: string; st_pct: string; pis_pct: string; cofins_pct: string; iss_pct: string;
+  total: string;
+}
+// Alíquotas default da org (numbers; ver /api/tax-defaults).
+export interface TaxDefaults {
+  icms_pct: number; ipi_pct: number; st_pct: number; pis_pct: number; cofins_pct: number; iss_pct: number;
+}
+export interface Order {
+  id: number; numero: number; relationship_id: number | null; company_id: number;
+  represented_id: number; owner_user_id: number | null; price_table_id: number | null;
+  status: OrderStatus; validade: string | null;
+  condicao_pagamento: string | null; transportadora: string | null;
+  carrier_id: number | null; carrier_nome: string | null;
+  frete: string; observacoes: string | null; total: string;
+  nf_numero: string | null; emitido_em: string | null; faturado_em: string | null;
+  created_at: string; updated_at: string;
+  company_nome: string; company_cnpj: string; represented_nome: string;
+  owner_email: string | null; owner_nome: string | null;
+  items?: OrderItem[];
+}
+
+export type CommissionStatus = 'prevista' | 'recebida' | 'divergente' | 'cancelada';
+export interface CommissionEntry {
+  id: number; order_id: number; user_id: number | null; represented_id: number;
+  competencia: string; valor_previsto: string; valor_recebido: string | null;
+  percent_aplicado: string; vendedor_split_pct: string;
+  status: CommissionStatus; recebida_em: string | null; observacao: string | null;
+  finance_entry_id: number | null; created_at: string;
+  order_numero: number; nf_numero: string | null; order_total: string;
+  company_nome: string; represented_nome: string;
+  vendedor_nome: string | null; vendedor_email: string | null;
+  valor_vendedor: string;
+}
+
+export interface CommissionRule {
+  id: number; represented_id: number; catalog_item_id: number | null;
+  company_id: number | null; user_id: number | null;
+  percent: string; vendedor_split_pct: string;
+  vigencia_inicio: string; vigencia_fim: string | null; ativo: boolean; created_at: string;
+  represented_nome: string; catalog_nome: string | null; company_nome: string | null;
+  user_nome: string | null; user_email: string | null;
+}
+
+export interface OrgUser {
+  id: number; nome: string | null; email: string; role: string; ativo: boolean;
+  must_change_password?: boolean;
+}
+
+export interface Goal {
+  id: number; user_id: number; represented_id: number | null;
+  competencia: string; valor_meta: string; created_at: string;
+  vendedor_nome: string | null; vendedor_email: string | null; represented_nome: string | null;
+}
+
+export interface GoalProgress {
+  id: number; user_id: number; represented_id: number | null; competencia: string;
+  valor_meta: string; realizado: number; pct: number | null;
+  vendedor_nome: string | null; vendedor_email: string | null; represented_nome: string | null;
 }
 
 export interface FinanceEntry {
@@ -162,13 +281,92 @@ export interface FinanceEntry {
   liquidacao_data: string | null;
   status: 'pendente' | 'liquidado' | 'cancelado';
   categoria: string | null;
+  categoria_id: number | null;
   notas: string | null;
   company_id: number | null;
   represented_id: number | null;
   activity_id: number | null;
   owner_user_id: number | null;
+  route_id: number | null;
+  recorrencia: string | null;
+  recorrencia_fim: string | null;
+  recorrencia_origem_id: number | null;
   created_at: string;
   company_nome: string | null;
   represented_nome: string | null;
   activity_titulo: string | null;
+  route_nome: string | null;
+  categoria_nome: string | null;
+  categoria_grupo_dre: string | null;
+}
+
+// Resultado da busca na base global de empresas (RFB) p/ autopreencher cadastros.
+export interface CompanyHit {
+  id: number;
+  cnpj: string;
+  razao_social: string;
+  nome_fantasia: string | null;
+  telefone1: string | null;
+  telefone2: string | null;
+  email: string | null;
+  logradouro: string | null;
+  numero: string | null;
+  bairro: string | null;
+  cep: string | null;
+  uf: string;
+  cidade: string | null;
+  in_funnel?: boolean; // já tem relationship no org atual (usado p/ desativar no CompanySearch)
+}
+
+export interface FinanceCategory {
+  id: number;
+  nome: string;
+  grupo_dre: string;
+  kind: 'pagar' | 'receber' | null;
+  ativo: boolean;
+  created_at: string;
+}
+
+// Modelo de e-mail reutilizável (assunto + corpo) da org.
+export interface EmailTemplate {
+  id: number;
+  nome: string;
+  assunto: string;
+  corpo: string;
+  owner_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type EmailScheduleStatus = 'pendente' | 'enviado' | 'cancelado' | 'erro';
+
+// E-mail agendado. company_id/empresa preenchidos quando o destinatário foi
+// puxado de uma empresa da base; senão destinatario é digitado manual.
+export interface EmailSchedule {
+  id: number;
+  template_id: number | null;
+  company_id: number | null;
+  empresa: string | null;
+  remetente: string | null;
+  destinatario: string;
+  assunto: string;
+  corpo: string;
+  agendado_para: string;
+  recorrencia: string | null;
+  status: EmailScheduleStatus;
+  enviado_em: string | null;
+  erro: string | null;
+  owner_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Notification {
+  id: number;
+  tipo: 'vencimento' | 'agenda' | 'comissao' | 'parado';
+  chave: string;
+  titulo: string;
+  payload: Record<string, unknown>;
+  lida: boolean;
+  created_at: string;
 }

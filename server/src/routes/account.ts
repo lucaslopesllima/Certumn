@@ -1,11 +1,12 @@
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../db.ts';
-import { requireAuth, hashPassword, verifyPassword } from '../auth.ts';
+import { requireAuth, hashPassword, verifyPassword, signToken } from '../auth.ts';
 import { geocodeAddr } from '../geocode.ts';
+import { config } from '../config.ts';
 
 const ADDR_FIELDS = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'];
 
-const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf';
+const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf, inatividade_dias';
 const ORG_FIELDS = ['nome', 'cnpj', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'] as const;
 
 // Perfil do representante: dados da org (endereço/cnpj/telefone) + usuário (email) + senha.
@@ -35,6 +36,7 @@ export function accountRoutes(app: FastifyInstance): void {
           cidade: { type: ['string', 'null'] },
           uf: { type: ['string', 'null'] },
           email: { type: 'string', minLength: 3 },
+          inatividade_dias: { type: 'integer', minimum: 1, maximum: 365 },
         },
       },
     },
@@ -42,6 +44,12 @@ export function accountRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const userId = req.auth!.userId;
     const b = req.body as Record<string, unknown>;
+
+    // Config de alertas é política da org: só admin altera.
+    if (b.inatividade_dias !== undefined) {
+      if (req.auth!.role !== 'admin') return reply.code(403).send({ error: 'apenas administradores' });
+      await query('UPDATE organizations SET inatividade_dias = $1 WHERE id = $2', [b.inatividade_dias, orgId]);
+    }
 
     // email (login) — único
     if (typeof b.email === 'string') {
@@ -94,6 +102,9 @@ export function accountRoutes(app: FastifyInstance): void {
 
   app.post('/api/account/password', {
     preHandler: requireAuth,
+    // Throttle por IP: verifica senha_atual com scrypt — sem limite, um token
+    // válido permite brute-force online da senha atual.
+    config: { rateLimit: { max: app.authRateLimitMax, timeWindow: config.authRateLimitWindow } },
     schema: {
       body: {
         type: 'object',
@@ -111,7 +122,17 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!u || !(await verifyPassword(senha_atual, u.senha_hash))) {
       return reply.code(400).send({ error: 'senha atual incorreta' });
     }
-    await query('UPDATE users SET senha_hash = $1 WHERE id = $2', [await hashPassword(nova_senha), userId]);
-    return { ok: true };
+    // troca de senha também encerra o ciclo da senha provisória do primeiro login.
+    // token_version++ derruba todos os tokens já emitidos (inclusive o desta
+    // requisição) — por isso devolvemos um token novo para a sessão atual.
+    const upd = await one<{ token_version: number }>(
+      `UPDATE users SET senha_hash = $1, must_change_password = false, token_version = token_version + 1
+       WHERE id = $2 RETURNING token_version`,
+      [await hashPassword(nova_senha), userId],
+    );
+    const token = await signToken({
+      userId, orgId: req.auth!.orgId, role: req.auth!.role, tokenVersion: upd!.token_version,
+    });
+    return { ok: true, token };
   });
 }

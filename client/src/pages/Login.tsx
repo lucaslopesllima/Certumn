@@ -96,9 +96,9 @@ export function Login(): React.JSX.Element {
 
           <form onSubmit={submit} className="mt-5 space-y-3">
             {mode === 'register' && (
-              <Field label="Nome da empresa" value={orgNome} onChange={setOrgNome} placeholder="Minha Representação" />
+              <Field label="Nome da empresa" value={orgNome} onChange={setOrgNome} placeholder="Minha Representação" autoFocus />
             )}
-            <Field label="E-mail" type="email" value={email} onChange={setEmail} placeholder="voce@empresa.com" />
+            <Field label="E-mail" type="email" value={email} onChange={setEmail} placeholder="voce@empresa.com" autoFocus={mode === 'login'} />
             <Field label="Senha" type="password" value={senha} onChange={setSenha} placeholder="mínimo 6 caracteres" />
             {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
             <Btn type="submit" disabled={busy} className="w-full">
@@ -112,19 +112,33 @@ export function Login(): React.JSX.Element {
 }
 
 function Field(props: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; autoFocus?: boolean;
 }): React.JSX.Element {
+  const isPwd = props.type === 'password';
+  const [show, setShow] = useState(false);
+  const type = isPwd ? (show ? 'text' : 'password') : (props.type ?? 'text');
   return (
     <label className="block">
       <span className="text-xs font-semibold text-ink-600">{props.label}</span>
-      <input
-        type={props.type ?? 'text'}
-        value={props.value}
-        onChange={(e) => props.onChange(e.target.value)}
-        placeholder={props.placeholder}
-        required
-        className="mt-1 w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200"
-      />
+      <div className="relative mt-1">
+        <input
+          type={type}
+          value={props.value}
+          onChange={(e) => props.onChange(e.target.value)}
+          placeholder={props.placeholder}
+          required
+          autoFocus={props.autoFocus}
+          className={cn('w-full rounded-xl border border-ink-200 bg-white px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200',
+            isPwd && 'pr-10')}
+        />
+        {isPwd && (
+          <button type="button" onClick={() => setShow((s) => !s)} tabIndex={-1}
+            aria-label={show ? 'Ocultar senha' : 'Mostrar senha'}
+            className="absolute right-2 top-1/2 grid h-7 w-7 -translate-y-1/2 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-ink-600">
+            <Icon name={show ? 'eyeOff' : 'eye'} size={17} />
+          </button>
+        )}
+      </div>
     </label>
   );
 }

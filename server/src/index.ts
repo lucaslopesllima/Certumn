@@ -1,47 +1,31 @@
-import Fastify from 'fastify';
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { config } from './config.ts';
-import { pool } from './db.ts';
-import { authRoutes } from './routes/auth.ts';
-import { profileRoutes } from './routes/profile.ts';
-import { recommendRoutes } from './routes/recommend.ts';
-import { cnaeRoutes } from './routes/cnae.ts';
-import { relationshipRoutes } from './routes/relationships.ts';
-import { stageRoutes } from './routes/stages.ts';
-import { activityRoutes } from './routes/activities.ts';
-import { representedRoutes } from './routes/represented.ts';
-import { cadastroRoutes } from './routes/cadastros.ts';
-import { companyRoutes } from './routes/companies.ts';
-import { catalogRoutes } from './routes/catalog.ts';
-import { accountRoutes } from './routes/account.ts';
-import { financeRoutes } from './routes/finance.ts';
-import { vehicleRoutes } from './routes/vehicles.ts';
-import { routePlanRoutes } from './routes/routes.ts';
+import { buildApp } from './app.ts';
+import { materializeRecurrences } from './recurrence.ts';
+import { processDueEmails } from './email.ts';
 
-const app = Fastify({ logger: true, trustProxy: true });
+const app = await buildApp();
 
-app.get('/api/health', async () => {
-  await pool.query('SELECT 1');
-  return { ok: true };
-});
+// Materializa lançamentos financeiros recorrentes decorridos (Fase 6.1). Roda
+// no boot; idempotente, então deploys repetidos não duplicam. Falha aqui não
+// derruba o servidor — só registra.
+materializeRecurrences().then(
+  (n) => { if (n > 0) app.log.info(`recorrências financeiras: ${n} lançamento(s) materializado(s)`); },
+  (e) => app.log.error({ err: e }, 'falha ao materializar recorrências'),
+);
 
-authRoutes(app);
-profileRoutes(app);
-recommendRoutes(app);
-cnaeRoutes(app);
-relationshipRoutes(app);
-stageRoutes(app);
-activityRoutes(app);
-representedRoutes(app);
-cadastroRoutes(app);
-companyRoutes(app);
-catalogRoutes(app);
-accountRoutes(app);
-financeRoutes(app);
-vehicleRoutes(app);
-routePlanRoutes(app);
+// Processador de e-mails agendados (scaffold, envio stub). Varre os pendentes
+// vencidos no boot e a cada minuto. Idempotente (UPDATE condiciona em pendente);
+// falha não derruba o servidor. unref() para não segurar o processo no exit.
+const runDueEmails = (): void => {
+  processDueEmails().then(
+    (n) => { if (n > 0) app.log.info(`e-mails agendados: ${n} processado(s)`); },
+    (e) => app.log.error({ err: e }, 'falha ao processar e-mails agendados'),
+  );
+};
+runDueEmails();
+setInterval(runDueEmails, 60_000).unref();
 
 // Serve the built React app (Dockerfile sets CLIENT_DIR). SPA fallback for client routes.
 if (config.clientDir && existsSync(config.clientDir)) {

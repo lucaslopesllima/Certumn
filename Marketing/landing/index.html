@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Vértice — Sistema completo para escritórios de representação</title>
+<meta name="description" content="Vértice é o sistema completo para escritórios de representação: encontra os clientes certos da sua região, controla pedidos, comissões e financeiro, e funciona no celular — tudo num só lugar." />
+<meta property="og:title" content="Vértice — O sistema do escritório de representação" />
+<meta property="og:description" content="Da prospecção à comissão, num só lugar. Pare de perder pedido, comissão e cliente na planilha." />
+<meta property="og:image" content="../criativos/og-image.svg" />
+<meta property="og:type" content="website" />
+<link rel="icon" href="../favicon.svg" type="image/svg+xml" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+  tailwind.config = {
+    theme: { extend: {
+      colors: {
+        primary: { DEFAULT: '#1B2559', 600: '#27357A' },
+        accent:  { DEFAULT: '#E8A23D', 600: '#CC8A28' },
+        teal:    { DEFAULT: '#14B8A6', 600: '#0E9488' },
+        ink:     '#0F172A',
+        body:    '#475569',
+      },
+      fontFamily: {
+        display: ['Sora','system-ui','sans-serif'],
+        sans:    ['Inter','system-ui','sans-serif'],
+      },
+    }},
+  }
+</script>
+<style>
+  body{font-family:Inter,system-ui,sans-serif;color:#475569}
+  h1,h2,h3,.font-display{font-family:Sora,system-ui,sans-serif}
+  .hero-grad{background:linear-gradient(135deg,#27357A 0%,#1B2559 60%,#141C44 100%)}
+  .grid-dots{background-image:radial-gradient(rgba(255,255,255,.07) 1px,transparent 1px);background-size:22px 22px}
+  /* Mercos-style: underline em gradiente sob a palavra-chave */
+  .u-grad{background-image:linear-gradient(90deg,#14B8A6,#E8A23D);background-repeat:no-repeat;background-position:0 92%;background-size:100% .20em;padding-bottom:.02em}
+  .arrow::after{content:" ›";font-weight:700}
+  details>summary::-webkit-details-marker{display:none}
+</style>
+</head>
+<body class="bg-white text-body antialiased">
+
+<!-- NAV -->
+<header class="sticky top-0 z-30 bg-white/90 backdrop-blur border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 h-16 flex items-center justify-between">
+    <img src="../logo.svg" alt="Vértice" class="h-9 w-auto" />
+    <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-ink">
+      <a href="#valor" class="hover:text-primary">Soluções</a>
+      <a href="#como" class="hover:text-primary">Como funciona</a>
+      <a href="#rotas" class="hover:text-primary">Rotas</a>
+      <a href="#segmentos" class="hover:text-primary">Para quem é</a>
+      <a href="#planos" class="hover:text-primary">Planos</a>
+      <a href="#faq" class="hover:text-primary">Dúvidas</a>
+    </nav>
+    <div class="flex items-center gap-3">
+      <a href="#" class="hidden sm:inline text-sm font-semibold text-primary hover:text-primary-600">Entrar</a>
+      <a href="#planos" class="text-sm font-semibold bg-accent hover:bg-accent-600 text-primary px-4 py-2 rounded-lg">Teste grátis</a>
+    </div>
+  </div>
+</header>
+
+<!-- HERO (claro) -->
+<section class="relative overflow-hidden bg-gradient-to-b from-[#F8FAFC] to-white">
+  <div class="max-w-6xl mx-auto px-5 py-16 md:py-24 grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <h1 class="mt-6 text-4xl md:text-[3.4rem] font-extrabold text-ink leading-[1.05] tracking-tight">
+        Da prospecção à comissão, <span class="u-grad">num só lugar</span>
+      </h1>
+      <p class="mt-6 text-lg text-body max-w-lg">
+        O sistema do escritório de representação: encontra os clientes certos da sua praça,
+        organiza o funil, emite pedidos, controla comissões e financeiro, e vai com você pra rua.
+        Sem planilha, sem lista comprada.
+      </p>
+      <div class="mt-8 flex flex-col sm:flex-row gap-3">
+        <a href="#planos" class="bg-accent hover:bg-accent-600 text-primary font-semibold px-6 py-3.5 rounded-xl text-center">Testar 14 dias grátis</a>
+        <a href="#como" class="border border-slate-300 hover:border-primary text-primary font-semibold px-6 py-3.5 rounded-xl text-center">Ver como funciona</a>
+      </div>
+      <div class="mt-5 flex items-center gap-3 text-sm text-slate-500">
+        <span class="text-teal">●</span>
+        <span>Base de pesquisa completa · feito sob medida para representação</span>
+      </div>
+    </div>
+
+    <!-- screenshot do produto -->
+    <div class="relative">
+      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 p-3">
+        <div class="flex items-center gap-1.5 px-2 pb-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="ml-2 text-xs text-slate-400 font-medium">Vértice · Prospecção</span>
+        </div>
+        <svg viewBox="0 0 520 360" class="w-full rounded-xl" xmlns="http://www.w3.org/2000/svg">
+          <rect width="520" height="360" fill="#EEF2F7"/>
+          <g stroke="#DCE3EC" stroke-width="1">
+            <path d="M0 90 H520 M0 180 H520 M0 270 H520 M130 0 V360 M260 0 V360 M390 0 V360"/>
+          </g>
+          <path d="M40 70 C140 50 180 140 280 120 S470 90 500 170 L500 360 L40 360 Z" fill="#E2EAF3"/>
+          <path d="M90 200 C170 180 210 250 300 240 S430 250 470 300" fill="none" stroke="#CBD5E1" stroke-width="6"/>
+          <circle cx="250" cy="160" r="58" fill="#14B8A6" fill-opacity="0.08"/>
+          <circle cx="250" cy="160" r="58" stroke="#14B8A6" stroke-opacity="0.4" fill="none"/>
+          <circle cx="250" cy="160" r="34" stroke="#E8A23D" stroke-opacity="0.5" fill="none"/>
+          <circle cx="150" cy="120" r="6" fill="#14B8A6"/>
+          <circle cx="360" cy="230" r="6" fill="#14B8A6"/>
+          <circle cx="410" cy="120" r="6" fill="#14B8A6"/>
+          <circle cx="190" cy="250" r="6" fill="#14B8A6"/>
+          <path d="M250 120c-14 0-25 11-25 24.5 0 18 25 39.5 25 39.5s25-21.5 25-39.5C275 131 264 120 250 120Z" fill="#1B2559"/>
+          <circle cx="250" cy="144" r="9" fill="#E8A23D"/>
+        </svg>
+        <div class="px-2 pt-3 pb-1 flex items-center justify-between">
+          <div>
+            <p class="text-sm font-semibold text-ink font-display">Metalúrgica Horizonte Ltda</p>
+            <p class="text-xs text-slate-400">Comércio atacadista · Porte médio · 4,2 km</p>
+          </div>
+          <span class="text-xs font-bold text-teal bg-teal/10 px-2.5 py-1 rounded-full">match 92%</span>
+        </div>
+      </div>
+      <div class="absolute -bottom-5 -left-5 bg-white rounded-xl shadow-xl border border-slate-200 px-4 py-3 hidden sm:block">
+        <p class="text-xs text-slate-400 font-medium">Comissão do mês</p>
+        <p class="text-lg font-bold text-primary font-display">R$ 38.420 <span class="text-xs font-semibold text-teal-600">conferida</span></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- STATS (faixa estilo Mercos) -->
+<section class="bg-primary text-white">
+  <div class="max-w-6xl mx-auto px-5 py-10 grid grid-cols-2 md:grid-cols-4 gap-8 text-center relative">
+    <div><p class="text-3xl md:text-4xl font-extrabold font-display text-accent">+20 mi</p><p class="text-sm text-white/70 mt-1">empresas ativas na base</p></div>
+    <div><p class="text-3xl md:text-4xl font-extrabold font-display text-accent">6</p><p class="text-sm text-white/70 mt-1">módulos, da prospecção ao financeiro</p></div>
+    <div><p class="text-3xl md:text-4xl font-extrabold font-display text-teal">5.570</p><p class="text-sm text-white/70 mt-1">municípios cobertos</p></div>
+    <div><p class="text-3xl md:text-4xl font-extrabold font-display text-teal">100%</p><p class="text-sm text-white/70 mt-1">no celular, até sem internet</p></div>
+  </div>
+</section>
+
+<!-- DEEP-DIVE: BASE NACIONAL (o wedge) -->
+<section class="bg-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20 grid md:grid-cols-2 gap-12 items-center">
+    <div>
+      <span class="text-xs font-bold uppercase tracking-wide text-teal-600">Não é só uma lista de empresas</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-ink tracking-tight">A base do Brasil inteiro já vira sua <span class="u-grad">próxima carteira</span></h2>
+      <p class="mt-4 text-lg">Ter os dados da Receita qualquer ferramenta de mailing tem. O Vértice é diferente:
+      ele <strong class="text-ink">recomenda quem abordar</strong> na praça de cada vendedor — por ramo, porte e
+      proximidade — e <strong class="text-ink">já exclui quem está no funil</strong>. Do dado ao cliente, ao
+      pedido, à comissão, num fluxo só. Você não compra lista nem paga ferramenta de prospecção à parte.</p>
+      <ul class="mt-6 grid sm:grid-cols-2 gap-3 text-sm">
+        <li class="flex gap-2"><span class="text-teal">✓</span> Recomenda por ramo, porte e proximidade</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Dentro do território de cada vendedor</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Exclui quem já está no funil (zero repetido)</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Substitui sua ferramenta de mailing paga</li>
+      </ul>
+      <a href="#como" class="arrow inline-block mt-6 text-primary font-semibold hover:text-primary-600">Veja como funciona</a>
+    </div>
+    <div class="bg-[#F8FAFC] rounded-2xl border border-slate-200 p-8 grid grid-cols-2 gap-6 text-center">
+      <div><p class="text-4xl font-bold font-display text-primary">+60 mi</p><p class="text-sm text-slate-500 mt-1">CNPJs no Brasil</p></div>
+      <div><p class="text-4xl font-bold font-display text-primary">+20 mi</p><p class="text-sm text-slate-500 mt-1">empresas ativas</p></div>
+      <div><p class="text-4xl font-bold font-display text-teal-600">1.300+</p><p class="text-sm text-slate-500 mt-1">ramos de atividade</p></div>
+      <div><p class="text-4xl font-bold font-display text-teal-600">5.570</p><p class="text-sm text-slate-500 mt-1">municípios</p></div>
+    </div>
+  </div>
+</section>
+
+<!-- DIFERENCIAIS (6 cards estilo Mercos) -->
+<section id="valor" class="max-w-6xl mx-auto px-5 py-20">
+  <div class="max-w-2xl">
+    <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight">O escritório de representação, <span class="u-grad">ponta a ponta</span></h2>
+    <p class="mt-4 text-lg">Programa de vendas genérico não conhece representada, comissão dividida com o vendedor, nem praça. O Vértice nasceu para o seu negócio.</p>
+  </div>
+  <div class="mt-12 grid md:grid-cols-3 gap-6">
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-accent/15 flex items-center justify-center text-accent text-xl font-bold">%</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Comissão sob controle</h3>
+      <p class="mt-3 text-sm">Calcula a comissão pela regra que você definir e a parte de cada vendedor. Confere o que a representada pagou e mostra a diferença antes de você perder dinheiro.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-teal/15 flex items-center justify-center text-teal text-xl font-bold">◎</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Prospecção quente</h3>
+      <p class="mt-3 text-sm">A lista qualquer um tem. O Vértice recomenda quem abordar por ramo, porte e proximidade, no território de cada vendedor — e tira quem já está no funil.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">▤</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Pedidos e tabelas de preço</h3>
+      <p class="mt-3 text-sm">Cotação vira pedido com a tabela de preço da representada aplicada automática, total recalculado e impressão/PDF prontos para enviar.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-accent/15 flex items-center justify-center text-accent text-xl font-bold">◫</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Vários vendedores e metas</h3>
+      <p class="mt-3 text-sm">Carteira isolada por vendedor (cada um vê só a sua), transferência de carteira e meta vs. realizado por mês. Admin enxerga o consolidado.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-teal/15 flex items-center justify-center text-teal text-xl font-bold">₪</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Financeiro e resultado do mês</h3>
+      <p class="mt-3 text-sm">Fluxo de caixa, resultado do mês (lucro ou prejuízo), contas que se repetem e despesa de viagem. O escritório fecha o mês sem abrir uma planilha.</p>
+    </div>
+    <div class="bg-white border border-slate-200 rounded-2xl p-7 hover:shadow-lg transition">
+      <div class="w-11 h-11 rounded-xl bg-primary/10 flex items-center justify-center text-primary text-xl font-bold">⌖</div>
+      <h3 class="mt-5 text-lg font-semibold text-ink">Campo e mobilidade</h3>
+      <p class="mt-3 text-sm">Rota do dia, registro de visita com a localização e pedido no celular — funciona até sem internet e atualiza sozinho quando o sinal volta.</p>
+    </div>
+  </div>
+</section>
+
+<!-- COMO FUNCIONA -->
+<section id="como" class="bg-[#F8FAFC] border-y border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20">
+    <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight text-center">Da praça ao fechamento do mês</h2>
+    <div class="mt-14 grid md:grid-cols-3 gap-10">
+      <div>
+        <div class="text-accent font-display font-extrabold text-5xl opacity-40">01</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Defina o alvo</h3>
+        <p class="mt-3">Ramo-alvo, porte e território de cada vendedor. O Vértice cruza com toda empresa do Brasil e devolve a lista quente, explicada, no mapa.</p>
+      </div>
+      <div>
+        <div class="text-accent font-display font-extrabold text-5xl opacity-40">02</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Venda no campo</h3>
+        <p class="mt-3">Funil visual, rota do dia, registro de visita e pedido no celular — até sem internet. Tabela de preço da representada aplicada automática.</p>
+      </div>
+      <div>
+        <div class="text-accent font-display font-extrabold text-5xl opacity-40">03</div>
+        <h3 class="mt-2 text-xl font-semibold text-ink">Feche o mês</h3>
+        <p class="mt-3">Pedido faturado já calcula a comissão. Confira o que a representada pagou, veja as diferenças, o resultado do mês e as metas batidas — sem planilha.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- DEEP-DIVE: ROTAS + COMBUSTÍVEL -->
+<section id="rotas" class="bg-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20 grid md:grid-cols-2 gap-12 items-center">
+    <!-- visual: mapa com rota otimizada + painel de custo -->
+    <div class="relative order-last md:order-first">
+      <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 p-3">
+        <div class="flex items-center gap-1.5 px-2 pb-2.5">
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="w-2.5 h-2.5 rounded-full bg-slate-300"></span>
+          <span class="ml-2 text-xs text-slate-400 font-medium">Vértice · Rota do dia</span>
+        </div>
+        <svg viewBox="0 0 520 360" class="w-full rounded-xl" xmlns="http://www.w3.org/2000/svg">
+          <rect width="520" height="360" fill="#EEF2F7"/>
+          <g stroke="#DCE3EC" stroke-width="1">
+            <path d="M0 90 H520 M0 180 H520 M0 270 H520 M130 0 V360 M260 0 V360 M390 0 V360"/>
+          </g>
+          <path d="M0 230 C120 210 160 250 250 235 S430 250 520 215" fill="none" stroke="#CBD5E1" stroke-width="8"/>
+          <!-- traçado da rota otimizada -->
+          <path d="M70 300 L150 120 L300 90 L420 180 L70 300" fill="none" stroke="#14B8A6" stroke-width="4" stroke-dasharray="2 0" stroke-linejoin="round"/>
+          <!-- origem -->
+          <circle cx="70" cy="300" r="11" fill="#1B2559"/>
+          <text x="70" y="304" text-anchor="middle" font-size="11" fill="#fff" font-family="Inter,sans-serif" font-weight="700">0</text>
+          <!-- paradas numeradas -->
+          <circle cx="150" cy="120" r="11" fill="#E8A23D"/>
+          <text x="150" y="124" text-anchor="middle" font-size="11" fill="#1B2559" font-family="Inter,sans-serif" font-weight="700">1</text>
+          <circle cx="300" cy="90" r="11" fill="#E8A23D"/>
+          <text x="300" y="94" text-anchor="middle" font-size="11" fill="#1B2559" font-family="Inter,sans-serif" font-weight="700">2</text>
+          <circle cx="420" cy="180" r="11" fill="#E8A23D"/>
+          <text x="420" y="184" text-anchor="middle" font-size="11" fill="#1B2559" font-family="Inter,sans-serif" font-weight="700">3</text>
+        </svg>
+        <div class="px-2 pt-3 pb-1 grid grid-cols-3 gap-2 text-center">
+          <div><p class="text-xs text-slate-400">Distância</p><p class="text-sm font-bold text-ink font-display">182 km</p></div>
+          <div><p class="text-xs text-slate-400">Tempo</p><p class="text-sm font-bold text-ink font-display">3 h 40</p></div>
+          <div><p class="text-xs text-slate-400">Paradas</p><p class="text-sm font-bold text-ink font-display">3</p></div>
+        </div>
+      </div>
+      <div class="absolute -bottom-5 -right-5 bg-white rounded-xl shadow-xl border border-slate-200 px-4 py-3 hidden sm:block">
+        <p class="text-xs text-slate-400 font-medium">Custo de combustível</p>
+        <p class="text-lg font-bold text-primary font-display">R$ 127,80 <span class="text-xs font-semibold text-teal-600">ida e volta</span></p>
+      </div>
+    </div>
+
+    <div>
+      <span class="text-xs font-bold uppercase tracking-wide text-teal-600">Logística e rota</span>
+      <h2 class="mt-3 text-3xl md:text-4xl font-bold text-ink tracking-tight">Menos quilômetro rodado, <span class="u-grad">mais visita no dia</span></h2>
+      <p class="mt-4 text-lg">O Vértice monta a <strong class="text-ink">melhor sequência de visitas</strong> a partir dos clientes que você
+      escolheu — calcula a rota real pelas estradas, ida e volta até a base, e mostra <strong class="text-ink">quanto vai
+      rodar, quanto tempo leva e quanto gasta de combustível</strong> antes de você dar a partida. Sem rodar à toa, sem
+      chutar despesa de viagem.</p>
+      <ul class="mt-6 grid sm:grid-cols-2 gap-3 text-sm">
+        <li class="flex gap-2"><span class="text-teal">✓</span> Ordem das paradas otimizada (menor trajeto)</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Distância e tempo reais pelas estradas</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Combustível pelo consumo do seu veículo</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Ida e volta até a base, custo fechado</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Vários veículos com consumo e preço próprios</li>
+        <li class="flex gap-2"><span class="text-teal">✓</span> Custo da viagem já vai pro financeiro</li>
+      </ul>
+      <a href="#planos" class="arrow inline-block mt-6 text-primary font-semibold hover:text-primary-600">Planeje a rota do dia</a>
+    </div>
+  </div>
+</section>
+
+<!-- SEGMENTOS / PARA QUEM É (cards estilo Mercos) -->
+<section id="segmentos" class="max-w-6xl mx-auto px-5 py-20">
+  <div class="text-center max-w-2xl mx-auto">
+    <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight">Feito para quem vive de representação</h2>
+    <p class="mt-4 text-lg">Do autônomo na rua ao escritório com equipe inteira.</p>
+  </div>
+  <div class="mt-12 grid md:grid-cols-3 gap-6">
+    <div class="rounded-2xl border border-slate-200 p-8 bg-white hover:shadow-lg transition">
+      <h3 class="text-xl font-semibold text-ink">Representante autônomo</h3>
+      <p class="mt-3 text-sm">Prospecção no mapa, funil, pedidos e agenda no celular. Sua carteira e sua comissão sob controle, sem planilha.</p>
+      <a href="#planos" class="arrow inline-block mt-5 text-primary font-semibold hover:text-primary-600">Ver plano Solo</a>
+    </div>
+    <div class="rounded-2xl border-2 border-accent p-8 bg-white shadow-lg">
+      <span class="text-xs font-bold text-primary bg-accent px-3 py-1 rounded-full">Mais escolhido</span>
+      <h3 class="mt-4 text-xl font-semibold text-ink">Escritório de representação</h3>
+      <p class="mt-3 text-sm">Vários vendedores, comissão dividida com cada um, metas, financeiro e resultado do mês. O escritório inteiro rodando num sistema só.</p>
+      <a href="#planos" class="arrow inline-block mt-5 text-primary font-semibold hover:text-primary-600">Ver plano Equipe</a>
+    </div>
+    <div class="rounded-2xl border border-slate-200 p-8 bg-white hover:shadow-lg transition">
+      <h3 class="text-xl font-semibold text-ink">Operação consolidada</h3>
+      <p class="mt-3 text-sm">Muitas representadas e vendedores, onboarding assistido, suporte prioritário e SLA. Escala com controle.</p>
+      <a href="#planos" class="arrow inline-block mt-5 text-primary font-semibold hover:text-primary-600">Ver plano Escritório</a>
+    </div>
+  </div>
+</section>
+
+<!-- DEPOIMENTO (placeholder honesto) -->
+<section class="max-w-6xl mx-auto px-5 pb-20">
+  <div class="bg-primary rounded-3xl p-10 md:p-14 text-white relative overflow-hidden">
+    <div class="grid-dots absolute inset-0"></div>
+    <div class="relative max-w-3xl">
+      <div class="text-accent text-lg">★★★★★</div>
+      <p class="mt-4 text-2xl md:text-3xl font-display font-semibold leading-snug">
+        “A primeira coisa que o Vértice pegou foi uma comissão divergente de quase R$ 5 mil
+        que tinha passado batido na planilha. O sistema se pagou no primeiro mês.”
+      </p>
+      <p class="mt-6 text-white/70 text-sm">— Depoimento ilustrativo · substituir por cliente real após os primeiros pilotos</p>
+    </div>
+  </div>
+</section>
+
+<!-- PLANOS -->
+<section id="planos" class="bg-[#F8FAFC] border-y border-slate-200">
+  <div class="max-w-6xl mx-auto px-5 py-20">
+    <div class="text-center max-w-2xl mx-auto">
+      <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight">Planos que cabem no escritório</h2>
+      <p class="mt-4 text-lg">14 dias grátis, sem cartão. Anual com 2 meses grátis. Cancela quando quiser no mensal.</p>
+    </div>
+
+    <div class="mt-14 grid md:grid-cols-3 gap-6 items-start">
+      <!-- Solo -->
+      <div class="border border-slate-200 rounded-2xl p-7 bg-white">
+        <h3 class="text-lg font-semibold text-ink">Solo</h3>
+        <p class="text-sm text-slate-500 mt-1">Representante autônomo</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 149</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 1.490/ano</p>
+        <a href="#" class="mt-6 block text-center border border-primary text-primary font-semibold py-2.5 rounded-lg hover:bg-primary hover:text-white transition">Começar grátis</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> 1 vendedor · até 2 representadas</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Prospecção no mapa</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Funil, pedidos e cotações</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Agenda, rota e registro de visita</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Comissão da própria carteira</li>
+        </ul>
+      </div>
+
+      <!-- Equipe (popular) -->
+      <div class="border-2 border-accent rounded-2xl p-7 bg-white shadow-xl relative">
+        <span class="absolute -top-3 left-1/2 -translate-x-1/2 bg-accent text-primary text-xs font-bold px-3 py-1 rounded-full">MAIS POPULAR</span>
+        <h3 class="text-lg font-semibold text-ink">Equipe</h3>
+        <p class="text-sm text-slate-500 mt-1">Escritório pequeno</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 690</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 6.900/ano · até 5 vendedores</p>
+        <a href="#" class="mt-6 block text-center bg-accent hover:bg-accent-600 text-primary font-semibold py-2.5 rounded-lg transition">Testar 14 dias grátis</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> Tudo do Solo · até 5 vendedores</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Carteiras de cliente individuais</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Cálculo de comissionamento</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Metas por vendedor e global</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Financeiro: fluxo de caixa + resultado do mês</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Relatórios: ABC, cobertura, alertas</li>
+          <li class="flex gap-2 text-slate-400"><span>+</span> Usuário extra R$ 120/mês</li>
+        </ul>
+      </div>
+
+      <!-- Escritório -->
+      <div class="border border-slate-200 rounded-2xl p-7 bg-white">
+        <h3 class="text-lg font-semibold text-ink">Enterprise</h3>
+        <p class="text-sm text-slate-500 mt-1">Escritório consolidado</p>
+        <p class="mt-5"><span class="text-4xl font-bold text-ink font-display">R$ 1.490</span><span class="text-slate-500">/mês</span></p>
+        <p class="text-xs text-slate-400 mt-1">ou R$ 14.900/ano · até 15 vendedores</p>
+        <a href="#" class="mt-6 block text-center border border-primary text-primary font-semibold py-2.5 rounded-lg hover:bg-primary hover:text-white transition">Falar com vendas</a>
+        <ul class="mt-6 space-y-2.5 text-sm">
+          <li class="flex gap-2"><span class="text-teal">✓</span> Tudo do Equipe · até 15 vendedores</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Onboarding</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Suporte WhatsApp</li>
+          <li class="flex gap-2"><span class="text-teal">✓</span> Treinamento</li>
+          <li class="flex gap-2 text-slate-400"><span>+</span> Usuário extra R$ 90/mês</li>
+        </ul>
+      </div>
+    </div>
+    <p class="text-center text-sm text-slate-500 mt-8">Acima de 15 vendedores ou mais de uma filial? <a href="#" class="text-primary font-semibold underline">Plano sob consulta.</a></p>
+  </div>
+</section>
+
+<!-- FAQ -->
+<section id="faq" class="max-w-3xl mx-auto px-5 py-20">
+  <h2 class="text-3xl md:text-4xl font-bold text-ink tracking-tight text-center">Dúvidas frequentes</h2>
+  <div class="mt-10 divide-y divide-slate-200">
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Isso é só mais uma lista de empresas?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Não. A base da Receita (toda empresa do Brasil, sempre atualizada) é só a matéria-prima — qualquer lista de e-mails tem. O valor do Vértice é o que ele faz com ela: recomenda <strong>quem abordar</strong> no território de cada vendedor por ramo, porte e proximidade, tira quem já está no funil, e leva esse cliente do primeiro contato até a comissão no mesmo sistema. Você não importa lista nem paga uma ferramenta de prospecção à parte.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Funciona no celular, na rua?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Sim. Você instala como um aplicativo no celular. Abre a agenda e a rota do dia mesmo sem sinal, e os registros de visita ficam guardados e sobem sozinhos quando a internet volta.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Como a comissão é calculada?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Por regras, na ordem que você definir (por produto, por cliente, por vendedor ou geral da representada), já com a parte do vendedor. Quando o pedido é faturado, a comissão é calculada; você confere o que a representada pagou (pode importar de uma planilha) e o Vértice mostra as diferenças.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Cada vendedor enxerga a carteira dos outros?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Não. Vendedor vê só a própria carteira, pedidos e comissão. O admin vê o consolidado, com filtro por vendedor e transferência de carteira quando alguém sai.</p>
+    </details>
+    <details class="py-5 group">
+      <summary class="flex justify-between items-center cursor-pointer font-semibold text-ink list-none">Tem WhatsApp integrado?<span class="text-accent group-open:rotate-45 transition">+</span></summary>
+      <p class="mt-3">Hoje o Vértice abre a conversa direto no WhatsApp a partir do telefone do contato. A integração oficial com o WhatsApp Business está nos planos futuros.</p>
+    </details>
+  </div>
+</section>
+
+<!-- CTA FINAL -->
+<section class="hero-grad text-white">
+  <div class="max-w-4xl mx-auto px-5 py-20 text-center relative">
+    <div class="grid-dots absolute inset-0"></div>
+    <div class="relative">
+      <h2 class="text-3xl md:text-5xl font-bold tracking-tight">Coloque sua praça inteira sob controle</h2>
+      <p class="mt-5 text-lg text-white/80 max-w-xl mx-auto">14 dias grátis com todos os recursos. Sem cartão. Comece pelo seu próprio território.</p>
+      <a href="#" class="mt-8 inline-block bg-accent hover:bg-accent-600 text-primary font-semibold px-8 py-4 rounded-xl">Testar o Vértice grátis</a>
+    </div>
+  </div>
+</section>
+
+<!-- FOOTER -->
+<footer class="bg-ink text-slate-400">
+  <div class="max-w-6xl mx-auto px-5 py-12 grid md:grid-cols-4 gap-8 text-sm">
+    <div class="md:col-span-2">
+      <img src="../logo-mono.svg" alt="Vértice" class="h-8 w-auto brightness-0 invert opacity-90" />
+      <p class="mt-4 max-w-xs">O sistema do escritório de representação comercial. Da prospecção à comissão, num só lugar.</p>
+    </div>
+    <div>
+      <p class="text-white font-semibold mb-3">Produto</p>
+      <ul class="space-y-2">
+        <li><a href="#valor" class="hover:text-white">Soluções</a></li>
+        <li><a href="#planos" class="hover:text-white">Planos</a></li>
+        <li><a href="#faq" class="hover:text-white">Dúvidas</a></li>
+      </ul>
+    </div>
+    <div>
+      <p class="text-white font-semibold mb-3">Empresa</p>
+      <ul class="space-y-2">
+        <li><a href="#" class="hover:text-white">Contato</a></li>
+        <li><a href="#" class="hover:text-white">Termos de uso</a></li>
+        <li><a href="#" class="hover:text-white">Privacidade (LGPD)</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="border-t border-white/10">
+    <div class="max-w-6xl mx-auto px-5 py-5 text-xs flex flex-col sm:flex-row justify-between gap-2">
+      <span>© 2026 Vértice. Todos os direitos reservados.</span>
+      <span>Feito para representantes comerciais no Brasil.</span>
+    </div>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
-import { api } from '../lib/api.ts';
-import type { Activity, KanbanCard } from '../lib/types.ts';
+import { api, ApiError } from '../lib/api.ts';
+import type { Activity, KanbanCard, OptimizeResult } from '../lib/types.ts';
 import { Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
-import { ActivityCreateModal } from '../lib/activityModal.tsx';
+import { ActivityCreateModal, VisitModal, type RepresentedOption } from '../lib/activityModal.tsx';
+import { toast } from '../lib/toast.tsx';
+
+// "Adicionar" sem dia escolhido abre num horário comercial futuro: antes das 9h
+// usa hoje 09:00; durante o expediente, a próxima hora cheia (nunca no passado).
+const proximoHorarioComercial = (): Date => {
+  const d = new Date();
+  if (d.getHours() < 9) d.setHours(9, 0, 0, 0);
+  else d.setHours(d.getHours() + 1, 0, 0, 0);
+  return d;
+};
 
 /* ── tipo metadata (color + icon per activity kind) ─────── */
 const TIPO: Record<string, { label: string; icon: IconName; dot: string; chip: string }> = {
@@ -34,6 +44,7 @@ type FunnelCompany = { company_id: number; label: string };
 export function Agenda(): React.JSX.Element {
   const [items, setItems] = useState<Activity[]>([]);
   const [funnel, setFunnel] = useState<FunnelCompany[]>([]);
+  const [represented, setRepresented] = useState<RepresentedOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
@@ -43,6 +54,8 @@ export function Agenda(): React.JSX.Element {
   const [addAt, setAddAt] = useState<Date | null>(null);     // add-modal open + preset date
   const [dayOpen, setDayOpen] = useState<Date | null>(null); // day-detail modal
   const [editing, setEditing] = useState<Activity | null>(null); // edit-modal target
+  const [visiting, setVisiting] = useState<Activity | null>(null); // visit (check-in/relatório) modal
+  const [rotaBusy, setRotaBusy] = useState(false);
 
   const today = useMemo(() => new Date(), []);
 
@@ -68,14 +81,23 @@ export function Agenda(): React.JSX.Element {
     }).catch(() => undefined);
   }, []);
 
+  // Representadas para vincular numa atividade (com seus contatos no modal).
+  useEffect(() => {
+    void api.get<{ empresas: RepresentedOption[] }>('/api/represented')
+      .then((r) => setRepresented(r.empresas)).catch(() => undefined);
+  }, []);
+
   const toggle = async (a: Activity): Promise<void> => {
     const next = a.status === 'feito' ? 'pendente' : 'feito';
     setItems((xs) => xs.map((x) => (x.id === a.id ? { ...x, status: next } : x)));
-    await api.patch(`/api/activities/${a.id}`, { status: next });
+    try { await api.patch(`/api/activities/${a.id}`, { status: next }); }
+    catch { setItems((xs) => xs.map((x) => (x.id === a.id ? { ...x, status: a.status } : x))); toast.error('Não foi possível atualizar.'); }
   };
   const remove = async (a: Activity): Promise<void> => {
+    const before = items;
     setItems((xs) => xs.filter((x) => x.id !== a.id));
-    await api.del(`/api/activities/${a.id}`);
+    try { await api.del(`/api/activities/${a.id}`); toast.success('Atividade excluída.'); }
+    catch { setItems(before); toast.error('Não foi possível excluir.'); }
   };
 
   // filtered set used by every view
@@ -121,12 +143,38 @@ export function Agenda(): React.JSX.Element {
     return n;
   });
 
+  // Fase 5.2 — "Rota do dia": junta as empresas dos compromissos do dia,
+  // otimiza pelo planejador existente e salva como "Rota DD/MM".
+  const gerarRota = async (date: Date, events: Activity[]): Promise<void> => {
+    const ids = [...new Set(events.map((e) => e.company_id).filter((x): x is number => x != null))];
+    if (ids.length === 0) { toast.error('Nenhum compromisso com empresa vinculada neste dia.'); return; }
+    setRotaBusy(true);
+    try {
+      const r = await api.post<OptimizeResult>('/api/routes/optimize', { company_ids: ids });
+      await api.post('/api/routes', {
+        nome: `Rota ${date.toLocaleDateString('pt-BR')}`,
+        origem_lat: r.origem.lat, origem_lon: r.origem.lon,
+        dist_km: r.dist_km, dur_min: r.dur_min,
+        preco_litro: r.preco_litro, litros: r.litros, custo_total: r.custo_total,
+        geometry: r.geometry,
+        stops: r.stops.map((s) => ({
+          company_id: s.company_id, seq: s.seq, lat: s.lat, lon: s.lon,
+          leg_dist_km: s.leg_dist_km, leg_dur_min: s.leg_dur_min,
+        })),
+      });
+      const aviso = r.skipped.length ? ` (${r.skipped.length} sem localização ignorada(s))` : '';
+      toast.success(`Rota gerada e salva${aviso}. Veja em Rotas.`);
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao gerar a rota do dia.');
+    } finally { setRotaBusy(false); }
+  };
+
   const pendentes = filtered.filter((a) => a.status !== 'feito').length;
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 sm:p-6">
       <PageHeader title="Agenda" subtitle={`${pendentes} atividade(s) pendente(s)`}
-        actions={<Btn icon="plus" onClick={() => setAddAt(new Date())}>Adicionar</Btn>} />
+        actions={<Btn icon="plus" onClick={() => setAddAt(proximoHorarioComercial())}>Adicionar</Btn>} />
 
       {/* ── control panel ─────────────────────────────── */}
       <Card className="flex flex-wrap items-center justify-between gap-3 p-3">
@@ -183,11 +231,11 @@ export function Agenda(): React.JSX.Element {
           onDay={setDayOpen}
           onSlot={(d) => setAddAt(d)} />
       ) : (
-        <ListView byDay={byDay} onToggle={toggle} onRemove={remove} onEdit={setEditing} onAdd={() => setAddAt(new Date())} />
+        <ListView byDay={byDay} onToggle={toggle} onRemove={remove} onEdit={setEditing} onVisit={setVisiting} onAdd={() => setAddAt(proximoHorarioComercial())} />
       )}
 
       {addAt && (
-        <ActivityCreateModal preset={addAt} funnel={funnel} onClose={() => setAddAt(null)}
+        <ActivityCreateModal preset={addAt} funnel={funnel} represented={represented} onClose={() => setAddAt(null)}
           onSaved={() => { setAddAt(null); void load(); }} />
       )}
       {dayOpen && (
@@ -195,11 +243,18 @@ export function Agenda(): React.JSX.Element {
           onClose={() => setDayOpen(null)}
           onToggle={toggle} onRemove={remove}
           onEdit={(a) => { setDayOpen(null); setEditing(a); }}
+          onVisit={(a) => { setDayOpen(null); setVisiting(a); }}
+          rotaBusy={rotaBusy} onGerarRota={(d, evs) => void gerarRota(d, evs)}
           onAdd={() => { const d = new Date(dayOpen); d.setHours(9, 0, 0, 0); setDayOpen(null); setAddAt(d); }} />
       )}
+      {visiting && (
+        <VisitModal activity={visiting} onClose={() => setVisiting(null)}
+          onSaved={() => { setVisiting(null); void load(); }} />
+      )}
       {editing && (
-        <ActivityCreateModal preset={new Date(editing.start_at)} funnel={funnel}
-          activity={{ id: editing.id, titulo: editing.titulo, tipo: editing.tipo, start_at: editing.start_at, company_id: editing.company_id }}
+        <ActivityCreateModal preset={new Date(editing.start_at)} funnel={funnel} represented={represented}
+          activity={{ id: editing.id, titulo: editing.titulo, tipo: editing.tipo, start_at: editing.start_at,
+            company_id: editing.company_id, represented_id: editing.represented_id, contact_id: editing.contact_id }}
           onClose={() => setEditing(null)}
           onSaved={() => { setEditing(null); void load(); }} />
       )}
@@ -331,8 +386,9 @@ function WeekView({ days, today, byDay, onDay, onSlot }: {
 }
 
 /* ── list view ──────────────────────────────────────────── */
-function ListView({ byDay, onToggle, onRemove, onEdit, onAdd }: {
-  byDay: Record<string, Activity[]>; onToggle: (a: Activity) => void; onRemove: (a: Activity) => void; onEdit: (a: Activity) => void; onAdd: () => void;
+function ListView({ byDay, onToggle, onRemove, onEdit, onVisit, onAdd }: {
+  byDay: Record<string, Activity[]>; onToggle: (a: Activity) => void; onRemove: (a: Activity) => void;
+  onEdit: (a: Activity) => void; onVisit: (a: Activity) => void; onAdd: () => void;
 }): React.JSX.Element {
   const days = Object.entries(byDay).sort((a, b) => (a[1][0]?.start_at ?? '').localeCompare(b[1][0]?.start_at ?? ''));
   if (days.length === 0) {
@@ -344,7 +400,7 @@ function ListView({ byDay, onToggle, onRemove, onEdit, onAdd }: {
         <div key={k}>
           <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wider text-ink-400">{fmtDayLong(new Date(list[0]!.start_at))}</p>
           <div className="space-y-2">
-            {list.map((a) => <Row key={a.id} a={a} onToggle={onToggle} onRemove={onRemove} onEdit={onEdit} />)}
+            {list.map((a) => <Row key={a.id} a={a} onToggle={onToggle} onRemove={onRemove} onEdit={onEdit} onVisit={onVisit} />)}
           </div>
         </div>
       ))}
@@ -353,8 +409,13 @@ function ListView({ byDay, onToggle, onRemove, onEdit, onAdd }: {
   );
 }
 
-function Row({ a, onToggle, onRemove, onEdit }: { a: Activity; onToggle: (a: Activity) => void; onRemove: (a: Activity) => void; onEdit: (a: Activity) => void }): React.JSX.Element {
+function Row({ a, onToggle, onRemove, onEdit, onVisit }: {
+  a: Activity; onToggle: (a: Activity) => void; onRemove: (a: Activity) => void; onEdit: (a: Activity) => void; onVisit: (a: Activity) => void;
+}): React.JSX.Element {
   const done = a.status === 'feito';
+  // Visita em campo: só faz sentido com empresa vinculada (check-in/relatório).
+  const podeVisitar = a.company_id != null;
+  const visitada = !!a.checkin_at || !!a.relatorio;
   return (
     <Card className="flex items-center gap-3 p-3">
       <button onClick={() => onToggle(a)} aria-label="Concluir"
@@ -368,16 +429,23 @@ function Row({ a, onToggle, onRemove, onEdit }: { a: Activity; onToggle: (a: Act
         </span>
         <div className="min-w-0 flex-1">
           <p className={cn('truncate text-sm font-semibold', done ? 'text-ink-400 line-through' : 'text-ink-800')}>{a.titulo}</p>
-          <p className="truncate text-xs text-ink-400">{fmtTime(a.start_at)} · {TIPO[a.tipo]?.label ?? a.tipo}{a.razao_social ? ` · ${a.razao_social}` : ''}</p>
+          <p className="truncate text-xs text-ink-400">{fmtTime(a.start_at)} · {TIPO[a.tipo]?.label ?? a.tipo}{a.razao_social ? ` · ${a.razao_social}` : ''}{a.represented_nome ? ` · ${a.represented_nome}` : ''}{a.contact_nome ? ` · ${a.contact_nome}` : ''}</p>
         </div>
       </button>
+      {podeVisitar && (
+        <button onClick={() => onVisit(a)} aria-label="Registrar visita" title="Check-in / relatório"
+          className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg transition',
+            visitada ? 'text-emerald-600 hover:bg-emerald-50' : 'text-ink-300 hover:bg-brand-50 hover:text-brand-600')}>
+          <Icon name="mapPin" size={16} />
+        </button>
+      )}
       <button onClick={() => onEdit(a)} aria-label="Editar"
-        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-ink-100 hover:text-brand-600">
-        <Icon name="pencil" size={15} />
+        className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100">
+        <Icon name="pencil" size={16} />
       </button>
       <button onClick={() => onRemove(a)} aria-label="Excluir"
         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
-        <Icon name="x" size={16} />
+        <Icon name="trash" size={16} />
       </button>
     </Card>
   );
@@ -403,18 +471,28 @@ function Modal({ title, onClose, children }: { title: string; onClose: () => voi
 }
 
 /* ── day-detail modal ───────────────────────────────────── */
-function DayModal({ date, events, onClose, onToggle, onRemove, onEdit, onAdd }: {
+function DayModal({ date, events, onClose, onToggle, onRemove, onEdit, onVisit, onAdd, onGerarRota, rotaBusy }: {
   date: Date; events: Activity[]; onClose: () => void;
-  onToggle: (a: Activity) => void; onRemove: (a: Activity) => void; onEdit: (a: Activity) => void; onAdd: () => void;
+  onToggle: (a: Activity) => void; onRemove: (a: Activity) => void; onEdit: (a: Activity) => void;
+  onVisit: (a: Activity) => void; onAdd: () => void;
+  onGerarRota: (d: Date, evs: Activity[]) => void; rotaBusy: boolean;
 }): React.JSX.Element {
+  const comEmpresa = events.filter((e) => e.company_id != null).length;
   return (
     <Modal title={fmtDayLong(date)} onClose={onClose}>
       <div className="space-y-2">
         {events.length === 0
           ? <p className="py-6 text-center text-sm text-ink-400">Nenhuma atividade neste dia.</p>
-          : events.map((a) => <Row key={a.id} a={a} onToggle={onToggle} onRemove={onRemove} onEdit={onEdit} />)}
+          : events.map((a) => <Row key={a.id} a={a} onToggle={onToggle} onRemove={onRemove} onEdit={onEdit} onVisit={onVisit} />)}
       </div>
-      <Btn variant="soft" icon="plus" onClick={onAdd} className="mt-3 w-full">Adicionar neste dia</Btn>
+      <div className="mt-3 flex flex-col gap-2">
+        {comEmpresa >= 2 && (
+          <Btn variant="soft" icon="route" disabled={rotaBusy} onClick={() => onGerarRota(date, events)} className="w-full">
+            {rotaBusy ? 'Gerando…' : `Gerar rota do dia (${comEmpresa} paradas)`}
+          </Btn>
+        )}
+        <Btn variant="soft" icon="plus" onClick={onAdd} className="w-full">Adicionar neste dia</Btn>
+      </div>
     </Modal>
   );
 }

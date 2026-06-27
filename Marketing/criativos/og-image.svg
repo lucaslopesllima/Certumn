@@ -1,0 +1,38 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#27357A"/>
+      <stop offset="0.6" stop-color="#1B2559"/>
+      <stop offset="1" stop-color="#141C44"/>
+    </linearGradient>
+    <radialGradient id="dot" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(950 180) scale(420)">
+      <stop stop-color="#14B8A6" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#14B8A6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#dot)"/>
+
+  <!-- símbolo -->
+  <g transform="translate(96 96)">
+    <rect x="0" y="0" width="96" height="96" rx="26" fill="#FFFFFF" fill-opacity="0.06" stroke="#FFFFFF" stroke-opacity="0.15"/>
+    <circle cx="48" cy="44" r="32" stroke="#E8A23D" stroke-opacity="0.5" fill="none"/>
+    <circle cx="48" cy="44" r="20" stroke="#14B8A6" stroke-opacity="0.6" fill="none"/>
+    <path d="M48 22c-11 0-20 8.6-20 19.6 0 14 20 31 20 31s20-17 20-31C68 30.6 59 22 48 22Z" fill="#FFFFFF"/>
+    <circle cx="48" cy="41" r="8" fill="#E8A23D"/>
+  </g>
+  <text x="216" y="160" font-family="Sora, system-ui, sans-serif" font-size="56" font-weight="700" fill="#FFFFFF">V<tspan fill="#E8A23D">é</tspan>rtice</text>
+
+  <!-- headline -->
+  <text x="96" y="330" font-family="Sora, system-ui, sans-serif" font-size="74" font-weight="700" fill="#FFFFFF">Da prospecção à</text>
+  <text x="96" y="418" font-family="Sora, system-ui, sans-serif" font-size="74" font-weight="700" fill="#E8A23D">comissão, num só lugar.</text>
+
+  <text x="96" y="486" font-family="Inter, system-ui, sans-serif" font-size="30" fill="#FFFFFF" fill-opacity="0.8">O ERP do escritório de representação comercial.</text>
+
+  <!-- selo -->
+  <g transform="translate(96 536)">
+    <rect width="430" height="54" rx="27" fill="#FFFFFF" fill-opacity="0.08" stroke="#FFFFFF" stroke-opacity="0.18"/>
+    <circle cx="30" cy="27" r="6" fill="#14B8A6"/>
+    <text x="50" y="35" font-family="Inter, system-ui, sans-serif" font-size="22" font-weight="600" fill="#FFFFFF">Toda empresa do Brasil na base</text>
+  </g>
+</svg>

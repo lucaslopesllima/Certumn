@@ -52,12 +52,76 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-rs}
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/${POSTGRES_DB:-rs}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
       PORT: 8080
       RECOMMEND_WORK_MEM: ${RECOMMEND_WORK_MEM:-64MB}
+      AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
+      AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW:-1 minute}
     ports:
       - "${APP_PORT:-8080}:8080"
+    restart: unless-stopped
+
+  # Backup diário às 02:30 (pg_dump custom format), retenção 14 dias em ./backups.
+  # Restaurar: pg_restore -h db -U postgres -d rs --clean ./backups/rs-AAAA-MM-DD.dump
+  #
+  # Backup só no disco da VPS não sobrevive à VPS. Configure no .env:
+  #   BACKUP_WEBHOOK_URL   — POST JSON {"text": "..."} em qualquer falha
+  #                          (Slack/Discord/ntfy/Telegram-bridge). Sem alerta,
+  #                          backup quebrado fica meses sem ninguém ver.
+  #   BACKUP_RCLONE_REMOTE — destino rclone (ex.: s3:meu-bucket/prospecta);
+  #                          requer ./rclone/rclone.conf (rclone config).
+  # Cada dump é validado com pg_restore --list antes de contar como ok.
+  backup:
+    image: postgis/postgis:16-3.4
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      PGUSER: ${POSTGRES_USER:-postgres}
+      PGDATABASE: ${POSTGRES_DB:-rs}
+      BACKUP_WEBHOOK_URL: ${BACKUP_WEBHOOK_URL:-}
+      BACKUP_RCLONE_REMOTE: ${BACKUP_RCLONE_REMOTE:-}
+    volumes:
+      - ./backups:/backups
+      - ./rclone:/root/.config/rclone
+    entrypoint:
+      - bash
+      - -c
+      - |
+        notify() {
+          echo "$$1" >&2
+          [ -n "$$BACKUP_WEBHOOK_URL" ] && \
+            curl -fsS -m 10 -X POST -H 'content-type: application/json' \
+              -d "{\"text\":\"[prospecta-backup] $$1\"}" "$$BACKUP_WEBHOOK_URL" >/dev/null 2>&1 || true
+        }
+        # curl/rclone não vêm na imagem do postgres — instala no primeiro boot.
+        if [ -n "$$BACKUP_WEBHOOK_URL$$BACKUP_RCLONE_REMOTE" ]; then
+          apt-get update -qq && apt-get install -yqq curl rclone >/dev/null 2>&1 \
+            || echo "aviso: install curl/rclone falhou — alerta/offsite indisponíveis" >&2
+        fi
+        while true; do
+          now=$$(date +%s)
+          target=$$(date -d 'today 02:30' +%s)
+          [ "$$now" -ge "$$target" ] && target=$$(date -d 'tomorrow 02:30' +%s)
+          sleep $$(( target - now ))
+          ts=$$(date +%F)
+          if pg_dump -h db -Fc -f "/backups/rs-$$ts.dump" \
+             && pg_restore --list "/backups/rs-$$ts.dump" >/dev/null; then
+            echo "backup ok: rs-$$ts.dump"
+            if [ -n "$$BACKUP_RCLONE_REMOTE" ]; then
+              if rclone copy "/backups/rs-$$ts.dump" "$$BACKUP_RCLONE_REMOTE" 2>/dev/null; then
+                echo "offsite ok: rs-$$ts.dump -> $$BACKUP_RCLONE_REMOTE"
+              else
+                notify "cópia offsite FALHOU: rs-$$ts.dump"
+              fi
+            fi
+          else
+            notify "backup FALHOU: rs-$$ts.dump"
+          fi
+          find /backups -name 'rs-*.dump' -mtime +14 -delete
+        done
     restart: unless-stopped
 
 volumes:

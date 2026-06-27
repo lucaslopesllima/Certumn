@@ -1,0 +1,78 @@
+{
+  "moeda": "BRL",
+  "trial_dias": 14,
+  "desconto_anual": "2 meses grátis",
+  "planos": [
+    {
+      "id": "solo",
+      "nome": "Solo",
+      "publico": "Representante autônomo",
+      "preco_mensal": 149,
+      "preco_anual": 1490,
+      "popular": false,
+      "usuarios_inclusos": 1,
+      "usuario_extra_mensal": null,
+      "representadas": "até 2",
+      "destaques": [
+        "Cálculo de rotas no mapa",
+        "Funil, pedidos, cotações e tabelas de preço",
+        "Agenda, rota do dia e registro de visita (no celular, sem internet)",
+        "Comissão da própria carteira",
+        "Exportar para Excel"
+      ],
+      "cta": "Começar grátis"
+    },
+    {
+      "id": "equipe",
+      "nome": "Equipe",
+      "publico": "Escritório pequeno",
+      "preco_mensal": 690,
+      "preco_anual": 6900,
+      "popular": true,
+      "usuarios_inclusos": 5,
+      "usuario_extra_mensal": 120,
+      "representadas": "ilimitadas",
+      "destaques": [
+        "Tudo do Solo, para até 5 vendedores",
+        "Vários vendedores: cada um vê só a sua carteira, com transferência",
+        "Comissão completa: regras + parte do vendedor + conferência",
+        "Metas por vendedor (meta vs. realizado)",
+        "Financeiro: fluxo de caixa + resultado do mês + contas que se repetem",
+        "Relatórios: curva ABC, mapa de cobertura, alertas",
+        "Auditoria e onboarding guiado"
+      ],
+      "cta": "Testar 14 dias grátis"
+    },
+    {
+      "id": "escritorio",
+      "nome": "Escritório",
+      "publico": "Escritório consolidado",
+      "preco_mensal": 1490,
+      "preco_anual": 14900,
+      "popular": false,
+      "usuarios_inclusos": 15,
+      "usuario_extra_mensal": 90,
+      "representadas": "ilimitadas",
+      "destaques": [
+        "Tudo do Equipe, para até 15 vendedores",
+        "Onboarding assistido dedicado",
+        "Suporte WhatsApp prioritário + SLA",
+        "Backup gerenciado",
+        "Treinamento da equipe"
+      ],
+      "cta": "Falar com vendas"
+    }
+  ],
+  "enterprise": {
+    "nome": "Sob consulta",
+    "publico": "Acima de 15 vendedores / mais de uma filial",
+    "preco": "Sob consulta",
+    "cta": "Falar com vendas"
+  },
+  "em_breve": [
+    "Integração oficial com o WhatsApp Business",
+    "Convite e troca de senha por e-mail",
+    "Importação da nota fiscal eletrônica",
+    "Aplicativo nativo + notificações"
+  ]
+}

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
+import { invalidOrgRef } from '../orgRefs.ts';
 
 // Cadastros que alimentam os dropdowns da prospecção: marcas, contatos, cenários e ações.
 export function cadastroRoutes(app: FastifyInstance): void {
@@ -95,6 +96,8 @@ export function cadastroRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const b = req.body as Record<string, unknown> & { nome: string };
+    const badRef = await invalidOrgRef(orgId, b, ['represented_id']);
+    if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const rows = await query(
       `INSERT INTO contacts (org_id, nome, cargo, email, telefone, company_id, represented_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING ${CONTACT_COLS}`,
@@ -114,6 +117,8 @@ export function cadastroRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
     const b = req.body as Record<string, unknown>;
+    const badRef = await invalidOrgRef(orgId, b, ['represented_id']);
+    if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const sets: string[] = [];
     const params: unknown[] = [];
     for (const k of ['nome', 'cargo', 'email', 'telefone', 'company_id', 'represented_id']) {
@@ -146,8 +151,13 @@ export function cadastroRoutes(app: FastifyInstance): void {
   registerSimpleList(app, 'actions', 'funnel_actions');
 }
 
-// CRUD mínimo para tabelas {id, org_id, nome}.
-function registerSimpleList(app: FastifyInstance, path: string, table: string): void {
+// CRUD mínimo para tabelas {id, org_id, nome}. `table` é interpolado no SQL —
+// o union literal garante em compile-time que só essas duas tabelas entram.
+function registerSimpleList(
+  app: FastifyInstance,
+  path: 'scenarios' | 'actions',
+  table: 'funnel_scenarios' | 'funnel_actions',
+): void {
   app.get(`/api/${path}`, { preHandler: requireAuth }, async (req) => {
     const orgId = req.auth!.orgId;
     const items = await query(`SELECT id, nome FROM ${table} WHERE org_id = $1 ORDER BY nome`, [orgId]);

@@ -17,7 +17,13 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+export interface RequestOpts {
+  // passe o signal de um AbortController no cleanup do useEffect — resposta de
+  // página abandonada não chega a tocar o estado.
+  signal?: AbortSignal;
+}
+
+async function request<T>(method: string, path: string, body?: unknown, opts?: RequestOpts): Promise<T> {
   const headers: Record<string, string> = {};
   const token = getToken();
   if (token) headers.authorization = `Bearer ${token}`;
@@ -27,6 +33,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     method,
     headers,
     body: body !== undefined ? JSON.stringify(body) : undefined,
+    signal: opts?.signal,
   });
 
   if (res.status === 401) {
@@ -43,9 +50,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  get: <T>(p: string) => request<T>('GET', p),
-  post: <T>(p: string, b?: unknown) => request<T>('POST', p, b),
-  put: <T>(p: string, b?: unknown) => request<T>('PUT', p, b),
-  patch: <T>(p: string, b?: unknown) => request<T>('PATCH', p, b),
-  del: <T>(p: string) => request<T>('DELETE', p),
+  get: <T>(p: string, o?: RequestOpts) => request<T>('GET', p, undefined, o),
+  post: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('POST', p, b, o),
+  put: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('PUT', p, b, o),
+  patch: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('PATCH', p, b, o),
+  del: <T>(p: string, o?: RequestOpts) => request<T>('DELETE', p, undefined, o),
 };

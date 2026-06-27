@@ -1,17 +1,30 @@
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { one, query } from '../db.ts';
 import { requireAuth } from '../auth.ts';
+import { invalidOrgRef } from '../orgRefs.ts';
+import { resolveProfile, exactProfile } from '../targetProfile.ts';
+
+// Escopo do perfil-alvo alvo da requisição (Fase 3):
+// - rep: sempre o próprio (ignora user_id do payload/query).
+// - admin: user_id explícito (vendedor) ou null = perfil padrão da org.
+// Retorna `undefined` em targetUser quando o admin não especifica (= org).
+function profileScope(req: FastifyRequest, given: { user_id?: number | null }): number | null {
+  if (req.auth!.role !== 'admin') return req.auth!.userId;
+  return 'user_id' in given && given.user_id != null ? Number(given.user_id) : null;
+}
 
 export function profileRoutes(app: FastifyInstance): void {
-  app.get('/api/profile', { preHandler: requireAuth }, async (req) => {
+  app.get('/api/profile', {
+    preHandler: requireAuth,
+    schema: { querystring: { type: 'object', properties: { user_id: { type: 'integer' } } } },
+  }, async (req) => {
     const orgId = req.auth!.orgId;
-    const profile = await one(
-      `SELECT org_id, cnaes_alvo, territorio_municipios, territorio_raio_km, pesos,
-              origem_endereco, origem_lat, origem_lon
-       FROM target_profiles WHERE org_id = $1`,
-      [orgId],
-    );
-    return { profile };
+    const q = req.query as { user_id?: number };
+    const scope = profileScope(req, q);
+    // efetivo (com fallback) p/ exibir; `own` indica se há linha própria do escopo.
+    const profile = await resolveProfile(orgId, scope);
+    const own = scope === null ? true : (await exactProfile(orgId, scope)) !== null;
+    return { profile, scope_user_id: scope, own };
   });
 
   app.put('/api/profile', {
@@ -20,6 +33,7 @@ export function profileRoutes(app: FastifyInstance): void {
       body: {
         type: 'object',
         properties: {
+          user_id: { type: ['integer', 'null'] }, // admin: escopo do perfil (null = org)
           cnaes_alvo: { type: 'array', items: { type: 'integer' } },
           territorio_municipios: { type: 'array', items: { type: 'integer' } },
           territorio_raio_km: { type: ['integer', 'null'] },
@@ -30,9 +44,10 @@ export function profileRoutes(app: FastifyInstance): void {
         },
       },
     },
-  }, async (req) => {
+  }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const b = req.body as {
+      user_id?: number | null;
       cnaes_alvo?: number[];
       territorio_municipios?: number[];
       territorio_raio_km?: number | null;
@@ -41,14 +56,19 @@ export function profileRoutes(app: FastifyInstance): void {
       origem_lat?: number | null;
       origem_lon?: number | null;
     };
+    const scope = profileScope(req, b);
+    if (scope !== null) {
+      const bad = await invalidOrgRef(orgId, { user_id: scope }, ['user_id']);
+      if (bad) return reply.code(400).send({ error: 'user_id inválido' });
+    }
     const hasOrigem = 'origem_endereco' in b || 'origem_lat' in b || 'origem_lon' in b;
     const rows = await query(
-      `INSERT INTO target_profiles (org_id, cnaes_alvo, territorio_municipios, territorio_raio_km, pesos,
+      `INSERT INTO target_profiles (org_id, user_id, cnaes_alvo, territorio_municipios, territorio_raio_km, pesos,
                                     origem_endereco, origem_lat, origem_lon)
-       VALUES ($1, COALESCE($2::int[],'{}'::int[]), COALESCE($3::int[],'{}'::int[]), $4::int,
+       VALUES ($1, $10, COALESCE($2::int[],'{}'::int[]), COALESCE($3::int[],'{}'::int[]), $4::int,
                COALESCE($5::jsonb,'{"cnae":0.5,"proximidade":0.3,"porte":0.2}'::jsonb),
                $7::text, $8::double precision, $9::double precision)
-       ON CONFLICT (org_id) DO UPDATE SET
+       ON CONFLICT (org_id, user_id) DO UPDATE SET
          cnaes_alvo = COALESCE($2::int[], target_profiles.cnaes_alvo),
          territorio_municipios = COALESCE($3::int[], target_profiles.territorio_municipios),
          territorio_raio_km = $4::int,
@@ -56,11 +76,11 @@ export function profileRoutes(app: FastifyInstance): void {
          origem_endereco = CASE WHEN $6 THEN $7::text ELSE target_profiles.origem_endereco END,
          origem_lat = CASE WHEN $6 THEN $8::double precision ELSE target_profiles.origem_lat END,
          origem_lon = CASE WHEN $6 THEN $9::double precision ELSE target_profiles.origem_lon END
-       RETURNING org_id, cnaes_alvo, territorio_municipios, territorio_raio_km, pesos,
+       RETURNING org_id, user_id, cnaes_alvo, territorio_municipios, territorio_raio_km, pesos,
                  origem_endereco, origem_lat, origem_lon`,
       [orgId, b.cnaes_alvo ?? null, b.territorio_municipios ?? null, b.territorio_raio_km ?? null,
         b.pesos ? JSON.stringify(b.pesos) : null,
-        hasOrigem, b.origem_endereco ?? null, b.origem_lat ?? null, b.origem_lon ?? null],
+        hasOrigem, b.origem_endereco ?? null, b.origem_lat ?? null, b.origem_lon ?? null, scope],
     );
     return { profile: rows[0] };
   });
