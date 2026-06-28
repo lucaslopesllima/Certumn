@@ -307,49 +307,84 @@ function PartidaInput({ value, onChange }: { value: Partida | null; onChange: (p
   );
 }
 
+// Seção colapsável (acordeão) reutilizada para básico/avançado. Mesmo padrão
+// grid-rows-[1fr]/[0fr] + overflow-hidden usado no Recommend para animar altura.
+// `nested` deixa o cabeçalho discreto (avançado dentro do básico).
+function FilterSection({ title, open, onToggle, nested = false, children }: {
+  title: string; open: boolean; onToggle: () => void; nested?: boolean; children: React.ReactNode;
+}): React.JSX.Element {
+  return (
+    <div className={cn(nested && 'rounded-xl border border-ink-200/70 bg-ink-50/40')}>
+      <button type="button" onClick={onToggle} aria-expanded={open}
+        className={cn('flex w-full items-center justify-between gap-2 text-left', nested ? 'px-3 py-2' : 'p-3')}>
+        <span className={cn('font-semibold', nested ? 'text-[11px] uppercase tracking-wider text-ink-500' : 'text-sm text-ink-900')}>{title}</span>
+        <Icon name="chevronRight" size={15}
+          className={cn('shrink-0 text-ink-400 transition-transform duration-300 ease-out', open ? 'rotate-90' : 'rotate-0')} />
+      </button>
+      <div className={cn('grid transition-[grid-template-rows] duration-300 ease-in-out', open ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className="overflow-hidden">
+          <div className={cn(nested ? 'px-3 pb-3' : 'p-3 pt-0')}>{children}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; recommend?: boolean }): React.JSX.Element {
+  const [basicoOpen, setBasicoOpen] = useState(true);
+  // No modo recommend o território (avançado) é necessário para haver resultado —
+  // começa aberto. No funil é opcional, começa recolhido.
+  const [avancadoOpen, setAvancadoOpen] = useState(recommend);
+
   return (
     <div className="space-y-3">
-      <div className="rounded-2xl border border-ink-200/70 bg-surface p-3 shadow-card">
-        <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
-            <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
-          </label>
-          <CnaeSearchInput value={f.fCnae} onChange={f.setFCnae} label={recommend ? 'CNAEs-alvo' : 'CNAE'} />
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-500">UF</span>
-            <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} placeholder="Ex.: SC, PR" className={inputCls} />
-          </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-500">Porte</span>
-            <select value={f.fPorte} onChange={(e) => f.setFPorte(e.target.value)} className={inputCls}>
-              <option value="">Todos</option>
-              {PORTE_OPTS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}
-            </select>
-          </label>
-        </div>
-        {!recommend && (
-          <div className="mt-2.5 border-t border-ink-100 pt-2.5">
-            <PartidaInput value={f.partida} onChange={f.setPartida} />
-          </div>
-        )}
-        {!recommend && (
-          <div className="mt-2.5 flex flex-wrap items-center gap-3">
-            <label className={cn('inline-flex items-center gap-2 text-xs font-medium text-ink-600', f.territorio.length === 0 && 'opacity-50')}>
-              <input type="checkbox" checked={f.usarAlvo} onChange={(e) => f.setUsarAlvo(e.target.checked)}
-                className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-300" disabled={f.territorio.length === 0} />
-              Restringir ao território
-              {f.territorio.length > 0 && <span className="text-ink-400">({f.territorio.length} municípios)</span>}
+      <div className="rounded-2xl border border-ink-200/70 bg-surface shadow-card">
+        <FilterSection title="Filtros" open={basicoOpen} onToggle={() => setBasicoOpen((v) => !v)}>
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
+              <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
             </label>
-            <span className="text-xs text-ink-400">UF da tela sobrescreve o território.</span>
-            <div className="ml-auto">
-              <Btn size="sm" variant="ghost" type="button" onClick={f.limpar}>Limpar</Btn>
-            </div>
+            <CnaeSearchInput value={f.fCnae} onChange={f.setFCnae} label={recommend ? 'CNAEs-alvo' : 'CNAE'} />
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-500">UF</span>
+              <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} placeholder="Ex.: SC, PR" className={inputCls} />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-ink-500">Porte</span>
+              <select value={f.fPorte} onChange={(e) => f.setFPorte(e.target.value)} className={inputCls}>
+                <option value="">Todos</option>
+                {PORTE_OPTS.map((p) => <option key={p.v} value={p.v}>{p.l}</option>)}
+              </select>
+            </label>
           </div>
-        )}
+
+          {/* Avançado aninhado dentro do básico */}
+          <div className="mt-2.5">
+            <FilterSection title="Filtros avançados" open={avancadoOpen} onToggle={() => setAvancadoOpen((v) => !v)} nested>
+              {recommend ? (
+                <RecommendConfig f={f} />
+              ) : (
+                <div className="space-y-2.5">
+                  <PartidaInput value={f.partida} onChange={f.setPartida} />
+                  <div className="flex flex-wrap items-center gap-3 border-t border-ink-100 pt-2.5">
+                    <label className={cn('inline-flex items-center gap-2 text-xs font-medium text-ink-600', f.territorio.length === 0 && 'opacity-50')}>
+                      <input type="checkbox" checked={f.usarAlvo} onChange={(e) => f.setUsarAlvo(e.target.checked)}
+                        className="h-4 w-4 rounded border-ink-300 text-brand-600 focus:ring-brand-300" disabled={f.territorio.length === 0} />
+                      Restringir ao território
+                      {f.territorio.length > 0 && <span className="text-ink-400">({f.territorio.length} municípios)</span>}
+                    </label>
+                    <span className="text-xs text-ink-400">UF da tela sobrescreve o território.</span>
+                    <div className="ml-auto">
+                      <Btn size="sm" variant="ghost" type="button" onClick={f.limpar}>Limpar</Btn>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </FilterSection>
+          </div>
+        </FilterSection>
       </div>
-      {recommend && <RecommendConfig f={f} />}
     </div>
   );
 }
