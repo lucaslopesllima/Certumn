@@ -66,12 +66,13 @@ export function recommendRoutes(app: FastifyInstance): void {
           q: { type: 'string' },
           cnae: { type: 'string' },   // CNAEs-alvo (fit em tiers) — csv
           munis: { type: 'string' },  // território: ids de município — csv
-          raio: { type: 'integer', minimum: 0 }, // raio km (opcional)
           uf: { type: 'string' },
           porte: { type: 'string' },
           w_cnae: { type: 'number', minimum: 0, maximum: 1 },
           w_prox: { type: 'number', minimum: 0, maximum: 1 },
           w_porte: { type: 'number', minimum: 0, maximum: 1 },
+          partida_lat: { type: 'number', minimum: -90, maximum: 90 },   // origem da proximidade
+          partida_lon: { type: 'number', minimum: -180, maximum: 180 },
         },
       },
     },
@@ -79,13 +80,14 @@ export function recommendRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const query = req.query as {
       limit?: number; offset?: number; q?: string; cnae?: string; munis?: string;
-      raio?: number; uf?: string; porte?: string; w_cnae?: number; w_prox?: number; w_porte?: number;
+      uf?: string; porte?: string; w_cnae?: number; w_prox?: number; w_porte?: number;
+      partida_lat?: number; partida_lon?: number;
     };
     const { limit = 20, offset = 0 } = query;
     const filters = parseFilters(query);
 
     // Config da recomendação vem do filtro da tela (sem perfil server-side):
-    // território (municípios) + CNAEs-alvo + raio + pesos.
+    // território (municípios) + CNAEs-alvo + pesos.
     const municipios = parseInts(query.munis);
     if (municipios.length === 0) {
       return reply.code(400).send({ error: 'defina o território (municípios) na busca' });
@@ -93,8 +95,9 @@ export function recommendRoutes(app: FastifyInstance): void {
     const profile: RecommendProfile = {
       cnaes_alvo: parseInts(query.cnae),
       territorio_municipios: municipios,
-      territorio_raio_km: typeof query.raio === 'number' && query.raio > 0 ? query.raio : null,
       pesos: parsePesos(query),
+      partida: typeof query.partida_lat === 'number' && typeof query.partida_lon === 'number'
+        ? { lat: query.partida_lat, lon: query.partida_lon } : null,
     };
 
     const tiers = await cnaeTiers(profile.cnaes_alvo ?? []);

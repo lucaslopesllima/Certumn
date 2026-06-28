@@ -137,7 +137,7 @@ function Tick({ m }: { m: WaMessage }): React.JSX.Element | null {
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
 // Shell de modal (mesmo padrão de sampleModal): overlay + card centralizado.
-function Overlay({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }): React.JSX.Element {
+function Overlay({ title, onClose, children, bodyClassName }: { title: string; onClose: () => void; children: ReactNode; bodyClassName?: string }): React.JSX.Element {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
       <div className="flex max-h-[90vh] w-full max-w-md flex-col rounded-2xl border border-ink-200 bg-surface shadow-pop" onClick={(e) => e.stopPropagation()}>
@@ -145,7 +145,7 @@ function Overlay({ title, onClose, children }: { title: string; onClose: () => v
           <h2 className="text-base font-semibold text-ink-800">{title}</h2>
           <button onClick={onClose} className="rounded-lg p-1 text-ink-400 hover:bg-ink-100"><Icon name="x" size={18} /></button>
         </div>
-        <div className="space-y-3 overflow-auto p-4">{children}</div>
+        <div className={cn('space-y-3 overflow-auto p-4', bodyClassName)}>{children}</div>
       </div>
     </div>
   );
@@ -186,7 +186,7 @@ function LinkModal({ chatId, current, onClose, onLinked }: { chatId: number; cur
     } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao vincular'); }
   };
   return (
-    <Overlay title="Vincular a uma empresa" onClose={onClose}>
+    <Overlay title="Vincular a uma empresa" onClose={onClose} bodyClassName="min-h-[420px]">
       <p className="text-sm text-ink-500">Vincule a conversa a uma empresa da base para criar pedidos e ver o cliente no funil.</p>
       <CompanySearch onPick={(c: CompanyHit) => void link(c.id)} />
       {current.company_id != null && (

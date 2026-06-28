@@ -36,7 +36,7 @@ describe('fuelEstimate', () => {
 describe('buildRecommendQuery', () => {
   const base: RecommendArgs = {
     orgId: 1,
-    profile: { cnaes_alvo: [4781400], territorio_municipios: [3550308], territorio_raio_km: null, pesos: {} },
+    profile: { cnaes_alvo: [4781400], territorio_municipios: [3550308], pesos: {} },
     limit: 20, offset: 0,
     divisoesAlvo: [47], secoesAlvo: ['G'], pruneDivisoes: [45, 46, 47],
   };
@@ -48,22 +48,28 @@ describe('buildRecommendQuery', () => {
     expect(params[3]).toBe(150_000); // norm default
   });
 
-  it('modo raio usa ST_DWithin e normaliza pelo raio', () => {
-    const { text, params } = buildRecommendQuery({
-      ...base,
-      profile: { ...base.profile, territorio_raio_km: 50, pesos: { cnae: 0.7, proximidade: 0.2, porte: 0.1 } },
-    });
-    expect(text).toContain('ST_DWithin(c.geom, centro.g, $4)');
-    expect(params[3]).toBe(50_000);
-    expect(params[4]).toBe(0.7);
-  });
-
   it('a poda por divisões dos CNAEs-alvo entra como parâmetro (e não deixa $ órfão)', () => {
     const { text, params } = buildRecommendQuery(base);
-    expect(text).toContain('c.cnae_divisao = ANY($13::smallint[])');
-    expect(params[12]).toEqual(base.pruneDivisoes);
+    expect(text).toContain('c.cnae_divisao = ANY($15::smallint[])'); // $13/$14 = partida lat/lon
+    expect(params[14]).toEqual(base.pruneDivisoes);
     // todo parâmetro precisa estar referenciado no SQL (42P18 se sobrar)
     for (let i = 1; i <= params.length; i++) expect(text).toContain(`$${i}`);
+  });
+
+  it('sem partida -> $13/$14 nulos e proximidade pelo centro do território', () => {
+    const { params } = buildRecommendQuery(base);
+    expect(params[12]).toBeNull();
+    expect(params[13]).toBeNull();
+  });
+
+  it('partida define a origem da proximidade (lat/lon em $13/$14)', () => {
+    const { text, params } = buildRecommendQuery({
+      ...base,
+      profile: { ...base.profile, partida: { lat: -26.9, lon: -49.1 } },
+    });
+    expect(params[12]).toBe(-26.9);
+    expect(params[13]).toBe(-49.1);
+    expect(text).toContain('ST_Distance(pt.g, origem.g, false)');
   });
 
   it('filtros uf/porte/q com dígitos geram predicados extras (incl. cnpj LIKE)', () => {

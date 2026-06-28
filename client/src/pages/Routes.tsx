@@ -7,6 +7,7 @@ import { Btn, Badge, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard,
 import { Icon } from '../lib/icons.tsx';
 import { brl, maskPlaca } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { loadPartida, type Partida } from '../lib/companyFilter.tsx';
 
 // Navega até um ponto único. Origem omitida de propósito → no celular o Maps usa
 // o GPS atual como ponto de partida; no desktop abre a aba com o destino.
@@ -78,6 +79,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
   const [result, setResult] = useState<OptimizeResult | null>(null);
   const [openedId, setOpenedId] = useState<number | null>(null);
   const [saved, setSaved] = useState<SavedRoute[]>([]);
+  const [partida, setPartida] = useState<Partida | null>(loadPartida());
   const [prompt, setPrompt] = useState<PromptState | null>(null);
   const nomePadraoData = (): string => new Date().toLocaleDateString('pt-BR');
   const hojeIso = (): string => new Date().toISOString().slice(0, 10);
@@ -116,6 +118,8 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
         company_ids: [...sel],
         vehicle_id: vehicleId === '' ? null : vehicleId,
         preco_litro: preco.trim() ? Number(preco.replace(',', '.')) : null,
+        origem_lat: partida?.lat ?? null,
+        origem_lon: partida?.lon ?? null,
       };
       const r = await api.post<OptimizeResult>('/api/routes/optimize', body);
       setResult(r);
@@ -319,6 +323,17 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             <input value={preco} onChange={(e) => setPreco(e.target.value)} inputMode="decimal" placeholder="ex.: 6,19"
               className="w-full rounded-xl border border-ink-200 bg-surface px-3 py-2 text-sm outline-none focus:border-brand-400" />
             <p className="mt-1 text-[11px] text-ink-400">Vazio usa o preço cadastrado no veículo.</p>
+          </div>
+          <div className="rounded-xl bg-ink-50 px-3 py-2 text-[11px] text-ink-500 dark:bg-ink-800/40">
+            <span className="font-semibold text-ink-600">Partida: </span>
+            {partida ? (
+              <>
+                <span className="text-ink-700">{partida.label}</span>
+                <button onClick={() => setPartida(null)} className="ml-1.5 font-semibold text-brand-600 hover:underline">usar conta</button>
+              </>
+            ) : (
+              <span>endereço da conta · defina um endereço de partida nos filtros da Prospecção</span>
+            )}
           </div>
           <Btn icon="route" onClick={() => void optimize()} disabled={busy || sel.size < 1} className="w-full">
             {busy ? 'Calculando…' : 'Otimizar rota'}

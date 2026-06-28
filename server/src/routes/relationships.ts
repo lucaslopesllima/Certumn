@@ -329,6 +329,18 @@ export function relationshipRoutes(app: FastifyInstance): void {
     // Mudou de stage -> reinicia o relógio de "parado no stage" (alerta do dashboard).
     const curStage = current.stage_id === null ? null : Number(current.stage_id);
     if ('stage_id' in b && (b.stage_id ?? null) !== curStage) sets.push('stage_changed_at = now()');
+
+    // Card chegou na última coluna do funil -> vira cliente automaticamente.
+    // Só quando o move não traz status explícito (não sobrescreve escolha do usuário).
+    if ('stage_id' in b && b.stage_id != null && !('status' in b)) {
+      const last = await one<{ id: string }>(
+        'SELECT id FROM stages WHERE org_id = $1 ORDER BY ordem DESC LIMIT 1', [orgId],
+      );
+      if (last && Number(last.id) === Number(b.stage_id)) {
+        params.push('cliente');
+        sets.push(`status = $${params.length}::rel_status`);
+      }
+    }
     if (sets.length === 0 && !hasContatos && !hasCatalogo) return reply.code(400).send({ error: 'nada para atualizar' });
 
     // UPDATE + syncs numa transação só: falha no meio não deixa estado parcial.

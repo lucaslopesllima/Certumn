@@ -153,10 +153,13 @@ async function computeRoute(
   company_ids: number[],
   vehicle_id: number | null | undefined,
   preco_litro: number | null | undefined,
+  origemOverride?: Geo | null,
 ): Promise<{ ok: true; result: RouteResult } | { ok: false; code: 400 | 404 | 502; error: string }> {
   const ids = [...new Set(company_ids)];
 
-  const origem = await resolveOrigem(orgId);
+  // Origem da rota: endereço de partida informado nos filtros (override) tem
+  // prioridade; senão cai no endereço cadastrado da conta.
+  const origem = origemOverride ?? await resolveOrigem(orgId);
   if (!origem) return { ok: false, code: 400, error: 'Cadastre o endereço da sua conta para definir a origem da rota.' };
 
   // veículo (consumo/preço) — opcional. Validado por org.
@@ -283,14 +286,18 @@ export function routePlanRoutes(app: FastifyInstance): void {
           company_ids: { type: 'array', items: { type: 'integer' }, minItems: 1, maxItems: MAX_STOPS },
           vehicle_id: { type: ['integer', 'null'] },
           preco_litro: { type: ['number', 'null'] },
+          origem_lat: { type: ['number', 'null'] },
+          origem_lon: { type: ['number', 'null'] },
         },
       },
     },
   }, async (req, reply) => {
-    const { company_ids, vehicle_id, preco_litro } = req.body as {
+    const { company_ids, vehicle_id, preco_litro, origem_lat, origem_lon } = req.body as {
       company_ids: number[]; vehicle_id?: number | null; preco_litro?: number | null;
+      origem_lat?: number | null; origem_lon?: number | null;
     };
-    const out = await computeRoute(req, req.auth!.orgId, company_ids, vehicle_id, preco_litro);
+    const origemOverride = origem_lat != null && origem_lon != null ? { lat: origem_lat, lon: origem_lon } : null;
+    const out = await computeRoute(req, req.auth!.orgId, company_ids, vehicle_id, preco_litro, origemOverride);
     if (!out.ok) return reply.code(out.code).send({ error: out.error });
     return out.result;
   });

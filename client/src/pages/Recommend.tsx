@@ -149,13 +149,16 @@ export function Recommend(): React.JSX.Element {
     if (rec.lat == null || rec.lon == null) { toast.error('Empresa sem localização geográfica.'); return; }
     setRoutingId(rec.id);
     try {
-      // origem = endereço do usuário logado (org) no banco, geocodificado;
-      // fallback: geolocalização do navegador.
-      let o: { lat: number; lon: number } | null = null;
-      try {
-        const r = await api.get<{ origem: { lat: number; lon: number } | null }>('/api/account/origem');
-        if (r.origem) o = { lat: r.origem.lat, lon: r.origem.lon };
-      } catch { /* ignora, tenta fallback */ }
+      // origem: 1) endereço de partida definido nos filtros; 2) endereço da org
+      // no banco, geocodificado; 3) geolocalização do navegador.
+      let o: { lat: number; lon: number } | null =
+        filter.partida ? { lat: filter.partida.lat, lon: filter.partida.lon } : null;
+      if (!o) {
+        try {
+          const r = await api.get<{ origem: { lat: number; lon: number } | null }>('/api/account/origem');
+          if (r.origem) o = { lat: r.origem.lat, lon: r.origem.lon };
+        } catch { /* ignora, tenta fallback */ }
+      }
       if (!o) {
         if (!navigator.geolocation) { toast.error('Cadastre seu endereço em Configurações (conta) para traçar rotas.'); return; }
         const pos = await new Promise<GeolocationPosition>((res, rej) =>
@@ -199,7 +202,6 @@ export function Recommend(): React.JSX.Element {
     try {
       const qs = new URLSearchParams({ limit: String(LIMIT), offset: String(off) });
       qs.set('munis', territorioIds.join(','));
-      if (filter.raio !== '' && Number(filter.raio) > 0) qs.set('raio', String(filter.raio));
       qs.set('w_cnae', String(filter.pesos.cnae));
       qs.set('w_prox', String(filter.pesos.proximidade));
       qs.set('w_porte', String(filter.pesos.porte));
@@ -207,6 +209,7 @@ export function Recommend(): React.JSX.Element {
       if (filter.fCnae.trim()) qs.set('cnae', filter.fCnae.trim());
       if (filter.fUf.trim()) qs.set('uf', filter.fUf.trim());
       if (filter.fPorte) qs.set('porte', filter.fPorte);
+      if (filter.partida) { qs.set('partida_lat', String(filter.partida.lat)); qs.set('partida_lon', String(filter.partida.lon)); }
       const r = await api.get<{ results: Recommendation[]; page: { count: number } }>(
         `/api/recommend?${qs.toString()}`, { signal: ac.signal },
       );
@@ -233,8 +236,9 @@ export function Recommend(): React.JSX.Element {
     const t = setTimeout(() => { void load(0); }, 350);
     return () => clearTimeout(t);
     /* eslint-disable-next-line react-hooks/exhaustive-deps */
-  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte, territorioIds.join(','), filter.raio,
-    filter.pesos.cnae, filter.pesos.proximidade, filter.pesos.porte]);
+  }, [filter.fq, filter.fCnae, filter.fUf, filter.fPorte, territorioIds.join(','),
+    filter.pesos.cnae, filter.pesos.proximidade, filter.pesos.porte,
+    filter.partida?.lat, filter.partida?.lon]);
 
   // No mapa, plota só o que já está carregado na lista — sem auto-paginar.
 
@@ -410,12 +414,12 @@ export function Recommend(): React.JSX.Element {
                       <p className="font-semibold">{r.razao_social}</p>
                       <p className="text-xs">Score {(r.score * 100).toFixed(0)} · {r.reason.distancia_km} km</p>
                       <div className="flex flex-nowrap items-center gap-3 pt-0.5">
-                        <button onClick={() => setViewing(Number(r.id))} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline">Ver dados da empresa</button>
+                        <button onClick={() => setViewing(Number(r.id))} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline dark:text-brand-300">Ver dados da empresa</button>
                         {added.has(r.id)
-                          ? <span className="whitespace-nowrap text-xs text-emerald-600">✓ no funil</span>
-                          : <button onClick={() => addToFunnel(r)} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline">+ Adicionar ao funil</button>}
+                          ? <span className="whitespace-nowrap text-xs text-emerald-600 dark:text-emerald-300">✓ no funil</span>
+                          : <button onClick={() => addToFunnel(r)} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline dark:text-brand-300">+ Adicionar ao funil</button>}
                         <button onClick={() => void traceRoute(r)} disabled={routingId === r.id}
-                          className="whitespace-nowrap text-xs font-semibold text-blue-700 underline disabled:opacity-50">
+                          className="whitespace-nowrap text-xs font-semibold text-blue-700 underline disabled:opacity-50 dark:text-blue-300">
                           {routingId === r.id ? 'Traçando…' : 'Traçar rota'}
                         </button>
                       </div>

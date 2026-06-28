@@ -1,5 +1,5 @@
 // Perfil-alvo + municípios, CNAE, companies (+geocode), account, users (reset),
-// auditoria (filtros) e recomendação (município, raio, filtros, exclusão do funil).
+// auditoria (filtros) e recomendação (município, filtros, exclusão do funil).
 // fetch global mockado por URL: nominatim/brasilapi p/ geocode.
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import type { FastifyInstance } from 'fastify';
@@ -257,7 +257,7 @@ describe('recommend', () => {
     expect((after.json() as { results: Rec[] }).results.some((x) => Number(x.id) === cid)).toBe(false);
   });
 
-  it('filtros server-side (q, cnae-alvo, uf, porte) e modo raio', async () => {
+  it('filtros server-side (q, cnae-alvo, uf, porte)', async () => {
     const solo = await register(app, 'rec2');
     const cid = await makeCompany({
       municipioId: SP, lat: -23.55, lon: -46.63, cnae: 4781400,
@@ -276,8 +276,5 @@ describe('recommend', () => {
     expect(has((await inj(solo, 'GET', `/api/recommend?${base}&porte=demais&limit=100`)).json() as Page)).toBe(false);
     // q com dígitos aciona a busca por prefixo de cnpj
     expect((await inj(solo, 'GET', `/api/recommend?${base}&q=99 999&limit=100`)).statusCode).toBe(200);
-
-    // modo raio (50km do centroide do território)
-    expect(has((await inj(solo, 'GET', `/api/recommend?${base}&raio=50&limit=100`)).json() as Page)).toBe(true);
   });
 });

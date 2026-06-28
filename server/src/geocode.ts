@@ -59,3 +59,25 @@ async function brasilapiCep(cep?: string | null): Promise<GeoResult | null> {
 export async function geocodeAddr(a: Addr): Promise<GeoResult | null> {
   return (await nominatim(a)) ?? (await brasilapiCep(a.cep));
 }
+
+// Geocodificação de endereço em texto livre (ex.: "Av. Paulista 1000, São Paulo")
+// -> lat/lon + rótulo normalizado. Usado pela origem de partida das rotas, que o
+// usuário digita à mão nos filtros. Mesmo throttle/User-Agent do Nominatim.
+export async function geocodeText(q: string): Promise<(GeoResult & { label: string }) | null> {
+  const term = q.trim();
+  if (term.length < 3) return null;
+  const params = new URLSearchParams({ format: 'jsonv2', limit: '1', countrycodes: 'br', q: term });
+  try {
+    await throttleNominatim();
+    const resp = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: { 'User-Agent': 'RepresentativeSeller/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
+    });
+    if (!resp.ok) return null;
+    const arr = await resp.json() as { lat: string; lon: string; display_name?: string }[];
+    if (!arr.length) return null;
+    const r = arr[0]!;
+    return { lat: Number(r.lat), lon: Number(r.lon), precisao: 'texto', fonte: 'nominatim', label: r.display_name ?? term };
+  } catch {
+    return null;
+  }
+}

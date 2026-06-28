@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../db.ts';
 import { requireAuth, hashPassword, verifyPassword, signToken } from '../auth.ts';
-import { geocodeAddr } from '../geocode.ts';
+import { geocodeAddr, geocodeText } from '../geocode.ts';
 import { config } from '../config.ts';
 
 const ADDR_FIELDS = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'];
@@ -98,6 +98,17 @@ export function accountRoutes(app: FastifyInstance): void {
     if (!g) return { origem: null };
     await query('UPDATE organizations SET origem_lat = $1, origem_lon = $2 WHERE id = $3', [g.lat, g.lon, orgId]);
     return { origem: { lat: g.lat, lon: g.lon, precisao: g.precisao, cached: false } };
+  });
+
+  // Geocodifica um endereço em texto livre -> lat/lon. Usado pelo "endereço de
+  // partida" das rotas, que o usuário digita nos filtros de busca de empresa.
+  app.get('/api/geocode', {
+    preHandler: requireAuth,
+    schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 3 } } } },
+  }, async (req) => {
+    const { q } = req.query as { q: string };
+    const g = await geocodeText(q);
+    return { geocode: g ? { lat: g.lat, lon: g.lon, label: g.label } : null };
   });
 
   app.post('/api/account/password', {

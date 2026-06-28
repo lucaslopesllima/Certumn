@@ -81,7 +81,9 @@ export function Kanban(): React.JSX.Element {
     if (!card || card.stage_id === stageId) return;
     setCards((cs) => cs.map((c) => (c.id === cardId ? { ...c, stage_id: stageId } : c))); // optimistic
     try {
-      await api.patch(`/api/relationships/${cardId}`, { stage_id: stageId });
+      // Server pode virar status='cliente' ao chegar na última coluna -> reflete na hora.
+      const r = await api.patch<{ relationship: KanbanCard }>(`/api/relationships/${cardId}`, { stage_id: stageId });
+      setCards((cs) => cs.map((c) => (c.id === cardId ? { ...c, status: r.relationship.status } : c)));
     } catch {
       void load(); // revert from server on failure
       toast.error('Não foi possível mover o card.');

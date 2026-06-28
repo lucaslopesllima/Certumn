@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.ts';
 import type { Municipio } from './types.ts';
-import { maskSearchCNPJ } from './format.ts';
+import { maskSearchCNPJ, maskCEP } from './format.ts';
 import { Btn, cn } from './ui.tsx';
 import { Icon } from './icons.tsx';
+import { Cnae, seedCnae } from './cnae.tsx';
 
 // Filtro de empresas reutilizado no Funil e na Prospecção (Recomendadas).
 // No modo recommend, a barra também guarda a configuração da recomendação
-// (território, raio e pesos do score) — que antes vinha do perfil-alvo e agora
+// (território, partida e pesos do score) — que antes vinha do perfil-alvo e agora
 // vive aqui, persistida no navegador e enviada ao /api/recommend a cada busca.
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -22,9 +23,14 @@ const PORTE_OPTS = [
 export interface Pesos { cnae: number; proximidade: number; porte: number }
 export const DEFAULT_PESOS: Pesos = { cnae: 0.5, proximidade: 0.3, porte: 0.2 };
 
+// Endereço de partida das rotas: origem que o usuário define à mão nos filtros,
+// geocodificada para lat/lon. Sobrescreve o endereço da conta nos cálculos de
+// distância/rota. Compartilhada entre telas (Prospecção + Planejador).
+export interface Partida { label: string; lat: number; lon: number }
+
 // Config da recomendação compartilhada entre telas (busca + mapa de cobertura).
 // Guardada fora do filtro por-tela porque o território é um conceito global.
-interface RecoCfg { munis: Municipio[]; raio: number | ''; pesos: Pesos }
+interface RecoCfg { munis: Municipio[]; pesos: Pesos; partida: Partida | null }
 const RECO_KEY = 'companyFilter:reco';
 
 function loadRecoCfg(): RecoCfg {
@@ -32,15 +38,20 @@ function loadRecoCfg(): RecoCfg {
     const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(RECO_KEY) : null;
     if (raw) {
       const p = JSON.parse(raw) as Partial<RecoCfg>;
-      return { munis: p.munis ?? [], raio: p.raio ?? '', pesos: { ...DEFAULT_PESOS, ...p.pesos } };
+      return { munis: p.munis ?? [], pesos: { ...DEFAULT_PESOS, ...p.pesos }, partida: p.partida ?? null };
     }
   } catch { /* storage indisponível */ }
-  return { munis: [], raio: '', pesos: { ...DEFAULT_PESOS } };
+  return { munis: [], pesos: { ...DEFAULT_PESOS }, partida: null };
 }
 
 // Lido por outras telas (ex.: mapa de cobertura) que precisam do mesmo território.
 export function loadTerritorioIds(): number[] {
   return loadRecoCfg().munis.map((m) => m.id);
+}
+
+// Lido pelo Planejador de rota para usar a mesma origem definida nos filtros.
+export function loadPartida(): Partida | null {
+  return loadRecoCfg().partida;
 }
 
 // Mínimo que um item precisa expor para ser filtrável.
@@ -57,8 +68,8 @@ export interface CompanyFilter {
   usarAlvo: boolean; setUsarAlvo: (b: boolean) => void;
   // config da recomendação (modo recommend)
   territorio: Municipio[]; setTerritorio: (m: Municipio[]) => void;
-  raio: number | ''; setRaio: (r: number | '') => void;
   pesos: Pesos; setPesos: (p: Pesos) => void;
+  partida: Partida | null; setPartida: (p: Partida | null) => void;
   filtroAtivo: boolean;
   limpar: () => void;
   apply: <T extends FilterableCompany>(items: T[]) => T[];
@@ -85,8 +96,8 @@ export function useCompanyFilter(storageKey = 'default'): CompanyFilter {
   const [fPorte, setFPorte] = useState(saved?.fPorte ?? '');
   const [usarAlvo, setUsarAlvo] = useState(saved?.usarAlvo ?? true);
   const [territorio, setTerritorio] = useState<Municipio[]>(reco.munis);
-  const [raio, setRaio] = useState<number | ''>(reco.raio);
   const [pesos, setPesos] = useState<Pesos>(reco.pesos);
+  const [partida, setPartida] = useState<Partida | null>(reco.partida);
 
   // Persiste o estado do filtro a cada mudança.
   useEffect(() => {
@@ -98,9 +109,9 @@ export function useCompanyFilter(storageKey = 'default'): CompanyFilter {
   // Persiste a config da recomendação (compartilhada).
   useEffect(() => {
     try {
-      localStorage.setItem(RECO_KEY, JSON.stringify({ munis: territorio, raio, pesos }));
+      localStorage.setItem(RECO_KEY, JSON.stringify({ munis: territorio, pesos, partida }));
     } catch { /* storage indisponível */ }
-  }, [territorio, raio, pesos]);
+  }, [territorio, pesos, partida]);
 
   const muniIds = useMemo(() => territorio.map((m) => m.id), [territorio]);
 
@@ -131,9 +142,169 @@ export function useCompanyFilter(storageKey = 'default'): CompanyFilter {
 
   return {
     fq, setFq, fCnae, setFCnae, fUf, setFUf, fPorte, setFPorte, usarAlvo, setUsarAlvo,
-    territorio, setTerritorio, raio, setRaio, pesos, setPesos,
+    territorio, setTerritorio, pesos, setPesos, partida, setPartida,
     filtroAtivo, limpar, apply,
   };
+}
+
+// Busca de CNAE por TEXTO ou código: digita "padaria" ou "478" e resolve via
+// /api/cnae/search (sinônimos + descrição + trigrama). Guarda só os códigos em
+// fCnae — formato que o filtro client-side e o /api/recommend já consomem.
+interface CnaeHit { codigo: number; descricao: string; secao: string; divisao: number }
+interface CnaeGrupo { divisao: number; secao: string; itens: CnaeHit[] }
+
+function CnaeSearchInput({ value, onChange, label }: { value: string; onChange: (s: string) => void; label: string }): React.JSX.Element {
+  const [q, setQ] = useState('');
+  const [grupos, setGrupos] = useState<CnaeGrupo[]>([]);
+  const [open, setOpen] = useState(false);
+  const deb = useRef<number | undefined>(undefined);
+
+  const codes = useMemo(() => parseCodes(value), [value]);
+
+  useEffect(() => {
+    if (deb.current) clearTimeout(deb.current);
+    const term = q.trim();
+    if (term.length < 2) { setGrupos([]); return; }
+    deb.current = window.setTimeout(async () => {
+      const r = await api.get<{ grupos: CnaeGrupo[] }>(`/api/cnae/search?q=${encodeURIComponent(term)}`).catch(() => null);
+      setGrupos(r?.grupos ?? []);
+      setOpen(true);
+    }, 250);
+  }, [q]);
+
+  const add = (code: number, descricao?: string): void => {
+    if (!Number.isFinite(code) || codes.includes(code)) { setQ(''); setGrupos([]); return; }
+    if (descricao) seedCnae(code, descricao);
+    onChange([...codes, code].join(', '));
+    setQ(''); setGrupos([]); setOpen(false);
+  };
+  const remove = (code: number): void => onChange(codes.filter((c) => c !== code).join(', '));
+
+  // Enter com dígitos puros adiciona o código direto, sem depender da busca.
+  const onKey = (e: React.KeyboardEvent): void => {
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    const digits = onlyDigits(q);
+    if (digits) add(Number(digits));
+  };
+
+  return (
+    <label className="block">
+      <span className="mb-1 block text-xs font-medium text-ink-500">{label}</span>
+      <div className="relative">
+        <input
+          value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
+          onFocus={() => { if (grupos.length) setOpen(true); }}
+          onBlur={() => setTimeout(() => setOpen(false), 150)}
+          placeholder="Atividade (ex.: padaria) ou código" className={inputCls}
+        />
+        {open && grupos.length > 0 && (
+          <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
+            {grupos.map((g) => (
+              <div key={g.divisao}>
+                <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Divisão {g.divisao} · seção {g.secao}</div>
+                {g.itens.map((it) => (
+                  <button key={it.codigo} type="button" onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => add(it.codigo, it.descricao)} disabled={codes.includes(it.codigo)}
+                    className="flex w-full items-start gap-2 px-3 py-1.5 text-left text-sm hover:bg-ink-50 disabled:opacity-40">
+                    <span className="shrink-0 font-mono text-xs text-ink-400">{it.codigo}</span>
+                    <span className="text-ink-700">{it.descricao}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        )}
+        {open && q.trim().length >= 2 && grupos.length === 0 && (
+          <div className="absolute z-20 mt-1 w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-400 shadow-pop">
+            Nenhum CNAE encontrado para “{q.trim()}”.
+          </div>
+        )}
+      </div>
+      {codes.length > 0 && (
+        <div className="mt-1.5 flex flex-wrap gap-1.5">
+          {codes.map((c) => (
+            <button key={c} type="button" onClick={() => remove(c)}
+              className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2 py-0.5 text-xs font-medium text-brand-700 ring-1 ring-inset ring-brand-200 hover:bg-brand-100">
+              <span className="font-mono">{c}</span> <Cnae code={c} /> <Icon name="x" size={11} />
+            </button>
+          ))}
+        </div>
+      )}
+    </label>
+  );
+}
+
+// Endereço de partida das rotas: usuário digita um endereço livre, geocodifica
+// via /api/geocode e guarda lat/lon. Vira a origem dos cálculos de distância/rota
+// (sobrescreve o endereço da conta). Vazio = usa o endereço cadastrado da conta.
+function PartidaInput({ value, onChange }: { value: Partida | null; onChange: (p: Partida | null) => void }): React.JSX.Element {
+  const [cep, setCep] = useState('');
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [cepBusy, setCepBusy] = useState(false);
+  const [erro, setErro] = useState('');
+
+  // CEP -> endereço (ViaCEP). Preenche o campo de endereço; o usuário ajusta o
+  // número se quiser e confirma em "Definir" (geocodificação Nominatim).
+  const buscarCep = async (raw: string): Promise<void> => {
+    const digits = onlyDigits(raw);
+    if (digits.length !== 8) return;
+    setCepBusy(true); setErro('');
+    try {
+      const resp = await fetch(`https://viacep.com.br/ws/${digits}/json/`);
+      const j = await resp.json() as { logradouro?: string; bairro?: string; localidade?: string; uf?: string; erro?: boolean };
+      if (j.erro) { setErro('CEP não encontrado.'); return; }
+      const addr = [j.logradouro, j.bairro, [j.localidade, j.uf].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+      setQ(addr);
+    } catch {
+      setErro('Falha ao buscar o CEP.');
+    } finally { setCepBusy(false); }
+  };
+
+  const buscar = async (): Promise<void> => {
+    const term = q.trim();
+    if (term.length < 3) { setErro('Digite um endereço (mín. 3 caracteres).'); return; }
+    setBusy(true); setErro('');
+    try {
+      const r = await api.get<{ geocode: { lat: number; lon: number; label: string } | null }>(
+        `/api/geocode?q=${encodeURIComponent(term)}`);
+      if (!r.geocode) { setErro('Endereço não encontrado.'); return; }
+      onChange({ label: r.geocode.label, lat: r.geocode.lat, lon: r.geocode.lon });
+      setCep(''); setQ('');
+    } catch {
+      setErro('Falha ao localizar o endereço.');
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <div className="block">
+      <span className="text-xs font-semibold text-ink-600">Endereço de partida</span>
+      {value ? (
+        <div className="mt-1.5 flex items-start gap-2 rounded-xl border border-brand-200 bg-brand-50 px-3 py-2">
+          <Icon name="mapPin" size={15} className="mt-0.5 shrink-0 text-brand-600" />
+          <span className="min-w-0 flex-1 text-xs text-brand-900">{value.label}</span>
+          <button type="button" onClick={() => onChange(null)} title="Remover endereço de partida"
+            className="shrink-0 text-brand-700 hover:text-rose-600"><Icon name="x" size={14} /></button>
+        </div>
+      ) : (
+        <div className="mt-1.5 flex flex-col gap-2 sm:flex-row">
+          <input value={cep} inputMode="numeric"
+            onChange={(e) => { const v = maskCEP(e.target.value); setCep(v); setErro(''); if (onlyDigits(v).length === 8) void buscarCep(v); }}
+            onBlur={(e) => void buscarCep(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void buscarCep(cep); } }}
+            placeholder={cepBusy ? 'Buscando…' : 'CEP'} className={cn(inputCls, 'sm:w-32 shrink-0')} />
+          <input value={q} onChange={(e) => { setQ(e.target.value); setErro(''); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void buscar(); } }}
+            placeholder="Ex.: Rua XV de Novembro 100, Blumenau SC" className={cn(inputCls, 'flex-1')} />
+          <Btn size="sm" type="button" variant="soft" onClick={() => void buscar()} disabled={busy} className="shrink-0">
+            {busy ? '…' : 'Definir'}
+          </Btn>
+        </div>
+      )}
+      {erro && <p className="mt-1 text-[11px] text-rose-600">{erro}</p>}
+    </div>
+  );
 }
 
 export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; recommend?: boolean }): React.JSX.Element {
@@ -145,10 +316,7 @@ export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; r
             <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
             <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
           </label>
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-ink-500">{recommend ? 'CNAEs-alvo (códigos)' : 'CNAE (códigos)'}</span>
-            <input value={f.fCnae} onChange={(e) => f.setFCnae(e.target.value)} placeholder="Ex.: 4781400, 4782201" className={inputCls} />
-          </label>
+          <CnaeSearchInput value={f.fCnae} onChange={f.setFCnae} label={recommend ? 'CNAEs-alvo' : 'CNAE'} />
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">UF</span>
             <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} placeholder="Ex.: SC, PR" className={inputCls} />
@@ -161,6 +329,11 @@ export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; r
             </select>
           </label>
         </div>
+        {!recommend && (
+          <div className="mt-2.5 border-t border-ink-100 pt-2.5">
+            <PartidaInput value={f.partida} onChange={f.setPartida} />
+          </div>
+        )}
         {!recommend && (
           <div className="mt-2.5 flex flex-wrap items-center gap-3">
             <label className={cn('inline-flex items-center gap-2 text-xs font-medium text-ink-600', f.territorio.length === 0 && 'opacity-50')}>
@@ -182,7 +355,7 @@ export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; r
 }
 
 // Painel de configuração do score (modo recommend): território (municípios + UF
-// inteiro), raio opcional e pesos. Migrado da antiga tela de Perfil-alvo.
+// inteiro), endereço de partida e pesos. Migrado da antiga tela de Perfil-alvo.
 function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
   const [munQ, setMunQ] = useState('');
   const [munResults, setMunResults] = useState<Municipio[]>([]);
@@ -228,7 +401,7 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
       {/* Território */}
       <div className="rounded-2xl border border-ink-200/70 bg-surface p-3 shadow-card">
         <h4 className="text-sm font-semibold text-ink-900">Território</h4>
-        <p className="mt-0.5 text-xs text-ink-400">Onde a recomendação busca. O raio (km) é opcional — recomenda por proximidade ao centro do território.</p>
+        <p className="mt-0.5 text-xs text-ink-400">Onde a recomendação busca. A proximidade é medida a partir do endereço de partida (ou do centro do território).</p>
 
         <p className="mb-1.5 mt-3 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Por estado</p>
         <div className="flex flex-wrap gap-1">
@@ -291,11 +464,9 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
           <p className="mt-3 text-xs text-ink-400">Nenhum município selecionado — defina o território para buscar.</p>
         )}
 
-        <label className="mt-4 block">
-          <span className="text-xs font-semibold text-ink-600">Raio (km) — opcional</span>
-          <input type="number" min={0} value={f.raio} onChange={(e) => f.setRaio(e.target.value === '' ? '' : Number(e.target.value))}
-            placeholder="ex.: 50" className={cn(inputCls, 'mt-1 w-32')} />
-        </label>
+        <div className="mt-4">
+          <PartidaInput value={f.partida} onChange={f.setPartida} />
+        </div>
       </div>
 
       {/* Pesos do score */}

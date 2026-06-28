@@ -1,6 +1,5 @@
-// Builds the single recommendation SQL (no N+1). Two territory modes:
-//  - municipio: c.municipio_id = ANY(territorio)        -> partial btree companies_municipio_ativa_idx
-//  - radius:    ST_DWithin(geom, centroide, raio)        -> partial GIST companies_geom_ativa_idx
+// Builds the single recommendation SQL (no N+1). Território por município:
+//  c.municipio_id = ANY(territorio) -> partial btree companies_municipio_ativa_idx
 // CNAE fit tiers (classe=1.0 / divisao=0.6 / secao=0.3) come from arrays computed app-side
 // (divisoesAlvo/secoesAlvo/pruneDivisoes). Eram CTEs, mas CTE vira "hashed SubPlan" no
 // planner e a poda por divisão só rodava DEPOIS do fetch do heap (centenas de milhares de
@@ -9,8 +8,10 @@
 export interface RecommendProfile {
   cnaes_alvo: number[];
   territorio_municipios: number[];
-  territorio_raio_km: number | null;
   pesos: { cnae?: number; proximidade?: number; porte?: number };
+  // Endereço de partida (origem das rotas) definido nos filtros. Quando presente,
+  // a proximidade é medida a partir daqui em vez do centroide do território.
+  partida?: { lat: number; lon: number } | null;
 }
 
 export interface RecommendFilters {
@@ -38,8 +39,7 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
   const { orgId, profile, limit, offset } = args;
   const cnaes = profile.cnaes_alvo ?? [];
   const municipios = profile.territorio_municipios ?? [];
-  const radiusMode = !!profile.territorio_raio_km && profile.territorio_raio_km > 0;
-  const normMeters = radiusMode ? profile.territorio_raio_km! * 1000 : DEFAULT_NORM_M;
+  const normMeters = DEFAULT_NORM_M;
 
   const wCnae = profile.pesos?.cnae ?? 0.5;
   const wProx = profile.pesos?.proximidade ?? 0.3;
@@ -47,20 +47,19 @@ export function buildRecommendQuery(args: RecommendArgs): { text: string; params
 
   // $1 cnaes, $2 municipios, $3 orgId, $4 normMeters, $5 wCnae, $6 wProx, $7 wPorte,
   // $8 capitalRef, $9 limit, $10 offset, $11 divisoesAlvo, $12 secoesAlvo,
-  // $13+ poda/filtros (só os usados — parâmetro sem referência no SQL dá 42P18)
+  // $13 partidaLat, $14 partidaLon, $15+ poda/filtros (param sem referência dá 42P18)
+  const partida = profile.partida ?? null;
   const params: unknown[] = [
     cnaes, municipios, orgId, normMeters, wCnae, wProx, wPorte, CAPITAL_REF, limit, offset,
-    args.divisoesAlvo, args.secoesAlvo,
+    args.divisoesAlvo, args.secoesAlvo, partida ? partida.lat : null, partida ? partida.lon : null,
   ];
 
-  const territoryPredicate = radiusMode
-    ? `ST_DWithin(c.geom, centro.g, $4)`
-    : `c.municipio_id = ANY($2::int[])`;
+  const territoryPredicate = `c.municipio_id = ANY($2::int[])`;
 
   // Filtros server-side: viram WHERE sobre TODA a base (dentro do território/alvo),
   // não só a página carregada.
   const f = args.filters ?? {};
-  let p = params.length; // último índice usado (=12)
+  let p = params.length; // último índice usado (=14)
   const extra: string[] = [];
 
   // Candidatos podados pelas divisões das seções-alvo (sem CNAE-alvo, varre o território todo).
@@ -85,12 +84,20 @@ WITH centro AS (
   SELECT ST_Centroid(ST_Collect(geom::geometry))::geography AS g
   FROM municipios WHERE id = ANY($2::int[])
 ),
+origem AS (
+  -- referência da proximidade: endereço de partida (se informado) ou centroide do território
+  SELECT CASE WHEN $13::float8 IS NOT NULL
+              THEN ST_SetSRID(ST_MakePoint($14::float8, $13::float8), 4326)::geography
+              ELSE (SELECT g FROM centro) END AS g
+),
 cand AS (
   SELECT
     c.id, c.cnpj, c.razao_social, c.nome_fantasia, c.cnae_principal, c.cnae_divisao,
     c.municipio_id, c.uf, c.porte, c.capital_social,
-    ST_Y(c.geom::geometry) AS lat, ST_X(c.geom::geometry) AS lon,
-    ST_Distance(c.geom, centro.g, false) AS dist_m,
+    -- ponto da empresa: cache de geocode (rua/cep — mesma fonte do "Ver no mapa")
+    -- -> geom da empresa -> centroide do município. Sempre traz distância/ponto.
+    ST_Y(pt.g::geometry) AS lat, ST_X(pt.g::geometry) AS lon,
+    ST_Distance(pt.g, origem.g, false) AS dist_m,
     cds.secao AS secao,
     CASE
       WHEN cardinality($1::int[]) = 0 THEN 0::numeric
@@ -103,6 +110,15 @@ cand AS (
      + 0.5 * LEAST(ln(1 + c.capital_social) / ln(1 + $8::numeric), 1)) AS porte_s
   FROM companies c
   CROSS JOIN centro
+  CROSS JOIN origem
+  LEFT JOIN municipios mun ON mun.id = c.municipio_id
+  LEFT JOIN company_geocode gc ON gc.company_id = c.id AND gc.precisao <> 'municipio'
+  LEFT JOIN LATERAL (
+    SELECT COALESCE(
+      CASE WHEN gc.lat IS NOT NULL THEN ST_SetSRID(ST_MakePoint(gc.lon, gc.lat), 4326)::geography END,
+      c.geom, mun.geom
+    ) AS g
+  ) pt ON true
   LEFT JOIN cnae_divisao_secao cds ON cds.divisao = c.cnae_divisao
   WHERE c.situacao_cadastral = 'ativa'
     AND ${territoryPredicate}
