@@ -13,6 +13,15 @@ async function resolveGroupId(orgId: number, groupId: unknown): Promise<number |
   return Number(g.id);
 }
 
+// Um group_id resolvido é de um grupo admin (is_admin=true)? Usado para impedir
+// que não-admin atribua o grupo administrador (escalação de privilégio).
+async function groupIsAdmin(orgId: number, groupId: number): Promise<boolean> {
+  const g = await one<{ is_admin: boolean }>(
+    'SELECT is_admin FROM permission_groups WHERE id = $1 AND org_id = $2', [groupId, orgId],
+  );
+  return !!g?.is_admin;
+}
+
 // Grupo padrão por papel quando o admin não escolhe um: admin → Administrador,
 // demais → Vendedor. Espelha o seed do boot e evita criar usuário sem permissão.
 async function defaultGroupId(orgId: number, role: string): Promise<number | null> {
@@ -72,6 +81,15 @@ export function userRoutes(app: FastifyInstance): void {
       groupId = resolved === undefined ? await defaultGroupId(orgId, role) : resolved;
     } catch { return reply.code(400).send({ error: 'grupo inválido' }); }
 
+    // Escalação de privilégio: só admin pode criar admin ou atribuir grupo admin.
+    // A permissão users.create sozinha (grupo customizado) não basta.
+    if (!req.auth!.isAdmin) {
+      if (role === 'admin') return reply.code(403).send({ error: 'apenas administradores podem criar administradores' });
+      if (groupId != null && await groupIsAdmin(orgId, groupId)) {
+        return reply.code(403).send({ error: 'apenas administradores podem atribuir o grupo administrador' });
+      }
+    }
+
     const rows = await query(
       `INSERT INTO users (org_id, nome, email, senha_hash, role, group_id, must_change_password)
        VALUES ($1,$2,$3,$4,$5,$6,true) RETURNING ${RETURNING_COLS}`,
@@ -109,6 +127,14 @@ export function userRoutes(app: FastifyInstance): void {
     let groupId: number | null | undefined;
     try { groupId = await resolveGroupId(orgId, b.group_id); }
     catch { return reply.code(400).send({ error: 'grupo inválido' }); }
+
+    // Escalação de privilégio: só admin promove a admin ou atribui grupo admin.
+    if (!req.auth!.isAdmin) {
+      if (b.role === 'admin') return reply.code(403).send({ error: 'apenas administradores podem promover a administrador' });
+      if (groupId != null && await groupIsAdmin(orgId, groupId)) {
+        return reply.code(403).send({ error: 'apenas administradores podem atribuir o grupo administrador' });
+      }
+    }
 
     const sets: string[] = [];
     const params: unknown[] = [];

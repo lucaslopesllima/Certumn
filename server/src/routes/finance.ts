@@ -59,13 +59,18 @@ export function financeRoutes(app: FastifyInstance): void {
           from: { type: 'string' },
           to: { type: 'string' },
           user_id: { type: 'integer' },
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 200 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
+          totais: { type: 'boolean' },
         },
       },
     },
   }, async (req) => {
     const orgId = req.auth!.orgId;
     const { kind, status, from, to } = req.query as Record<string, string | undefined>;
-    const userIdQ = (req.query as { user_id?: number }).user_id;
+    const { user_id: userIdQ, limit = 200, offset = 0, totais } = req.query as {
+      user_id?: number; limit?: number; offset?: number; totais?: boolean;
+    };
     const where: string[] = ['f.org_id = $1'];
     const params: unknown[] = [orgId];
     // Escopo por carteira: rep vê só os próprios lançamentos; admin filtra por ?user_id.
@@ -74,11 +79,35 @@ export function financeRoutes(app: FastifyInstance): void {
     if (status) { params.push(status); where.push(`f.status = $${params.length}::finance_status`); }
     if (from) { params.push(from); where.push(`f.vencimento >= $${params.length}`); }
     if (to) { params.push(to); where.push(`f.vencimento <= $${params.length}`); }
+    params.push(limit); const limIdx = params.length;
+    params.push(offset); const offIdx = params.length;
     const entries = await query(
-      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY f.vencimento, f.id`,
+      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY f.vencimento, f.id
+       LIMIT $${limIdx} OFFSET $${offIdx}`,
       params,
     );
-    return { entries };
+    if (!totais) return { entries };
+
+    // ?totais=1: agregado global (só org + carteira, sem os filtros de lista) —
+    // os KPIs da tela não podem depender das linhas paginadas. Somado no banco
+    // em numeric exato; Number() só na borda de saída (display).
+    const tWhere: string[] = ['org_id = $1'];
+    const tParams: unknown[] = [orgId];
+    scopeOwner(req, tWhere, tParams, 'owner_user_id', userIdQ);
+    const rows = await query<{ kind: string; status: string; total: string }>(
+      `SELECT kind, status, COALESCE(SUM(valor), 0) AS total
+       FROM finance_entries
+       WHERE ${tWhere.join(' AND ')} AND status <> 'cancelado'
+       GROUP BY kind, status`,
+      tParams,
+    );
+    const t = { receber_aberto: 0, pagar_aberto: 0, recebido: 0, pago: 0 };
+    for (const r of rows) {
+      const v = Number(r.total);
+      if (r.kind === 'receber') { r.status === 'liquidado' ? (t.recebido += v) : (t.receber_aberto += v); }
+      else { r.status === 'liquidado' ? (t.pago += v) : (t.pagar_aberto += v); }
+    }
+    return { entries, totais: t };
   });
 
   app.post('/api/finance', {

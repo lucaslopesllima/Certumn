@@ -4,12 +4,20 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Finance } from '../src/pages/Finance.tsx';
 import { api } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const entry = (over: Record<string, unknown>): Record<string, unknown> => ({
   id: 1, kind: 'receber', descricao: 'Comissão X', valor: '1000', vencimento: '2099-12-31',
@@ -25,14 +33,26 @@ beforeEach(() => {
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.post).mockReset();
   vi.stubGlobal('alert', vi.fn());
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
   m.get.mockImplementation(async (p: string) => {
-    if (p === '/api/finance') {
-      return { entries: [
-        entry({ id: 1, kind: 'receber', valor: '1000', status: 'pendente' }),
-        entry({ id: 2, kind: 'pagar', valor: '400', status: 'pendente', descricao: 'Aluguel' }),
-        entry({ id: 3, kind: 'receber', valor: '250', status: 'liquidado', descricao: 'Recebida' }),
-        entry({ id: 4, kind: 'pagar', valor: '999', status: 'cancelado', descricao: 'Cancelada' }),
-      ] };
+    // lista paginada no servidor: /api/finance?limit=…&offset=…[&kind=…][&status=…][&totais=1]
+    if (p.startsWith('/api/finance?')) {
+      const qs = new URLSearchParams(p.split('?')[1]);
+      return {
+        entries: [
+          entry({ id: 1, kind: 'receber', valor: '1000', status: 'pendente' }),
+          entry({ id: 2, kind: 'pagar', valor: '400', status: 'pendente', descricao: 'Aluguel' }),
+          entry({ id: 3, kind: 'receber', valor: '250', status: 'liquidado', descricao: 'Recebida' }),
+          entry({ id: 4, kind: 'pagar', valor: '999', status: 'cancelado', descricao: 'Cancelada' }),
+        ],
+        // KPIs agregados do servidor (cancelados já ficam de fora)
+        ...(qs.get('totais') === '1'
+          ? { totais: { receber_aberto: 1000, pagar_aberto: 400, recebido: 250, pago: 0 } }
+          : {}),
+      };
     }
     if (p.startsWith('/api/finance/cashflow')) {
       return { months: 3, semanas: [
@@ -120,7 +140,7 @@ describe('Finance', () => {
 
   it('lançamento vencido ganha badge Vencido', async () => {
     m.get.mockImplementation(async (p: string) =>
-      p === '/api/finance'
+      p.startsWith('/api/finance?')
         ? { entries: [entry({ vencimento: '2020-01-01' })] }
         : p === '/api/kanban' ? { cards: [] } : p === '/api/represented' ? { empresas: [] } : { activities: [] });
     render(<Finance />);

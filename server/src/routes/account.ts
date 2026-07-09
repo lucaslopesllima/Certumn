@@ -36,6 +36,7 @@ export function accountRoutes(app: FastifyInstance): void {
           cidade: { type: ['string', 'null'] },
           uf: { type: ['string', 'null'] },
           email: { type: 'string', minLength: 3 },
+          senha_atual: { type: 'string', minLength: 1 },
           inatividade_dias: { type: 'integer', minimum: 1, maximum: 365 },
         },
       },
@@ -51,8 +52,14 @@ export function accountRoutes(app: FastifyInstance): void {
       await query('UPDATE organizations SET inatividade_dias = $1 WHERE id = $2', [b.inatividade_dias, orgId]);
     }
 
-    // email (login) — único
+    // email (login) — único. Trocar o identificador de login exige a senha atual:
+    // um token roubado sozinho não basta, evitando sequestro/lockout da conta.
     if (typeof b.email === 'string') {
+      const senhaAtual = typeof b.senha_atual === 'string' ? b.senha_atual : '';
+      const cur = await one<{ senha_hash: string }>('SELECT senha_hash FROM users WHERE id = $1', [userId]);
+      if (!cur || !(await verifyPassword(senhaAtual, cur.senha_hash))) {
+        return reply.code(400).send({ error: 'senha atual incorreta' });
+      }
       const email = b.email.trim().toLowerCase();
       const dup = await one('SELECT id FROM users WHERE email = $1 AND id <> $2', [email, userId]);
       if (dup) return reply.code(409).send({ error: 'email já cadastrado' });

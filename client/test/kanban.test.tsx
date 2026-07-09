@@ -4,12 +4,20 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Kanban } from '../src/pages/Kanban.tsx';
 import { api } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const STAGES = [
   { id: 10, nome: 'Prospecção', ordem: 1 },
@@ -21,18 +29,23 @@ const card = (over: Record<string, unknown>): Record<string, unknown> => ({
   data_contato: null, previsao_data: null, updated_at: '',
   razao_social: 'Empresa Um LTDA', nome_fantasia: 'Loja Um', cnpj: '11222333000144',
   cnae_principal: 4781400, municipio_id: 100, uf: 'SP', cidade: 'São Paulo', porte: 'pequeno',
-  representada: null, marca: null, cenario: null, acao: null, contatos: [], catalogo: [], amostras: [], ...over,
+  // /api/kanban manda amostras_count (a lista completa é carregada no modal)
+  representada: null, marca: null, cenario: null, acao: null, contatos: [], catalogo: [], amostras_count: 0, ...over,
 });
 
 beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.patch).mockReset();
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
   m.get.mockImplementation(async (p: string) => {
     if (p === '/api/kanban') {
       return { stages: STAGES, cards: [
         card({ id: 1 }),
         card({ id: 2, razao_social: 'Empresa Dois SA', nome_fantasia: null, stage_id: 11, status: 'cliente', valor_estimado: '2000',
-          amostras: [{ id: 5, produto: 'Produto A', status: 'solicitada' }] }),
+          amostras_count: 1 }),
       ] };
     }
     if (p === '/api/profile') return { profile: null };

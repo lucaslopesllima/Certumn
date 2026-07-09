@@ -48,9 +48,11 @@ beforeEach(() => {
   vi.stubGlobal('confirm', vi.fn(() => true));
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
   });
   m.get.mockImplementation(async (p: string) => {
-    if (p === '/api/orders') {
+    // a página pagina no servidor: /api/orders?limit=…&offset=…&status=…
+    if (p.startsWith('/api/orders?')) {
       return { orders: [
         order({ id: 1, numero: 1, status: 'rascunho', total: '1000' }),
         order({ id: 2, numero: 2, status: 'faturado', total: '500', nf_numero: 'NF-7', company_nome: 'Cliente Dois SA' }),
@@ -74,6 +76,11 @@ describe('Orders', () => {
   it('lista pedidos com status, NF e KPIs (aberto / faturado)', async () => {
     mount();
     expect(await screen.findByText('Cliente Um LTDA')).toBeInTheDocument();
+    // paginação vai no querystring da carga inicial
+    const url = m.get.mock.calls.map((c) => String(c[0])).find((u) => u.startsWith('/api/orders?'))!;
+    const qs = new URLSearchParams(url.split('?')[1]);
+    expect(qs.get('limit')).toBe('100');
+    expect(qs.get('offset')).toBe('0');
     expect(screen.getByText('Rascunho', { selector: 'span' })).toBeInTheDocument();
     expect(screen.getByText('Faturado', { selector: 'span' })).toBeInTheDocument();
     expect(screen.getByText(/NF NF-7/)).toBeInTheDocument();
@@ -88,6 +95,11 @@ describe('Orders', () => {
     await userEvent.selectOptions(screen.getByLabelText('Filtrar por status'), 'faturado');
     expect(screen.queryByText('Cliente Um LTDA')).not.toBeInTheDocument();
     expect(screen.getByText('Cliente Dois SA')).toBeInTheDocument();
+    // o filtro também vai para o servidor (paginado)
+    await waitFor(() => {
+      const urls = m.get.mock.calls.map((c) => String(c[0])).filter((u) => u.startsWith('/api/orders?'));
+      expect(urls.some((u) => new URLSearchParams(u.split('?')[1]).get('status') === 'faturado')).toBe(true);
+    });
   });
 
   it('cria pedido com item do catálogo usando preço da tabela vigente', async () => {
@@ -163,8 +175,10 @@ describe('Orders', () => {
   });
 
   it('vendedor não vê o botão de importação', async () => {
+    // rep sem grupo com orders.import: pode operar pedidos, mas não importar NF
     useAuthMock.mockReturnValue({
       user: { ...admin, role: 'rep' }, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+      can: (c: string) => c !== 'orders.import',
     });
     mount();
     await screen.findByText('Cliente Um LTDA');

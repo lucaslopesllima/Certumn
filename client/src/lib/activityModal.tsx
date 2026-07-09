@@ -88,7 +88,7 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
             </button>
           </div>
           <form onSubmit={submit} className="space-y-3">
-            <input autoFocus value={titulo} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Ligar para cliente" className={inputCls} />
+            <input autoFocus value={titulo} maxLength={120} onChange={(e) => setTitulo(e.target.value)} placeholder="Ex.: Ligar para cliente" className={inputCls} />
             <div className="grid grid-cols-4 gap-1.5">
               {TIPOS.map((t) => (
                 <button key={t.v} type="button" onClick={() => setTipo(t.v)}
@@ -221,11 +221,11 @@ export function VisitModal({ activity, onClose, onSaved }: {
             </label>
             <label className="block">
               <span className="text-xs font-semibold text-ink-600">Próximo passo</span>
-              <input value={proximo} onChange={(e) => setProximo(e.target.value)} placeholder="Ex.: enviar proposta até sexta" className={cn(inputCls, 'mt-1')} />
+              <input value={proximo} maxLength={120} onChange={(e) => setProximo(e.target.value)} placeholder="Ex.: enviar proposta até sexta" className={cn(inputCls, 'mt-1')} />
             </label>
             <label className="block">
               <span className="text-xs font-semibold text-ink-600">Observações</span>
-              <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={3} placeholder="Como foi a visita?" className={cn(inputCls, 'mt-1 resize-none')} />
+              <textarea value={texto} maxLength={2000} onChange={(e) => setTexto(e.target.value)} rows={3} placeholder="Como foi a visita?" className={cn(inputCls, 'mt-1 resize-none')} />
             </label>
             {msg && <p className="text-xs text-amber-600">{msg}</p>}
             <div className="flex justify-end gap-2 pt-1">

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './whatsapp-theme.css';
 import { useSearchParams } from 'react-router-dom';
 import { api, getToken, ApiError } from '../lib/api.ts';
@@ -54,9 +54,36 @@ function avatarSrc(c: WaChat): string {
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-// URL do proxy de mídia (token na query — tag de mídia não manda header).
-function mediaUrl(m: WaMessage): string {
-  return `/api/whatsapp/messages/${m.id}/media?token=${encodeURIComponent(getToken() ?? '')}`;
+// Busca a mídia autenticada pelo header Authorization e devolve um blob URL. Sem
+// token na query: o JWT não vaza na barra de endereço, histórico, logs de proxy
+// nem em link compartilhado. Revoga o blob ao desmontar. Retorna '' enquanto carrega.
+function useAuthedMedia(m: WaMessage): string {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    if (m.tipo === 'texto') return;
+    let objUrl = '';
+    let cancelled = false;
+    const token = getToken();
+    fetch(`/api/whatsapp/messages/${m.id}/media`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => { if (!cancelled) { objUrl = URL.createObjectURL(b); setUrl(objUrl); } })
+      .catch(() => undefined);
+    return () => { cancelled = true; if (objUrl) URL.revokeObjectURL(objUrl); };
+  }, [m.id, m.tipo]);
+  return url;
+}
+
+// Abre a mídia (documento/vídeo) numa aba nova via fetch autenticado + blob, sem
+// expor o token na URL. Best-effort: erro só notifica.
+async function openMedia(m: WaMessage): Promise<void> {
+  try {
+    const token = getToken();
+    const r = await fetch(`/api/whatsapp/messages/${m.id}/media`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    if (!r.ok) throw new Error(String(r.status));
+    const objUrl = URL.createObjectURL(await r.blob());
+    window.open(objUrl, '_blank', 'noopener');
+    setTimeout(() => URL.revokeObjectURL(objUrl), 60_000);
+  } catch { toast.error('Não foi possível abrir a mídia.'); }
 }
 
 function detectType(mime: string): 'image' | 'video' | 'audio' | 'document' {
@@ -136,6 +163,56 @@ function Tick({ m }: { m: WaMessage }): React.JSX.Element | null {
   if (!m.from_me) return null;
   const two = m.status === 'entregue' || m.status === 'lido';
   return <span style={{ color: m.status === 'lido' ? '#53bdeb' : undefined }}>{two ? '✓✓' : '✓'}</span>;
+}
+
+// Balão de mensagem nativo (texto ou mídia), cores via vars --wa-* (tema-aware).
+// React.memo por id+status: mensagem nova (ou tique atualizado) re-renderiza só
+// o próprio balão, não o thread inteiro.
+const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage; onImage: (url: string) => void }): React.JSX.Element {
+  const url = useAuthedMedia(m);
+  let media: ReactNode = null;
+  if (m.tipo === 'imagem') {
+    media = url ? <img src={url} alt="" className="block max-w-[240px] cursor-pointer rounded-md" onClick={() => onImage(url)} /> : null;
+  } else if (m.tipo === 'video') {
+    media = url ? <video src={url} controls className="block max-w-[260px] rounded-md" /> : null;
+  } else if (m.tipo === 'audio') {
+    media = url ? <audio src={url} controls className="max-w-[240px]" /> : null;
+  } else if (m.tipo !== 'texto') {
+    media = (
+      <button type="button" onClick={() => void openMedia(m)} className="flex items-center gap-2 text-[var(--wa-ink)] underline-offset-2 hover:underline">
+        <Icon name="mail" size={18} /> {m.file_name ?? 'arquivo'}
+      </button>
+    );
+  }
+  return (
+    <div className={cn('flex px-[5%] py-0.5', m.from_me ? 'justify-end' : 'justify-start')}>
+      <div className={cn('max-w-[75%] rounded-lg px-2 py-1.5 text-[14.2px] leading-snug shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]',
+        m.from_me ? 'bg-[var(--wa-out)]' : 'bg-[var(--wa-in)]', 'text-[var(--wa-ink)]')}>
+        {media}
+        {m.tipo === 'texto'
+          ? <span className="whitespace-pre-wrap break-words">{m.corpo}</span>
+          : m.corpo && <div className="mt-1 whitespace-pre-wrap break-words">{m.corpo}</div>}
+        <span className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-[var(--wa-muted)]">
+          {hora(m.momento)} <Tick m={m} />
+        </span>
+      </div>
+    </div>
+  );
+}, (prev, next) => prev.m.id === next.m.id && prev.m.status === next.m.status);
+
+// Miniatura de mídia no painel "Mídia, links e docs" — usa o mesmo fetch
+// autenticado (blob URL, sem token na URL). Componente próprio porque o hook não
+// pode ser chamado dentro do map.
+function MediaThumb({ m, onImage }: { m: WaMessage; onImage: (url: string) => void }): React.JSX.Element {
+  const url = useAuthedMedia(m);
+  return (
+    <button onClick={() => { if (m.tipo === 'imagem') { if (url) onImage(url); } else { void openMedia(m); } }}
+      className="relative aspect-square overflow-hidden rounded-lg bg-ink-100">
+      {m.tipo === 'imagem' && url
+        ? <img src={url} alt="" className="h-full w-full object-cover" />
+        : <span className="grid h-full w-full place-items-center text-ink-400"><Icon name="eye" size={20} /></span>}
+    </button>
+  );
 }
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -228,7 +305,7 @@ function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void })
   };
   return (
     <Overlay title="Agendar mensagem" onClose={onClose}>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Mensagem…" className={inputCls} />
+      <textarea value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Mensagem…" className={inputCls} />
       <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
       <Btn onClick={() => void create()} icon="clock">Agendar</Btn>
       {list.length > 0 && (
@@ -288,7 +365,7 @@ function MergeModal({ current, chats, onClose, onMerged }: { current: WaChat; ch
       <p className="text-sm text-ink-500">
         Una a conversa de telefone com a de <b>@lid</b> do mesmo contato. <b>{nomeChat(current)}</b> permanece e absorve a escolhida.
       </p>
-      <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversa…" className={inputCls} />
+      <input value={q} maxLength={120} onChange={(e) => setQ(e.target.value)} placeholder="Buscar conversa…" className={inputCls} />
       <div className="max-h-72 space-y-1 overflow-auto">
         {opts.length === 0 ? (
           <p className="py-4 text-center text-sm text-ink-400">Nenhuma outra conversa.</p>
@@ -378,6 +455,8 @@ function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, 
   const save = async (): Promise<void> => {
     const n = nome.trim();
     if (!n) { toast.error('Informe o nome.'); return; }
+    const em = email.trim();
+    if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try {
       const body = {
@@ -408,10 +487,10 @@ function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, 
 
   return (
     <Overlay title={contact ? 'Editar contato' : 'Novo contato'} onClose={onClose}>
-      <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} autoFocus />
-      <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className={inputCls} />
+      <input value={nome} maxLength={120} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} autoFocus />
+      <input value={cargo} maxLength={120} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className={inputCls} />
       <input value={telefone} onChange={(e) => setTelefone(maskPhone(e.target.value))} inputMode="tel" placeholder="Telefone" className={inputCls} />
-      <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="E-mail" className={inputCls} />
+      <input value={email} maxLength={160} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="E-mail" className={inputCls} />
       <div className="flex items-center justify-between gap-2">
         {contact ? (
           <button onClick={() => void remove()} disabled={busy} className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50">Excluir</button>
@@ -566,17 +645,9 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
             <p className="text-sm text-ink-400">Nenhuma mídia.</p>
           ) : (
             <div className="grid grid-cols-3 gap-1.5">
-              {media.slice(-18).reverse().map((m) => {
-                const url = mediaUrl(m);
-                return (
-                  <button key={m.id} onClick={() => (m.tipo === 'imagem' ? setLightbox(url) : window.open(url, '_blank'))}
-                    className="relative aspect-square overflow-hidden rounded-lg bg-ink-100">
-                    {m.tipo === 'imagem'
-                      ? <img src={url} alt="" className="h-full w-full object-cover" />
-                      : <span className="grid h-full w-full place-items-center text-ink-400"><Icon name="eye" size={20} /></span>}
-                  </button>
-                );
-              })}
+              {media.slice(-18).reverse().map((m) => (
+                <MediaThumb key={m.id} m={m} onImage={setLightbox} />
+              ))}
             </div>
           )}
         </div>
@@ -634,10 +705,14 @@ export function WhatsApp(): React.JSX.Element {
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [sp] = useSearchParams();
   const activeRef = useRef<number | null>(null);
+  const chatsRef = useRef<WaChat[]>([]);
+  // Debounce da recarga da lista quando chega mensagem de conversa desconhecida.
+  const reloadChatsT = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const fileRef = useRef<HTMLInputElement>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
   const openedParam = useRef(false);
   activeRef.current = activeId;
+  chatsRef.current = chats;
 
   const loadStatus = (): Promise<void> =>
     api.get<{ enabled: boolean; status: WaStatus }>('/api/whatsapp/status')
@@ -698,7 +773,7 @@ export function WhatsApp(): React.JSX.Element {
       const proto = location.protocol === 'https:' ? 'wss' : 'ws';
       ws = new WebSocket(`${proto}://${location.host}/api/whatsapp/ws?token=${encodeURIComponent(token)}`);
       ws.onmessage = (ev) => {
-        let msg: { event: string; data: { chat_id?: number; removed_id?: number; message?: WaMessage; status?: WaStatus; evolution_id?: string; remote_jid?: string; typing?: boolean } };
+        let msg: { event: string; data: { chat_id?: number; removed_id?: number; message?: WaMessage; chat?: Partial<WaChat>; status?: WaStatus; evolution_id?: string; remote_jid?: string; typing?: boolean } };
         try { msg = JSON.parse(ev.data as string); } catch { return; }
         if (msg.event === 'status') { setStatus(msg.data.status ?? 'desconectado'); return; }
         if (msg.event === 'chat-foto') { void loadChats(); return; }
@@ -727,15 +802,34 @@ export function WhatsApp(): React.JSX.Element {
             // lista já zerada (evita que loadChats traga o contador de volta).
             void api.post(`/api/whatsapp/chats/${chatId}/read`, {})
               .then(loadChats).catch(() => loadChats());
+          } else if (chatsRef.current.some((c) => Number(c.id) === Number(chatId))) {
+            // Conversa fechada mas já listada: aplica o payload direto no item
+            // (contador, prévia, horário, topo) — sem recarregar a lista inteira.
+            const patch = msg.data.chat;
+            setChats((cs) => {
+              const idx = cs.findIndex((c) => Number(c.id) === Number(chatId));
+              if (idx === -1) return cs;
+              const cur = cs[idx];
+              const upd: WaChat = {
+                ...cur,
+                nao_lidas: patch?.nao_lidas != null ? Number(patch.nao_lidas) : (m.from_me ? 0 : cur.nao_lidas + 1),
+                last_preview: patch?.last_preview ?? (m.corpo ?? `[${m.tipo === 'texto' ? 'mídia' : m.tipo}]`),
+                last_message_at: patch?.last_message_at ?? m.momento,
+              };
+              return [upd, ...cs.slice(0, idx), ...cs.slice(idx + 1)];
+            });
           } else {
-            void loadChats();
+            // Conversa ainda fora da lista (nova): reconciliação com debounce —
+            // uma rajada de mensagens vira uma recarga só.
+            clearTimeout(reloadChatsT.current);
+            reloadChatsT.current = setTimeout(() => { void loadChats(); }, 2000);
           }
         }
       };
       ws.onclose = () => { if (!stop) retry = setTimeout(connect, 3000); };
     };
     connect();
-    return () => { stop = true; clearTimeout(retry); ws?.close(); };
+    return () => { stop = true; clearTimeout(retry); clearTimeout(reloadChatsT.current); ws?.close(); };
   }, [status]);
 
   const active = useMemo(() => chats.find((c) => c.id === activeId) ?? null, [chats, activeId]);
@@ -789,39 +883,6 @@ export function WhatsApp(): React.JSX.Element {
     }
   };
 
-  // Balão de mensagem nativo (texto ou mídia), cores via vars --wa-* (tema-aware).
-  const renderMessage = (m: WaMessage): React.JSX.Element => {
-    const url = m.tipo === 'texto' ? '' : mediaUrl(m);
-    let media: ReactNode = null;
-    if (m.tipo === 'imagem') {
-      media = <img src={url} alt="" className="block max-w-[240px] cursor-pointer rounded-md" onClick={() => setLightbox(url)} />;
-    } else if (m.tipo === 'video') {
-      media = <video src={url} controls className="block max-w-[260px] rounded-md" />;
-    } else if (m.tipo === 'audio') {
-      media = <audio src={url} controls className="max-w-[240px]" />;
-    } else if (m.tipo !== 'texto') {
-      media = (
-        <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-2 text-[var(--wa-ink)] underline-offset-2 hover:underline">
-          <Icon name="mail" size={18} /> {m.file_name ?? 'arquivo'}
-        </a>
-      );
-    }
-    return (
-      <div key={m.id} className={cn('flex px-[5%] py-0.5', m.from_me ? 'justify-end' : 'justify-start')}>
-        <div className={cn('max-w-[75%] rounded-lg px-2 py-1.5 text-[14.2px] leading-snug shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]',
-          m.from_me ? 'bg-[var(--wa-out)]' : 'bg-[var(--wa-in)]', 'text-[var(--wa-ink)]')}>
-          {media}
-          {m.tipo === 'texto'
-            ? <span className="whitespace-pre-wrap break-words">{m.corpo}</span>
-            : m.corpo && <div className="mt-1 whitespace-pre-wrap break-words">{m.corpo}</div>}
-          <span className="mt-0.5 flex items-center justify-end gap-1 text-[11px] text-[var(--wa-muted)]">
-            {hora(m.momento)} <Tick m={m} />
-          </span>
-        </div>
-      </div>
-    );
-  };
-
   // Lista com separadores de data entre dias.
   const listItems = useMemo(() => {
     const items: ReactNode[] = [];
@@ -838,7 +899,7 @@ export function WhatsApp(): React.JSX.Element {
         );
         lastDay = day;
       }
-      items.push(renderMessage(m));
+      items.push(<MessageBubble key={m.id} m={m} onImage={setLightbox} />);
     }
     return items;
   }, [messages]);
@@ -880,7 +941,7 @@ export function WhatsApp(): React.JSX.Element {
           <div className="px-3 py-2">
             <div className="flex items-center gap-2 rounded-lg bg-[var(--wa-panel)] px-3 py-1.5">
               <Icon name="search" size={16} className="shrink-0 text-[var(--wa-muted)]" />
-              <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar conversa…"
+              <input value={busca} maxLength={120} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar conversa…"
                 className="min-w-0 flex-1 bg-transparent text-sm text-[var(--wa-ink)] outline-none placeholder:text-[var(--wa-muted)]" />
               {busca && (
                 <button onClick={() => setBusca('')} aria-label="Limpar" className="shrink-0 text-[var(--wa-muted)] hover:text-[var(--wa-ink)]">
@@ -990,7 +1051,7 @@ export function WhatsApp(): React.JSX.Element {
                     <Icon name="paperclip" size={20} />
                   </button>
                 )}
-                <textarea value={draft} onChange={(e) => setDraft(e.target.value)} rows={1} autoFocus
+                <textarea value={draft} maxLength={2000} onChange={(e) => setDraft(e.target.value)} rows={1} autoFocus
                   onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (can('whatsapp.send')) void send(); } }}
                   placeholder="Digite uma mensagem…"
                   className="max-h-32 min-h-[40px] min-w-0 flex-1 resize-none rounded-lg bg-[var(--wa-in)] px-3 py-2 text-sm text-[var(--wa-ink)] outline-none placeholder:text-[var(--wa-muted)]" />

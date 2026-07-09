@@ -196,7 +196,7 @@ function CnaeSearchInput({ value, onChange, label }: { value: string; onChange: 
           value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={onKey}
           onFocus={() => { if (grupos.length) setOpen(true); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Atividade (ex.: padaria) ou código" className={inputCls}
+          maxLength={120} placeholder="Atividade (ex.: padaria) ou código" className={inputCls}
         />
         {open && grupos.length > 0 && (
           <div className="absolute z-20 mt-1 max-h-72 w-full overflow-auto rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
@@ -296,7 +296,7 @@ function PartidaInput({ value, onChange }: { value: Partida | null; onChange: (p
             placeholder={cepBusy ? 'Buscando…' : 'CEP'} className={cn(inputCls, 'sm:w-32 shrink-0')} />
           <input value={q} onChange={(e) => { setQ(e.target.value); setErro(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void buscar(); } }}
-            placeholder="Ex.: Rua XV de Novembro 100, Blumenau SC" className={cn(inputCls, 'flex-1')} />
+            maxLength={120} placeholder="Ex.: Rua XV de Novembro 100, Blumenau SC" className={cn(inputCls, 'flex-1')} />
           <Btn size="sm" type="button" variant="soft" onClick={() => void buscar()} disabled={busy} className="shrink-0">
             {busy ? '…' : 'Definir'}
           </Btn>
@@ -343,12 +343,12 @@ export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; r
           <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
-              <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
+              <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} maxLength={120} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
             </label>
             <CnaeSearchInput value={f.fCnae} onChange={f.setFCnae} label={recommend ? 'CNAEs-alvo' : 'CNAE'} />
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">UF</span>
-              <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} placeholder="Ex.: SC, PR" className={inputCls} />
+              <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} maxLength={120} placeholder="Ex.: SC, PR" className={inputCls} />
             </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Porte</span>
@@ -456,7 +456,7 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
         <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Por cidade</p>
         <div className="relative">
           <Icon name="search" size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-          <input value={munQ} onChange={(e) => setMunQ(e.target.value)} placeholder="Buscar cidade (ex.: Blumenau)…" className={cn(inputCls, 'pl-9')} />
+          <input value={munQ} onChange={(e) => setMunQ(e.target.value)} maxLength={120} placeholder="Buscar cidade (ex.: Blumenau)…" className={cn(inputCls, 'pl-9')} />
           {munResults.length > 0 && (
             <div className="absolute z-20 mt-1 max-h-60 w-full overflow-auto rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
               {munResults.map((m) => {

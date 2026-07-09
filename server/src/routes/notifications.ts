@@ -15,14 +15,43 @@ interface Alert { tipo: string; chave: string; titulo: string; payload: Record<s
 async function computeAlerts(orgId: number, userId: number): Promise<Alert[]> {
   const alerts: Alert[] = [];
 
-  // 1) Contas a vencer em ≤ 1 dia (D-1) ainda pendentes.
-  const venc = await query<{ id: string; descricao: string; valor: string; vencimento: string; kind: string }>(
-    `SELECT id, descricao, valor, vencimento::text AS vencimento, kind::text AS kind
-     FROM finance_entries
-     WHERE org_id = $1 AND owner_user_id = $2 AND status = 'pendente'
-       AND vencimento >= current_date AND vencimento <= current_date + 1`,
-    [orgId, userId],
-  );
+  // Os 4 SELECTs são independentes — dispara em paralelo.
+  const [venc, ag, com, par] = await Promise.all([
+    // 1) Contas a vencer em ≤ 1 dia (D-1) ainda pendentes.
+    query<{ id: string; descricao: string; valor: string; vencimento: string; kind: string }>(
+      `SELECT id, descricao, valor, vencimento::text AS vencimento, kind::text AS kind
+       FROM finance_entries
+       WHERE org_id = $1 AND owner_user_id = $2 AND status = 'pendente'
+         AND vencimento >= current_date AND vencimento <= current_date + 1`,
+      [orgId, userId],
+    ),
+    // 2) Compromissos começando na próxima hora.
+    query<{ id: string; titulo: string; start_at: string; company_id: string | null }>(
+      `SELECT id, titulo, start_at::text AS start_at, company_id
+       FROM activities
+       WHERE org_id = $1 AND owner_user_id = $2 AND status = 'pendente'
+         AND start_at >= now() AND start_at <= now() + interval '1 hour'`,
+      [orgId, userId],
+    ),
+    // 3) Comissões divergentes (recebido ≠ previsto).
+    query<{ id: string; valor_previsto: string; valor_recebido: string | null; competencia: string }>(
+      `SELECT id, valor_previsto, valor_recebido, competencia::text AS competencia
+       FROM commission_entries
+       WHERE org_id = $1 AND user_id = $2 AND status = 'divergente'`,
+      [orgId, userId],
+    ),
+    // 4) Negócios parados no mesmo stage há 30+ dias (limite p/ não inundar).
+    query<{ id: string; razao_social: string; dias: number }>(
+      `SELECT r.id, c.razao_social, (current_date - r.stage_changed_at::date)::int AS dias
+       FROM company_relationships r
+       JOIN companies c ON c.id = r.company_id
+       WHERE r.org_id = $1 AND r.owner_user_id = $2 AND r.status = 'prospect'
+         AND r.stage_changed_at < now() - interval '30 days'
+       ORDER BY dias DESC LIMIT 20`,
+      [orgId, userId],
+    ),
+  ]);
+
   for (const v of venc) {
     const verbo = v.kind === 'receber' ? 'a receber' : 'a pagar';
     alerts.push({
@@ -32,14 +61,6 @@ async function computeAlerts(orgId: number, userId: number): Promise<Alert[]> {
     });
   }
 
-  // 2) Compromissos começando na próxima hora.
-  const ag = await query<{ id: string; titulo: string; start_at: string; company_id: string | null }>(
-    `SELECT id, titulo, start_at::text AS start_at, company_id
-     FROM activities
-     WHERE org_id = $1 AND owner_user_id = $2 AND status = 'pendente'
-       AND start_at >= now() AND start_at <= now() + interval '1 hour'`,
-    [orgId, userId],
-  );
   for (const a of ag) {
     alerts.push({
       tipo: 'agenda', chave: `agenda:${a.id}`,
@@ -48,13 +69,6 @@ async function computeAlerts(orgId: number, userId: number): Promise<Alert[]> {
     });
   }
 
-  // 3) Comissões divergentes (recebido ≠ previsto).
-  const com = await query<{ id: string; valor_previsto: string; valor_recebido: string | null; competencia: string }>(
-    `SELECT id, valor_previsto, valor_recebido, competencia::text AS competencia
-     FROM commission_entries
-     WHERE org_id = $1 AND user_id = $2 AND status = 'divergente'`,
-    [orgId, userId],
-  );
   for (const c of com) {
     alerts.push({
       tipo: 'comissao', chave: `comissao:${c.id}`,
@@ -63,16 +77,6 @@ async function computeAlerts(orgId: number, userId: number): Promise<Alert[]> {
     });
   }
 
-  // 4) Negócios parados no mesmo stage há 30+ dias (limite p/ não inundar).
-  const par = await query<{ id: string; razao_social: string; dias: number }>(
-    `SELECT r.id, c.razao_social, (current_date - r.stage_changed_at::date)::int AS dias
-     FROM company_relationships r
-     JOIN companies c ON c.id = r.company_id
-     WHERE r.org_id = $1 AND r.owner_user_id = $2 AND r.status = 'prospect'
-       AND r.stage_changed_at < now() - interval '30 days'
-     ORDER BY dias DESC LIMIT 20`,
-    [orgId, userId],
-  );
   for (const p of par) {
     alerts.push({
       tipo: 'parado', chave: `parado:${p.id}`,
@@ -90,14 +94,22 @@ export function notificationRoutes(app: FastifyInstance): void {
     const userId = req.auth!.userId;
     const alerts = await computeAlerts(orgId, userId);
 
-    // upsert preservando `lida`; poda avisos que já não se aplicam.
-    for (const a of alerts) {
+    // upsert preservando `lida` — um único INSERT multi-linha via unnest;
+    // poda avisos que já não se aplicam.
+    if (alerts.length > 0) {
       await query(
         `INSERT INTO notifications (org_id, user_id, tipo, chave, titulo, payload)
-         VALUES ($1, $2, $3, $4, $5, $6)
+         SELECT $1, $2, t.tipo, t.chave, t.titulo, t.payload::jsonb
+         FROM unnest($3::text[], $4::text[], $5::text[], $6::text[]) AS t(tipo, chave, titulo, payload)
          ON CONFLICT (user_id, chave)
            DO UPDATE SET titulo = EXCLUDED.titulo, payload = EXCLUDED.payload, tipo = EXCLUDED.tipo`,
-        [orgId, userId, a.tipo, a.chave, a.titulo, JSON.stringify(a.payload)],
+        [
+          orgId, userId,
+          alerts.map((a) => a.tipo),
+          alerts.map((a) => a.chave),
+          alerts.map((a) => a.titulo),
+          alerts.map((a) => JSON.stringify(a.payload)),
+        ],
       );
     }
     await query(

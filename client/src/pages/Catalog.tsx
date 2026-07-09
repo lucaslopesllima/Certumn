@@ -130,7 +130,7 @@ export function Catalog(): React.JSX.Element {
           {list.length > 0 && (
             <div className="relative mb-3">
               <Icon name="search" size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome, código ou descrição…" className={cn(inputCls, 'pl-9')} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={120} placeholder="Buscar por nome, código ou descrição…" className={cn(inputCls, 'pl-9')} />
             </div>
           )}
 
@@ -198,9 +198,9 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
 
   return (
     <form onSubmit={submit} className="space-y-2.5">
-      <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome do produto / serviço *" className={inputCls} />
+      <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome do produto / serviço *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
-        <input value={f.codigo} onChange={set('codigo')} placeholder="Código / SKU" className={inputCls} />
+        <input value={f.codigo} onChange={set('codigo')} maxLength={120} placeholder="Código / SKU" className={inputCls} />
         <input type="number" min="0" step="0.01" value={f.preco} onChange={set('preco')} placeholder="Preço (R$)" className={inputCls} />
         <select value={f.unidade_medida} onChange={set('unidade_medida')} className={inputCls}>
           <option value="">Unidade de medida (opcional)</option>
@@ -215,7 +215,7 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
           {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
       </div>
-      <textarea value={f.descricao} onChange={set('descricao')} placeholder="Descrição" rows={2} className={cn(inputCls, 'resize-y')} />
+      <textarea value={f.descricao} onChange={set('descricao')} maxLength={2000} placeholder="Descrição" rows={2} className={cn(inputCls, 'resize-y')} />
       <div>
         <p className="mb-1.5 text-xs font-medium text-ink-500">Impostos (%) — vazio usa o default da org</p>
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">

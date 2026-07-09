@@ -48,47 +48,54 @@ export async function processDueEmails(now = new Date()): Promise<number> {
     [now.toISOString()],
   );
 
-  const cache = new Map<string, SmtpSettings | null>();
+  // Cache de settings por org (promise: dedupe mesmo com fetches concorrentes).
+  const cache = new Map<string, Promise<SmtpSettings | null>>();
   let sent = 0;
-  for (const e of due) {
-    // Sem SMTP ativo na org: trava o envio sem tocar no registro (segue pendente).
-    let s = cache.get(e.org_id);
-    if (s === undefined) { s = await getSmtpSettings(Number(e.org_id)); cache.set(e.org_id, s); }
-    if (!s || !s.enabled) continue;
+  // Concorrência limitada: 5 envios em paralelo por vez (o transporter é pooled),
+  // em vez de estritamente sequencial — cada item continua isolado (try/catch).
+  const CONCURRENCY = 5;
+  for (let i = 0; i < due.length; i += CONCURRENCY) {
+    await Promise.all(due.slice(i, i + CONCURRENCY).map(async (e) => {
+      // Sem SMTP ativo na org: trava o envio sem tocar no registro (segue pendente).
+      let p = cache.get(e.org_id);
+      if (p === undefined) { p = getSmtpSettings(Number(e.org_id)); cache.set(e.org_id, p); }
+      const s = await p;
+      if (!s || !s.enabled) return;
 
-    try {
-      await sendViaSmtp(s, { from: e.remetente ?? '', to: e.destinatario, subject: e.assunto, body: e.corpo });
+      try {
+        await sendViaSmtp(s, { from: e.remetente ?? '', to: e.destinatario, subject: e.assunto, body: e.corpo });
 
-      const rows = await query(
-        `UPDATE email_schedules
-            SET status = 'enviado', enviado_em = now(), erro = NULL, updated_at = now()
-          WHERE id = $1 AND status = 'pendente'
-          RETURNING id`,
-        [e.id],
-      );
-      if (rows.length === 0) continue; // já processado por outra varredura
-      sent++;
+        const rows = await query(
+          `UPDATE email_schedules
+              SET status = 'enviado', enviado_em = now(), erro = NULL, updated_at = now()
+            WHERE id = $1 AND status = 'pendente'
+            RETURNING id`,
+          [e.id],
+        );
+        if (rows.length === 0) return; // já processado por outra varredura
+        sent++;
 
-      // Recorrência: agenda a próxima ocorrência como nova linha pendente.
-      const next = nextOccurrence(new Date(e.agendado_para).toISOString(), e.recorrencia, now);
-      if (next) {
+        // Recorrência: agenda a próxima ocorrência como nova linha pendente.
+        const next = nextOccurrence(new Date(e.agendado_para).toISOString(), e.recorrencia, now);
+        if (next) {
+          await query(
+            `INSERT INTO email_schedules
+               (org_id, template_id, company_id, remetente, destinatario, assunto, corpo,
+                agendado_para, recorrencia, owner_user_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [e.org_id, e.template_id, e.company_id, e.remetente, e.destinatario, e.assunto, e.corpo,
+              next, e.recorrencia, e.owner_user_id],
+          );
+        }
+      } catch (err) {
         await query(
-          `INSERT INTO email_schedules
-             (org_id, template_id, company_id, remetente, destinatario, assunto, corpo,
-              agendado_para, recorrencia, owner_user_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-          [e.org_id, e.template_id, e.company_id, e.remetente, e.destinatario, e.assunto, e.corpo,
-            next, e.recorrencia, e.owner_user_id],
+          `UPDATE email_schedules
+              SET status = 'erro', erro = $2, updated_at = now()
+            WHERE id = $1 AND status = 'pendente'`,
+          [e.id, err instanceof Error ? err.message : String(err)],
         );
       }
-    } catch (err) {
-      await query(
-        `UPDATE email_schedules
-            SET status = 'erro', erro = $2, updated_at = now()
-          WHERE id = $1 AND status = 'pendente'`,
-        [e.id, err instanceof Error ? err.message : String(err)],
-      );
-    }
+    }));
   }
   return sent;
 }

@@ -96,10 +96,10 @@ export function Login(): React.JSX.Element {
 
           <form onSubmit={submit} className="mt-5 space-y-3">
             {mode === 'register' && (
-              <Field label="Nome da empresa" value={orgNome} onChange={setOrgNome} placeholder="Minha Representação" autoFocus />
+              <Field label="Nome da empresa" value={orgNome} onChange={setOrgNome} placeholder="Minha Representação" autoFocus maxLength={120} />
             )}
-            <Field label="E-mail" type="email" value={email} onChange={setEmail} placeholder="voce@empresa.com" autoFocus={mode === 'login'} />
-            <Field label="Senha" type="password" value={senha} onChange={setSenha} placeholder="mínimo 6 caracteres" />
+            <Field label="E-mail" type="email" value={email} onChange={setEmail} placeholder="voce@empresa.com" autoFocus={mode === 'login'} maxLength={160} />
+            <Field label="Senha" type="password" value={senha} onChange={setSenha} placeholder="mínimo 6 caracteres" maxLength={200} />
             {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
             <Btn type="submit" disabled={busy} className="w-full">
               {busy ? '…' : mode === 'login' ? 'Entrar' : 'Criar conta'}
@@ -112,7 +112,7 @@ export function Login(): React.JSX.Element {
 }
 
 function Field(props: {
-  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; autoFocus?: boolean;
+  label: string; value: string; onChange: (v: string) => void; type?: string; placeholder?: string; autoFocus?: boolean; maxLength?: number;
 }): React.JSX.Element {
   const isPwd = props.type === 'password';
   const [show, setShow] = useState(false);
@@ -128,6 +128,7 @@ function Field(props: {
           placeholder={props.placeholder}
           required
           autoFocus={props.autoFocus}
+          maxLength={props.maxLength}
           className={cn('w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-900 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200',
             isPwd && 'pr-10')}
         />

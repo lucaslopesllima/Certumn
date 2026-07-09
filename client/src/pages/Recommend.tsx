@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+// CSS do Leaflet viaja junto com o chunk lazy da página (fora do bundle inicial).
+import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, CircleMarker, Popup, Polyline, Tooltip, useMap, useMapEvents } from 'react-leaflet';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';

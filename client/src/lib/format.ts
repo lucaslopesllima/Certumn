@@ -93,6 +93,24 @@ export const maskPct = (v: string): string => {
   return dec(out) > 100 ? '100' : out;
 };
 
+// Máscara de dinheiro p/ inputs type="text" inputMode="decimal": só dígitos + 1
+// separador decimal (até 2 casas), normaliza p/ vírgula, bloqueia negativo (sem
+// sinal) e capa a parte inteira em maxInt dígitos (default 12 → ~trilhão, evita
+// valor absurdo). Guarda string editável; o caller faz dec() no submit. '' fica ''.
+export const maskMoney = (v: string, maxInt = 12): string => {
+  const [int, ...rest] = v.replace(/[^\d.,]/g, '').replace(/[.,]/g, ',').split(',');
+  const intCut = (int ?? '').slice(0, maxInt);
+  return rest.length ? `${intCut},${rest.join('').slice(0, 2)}` : intCut;
+};
+
+// Capa um número em [min, max]. NaN/inválido → min. Para sanitizar inputs
+// numéricos que salvam fora de <form> (min/max nativos não disparam sem submit).
+export const clampNum = (v: number | string | null | undefined, min: number, max: number): number => {
+  const n = typeof v === 'number' ? v : dec(v ?? '');
+  if (!Number.isFinite(n)) return min;
+  return Math.min(max, Math.max(min, n));
+};
+
 // link wa.me (WhatsApp click-to-chat). Assume DDI Brasil (55) quando ausente.
 // Retorna null se não houver dígitos suficientes p/ um telefone válido.
 export const waLink = (tel: string | null | undefined): string | null => {

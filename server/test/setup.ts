@@ -19,4 +19,15 @@ export default async function setup(): Promise<void> {
   }
 
   await runMigrations(testUrl);
+
+  // companies é um pool GLOBAL (não escopado por org) e persiste no rs_test
+  // compartilhado entre execuções. Sem limpar, as empresas de makeCompany()
+  // acumulam e poluem busca/recommend: com dezenas de "Transportes Zeta Ltda"
+  // acumuladas, o LIMIT 10 derruba a empresa criada no run atual e o teste falha.
+  // Zera uma vez no início da suíte (CASCADE limpa relationships/orders/geocode
+  // de runs anteriores — todos dados de teste). municipios/cnae (seed, referenciados
+  // POR companies) não são afetados.
+  const db = new pg.Client({ connectionString: testUrl });
+  await db.connect();
+  try { await db.query('TRUNCATE companies CASCADE'); } finally { await db.end(); }
 }

@@ -5,15 +5,23 @@ import userEvent from '@testing-library/user-event';
 import { Agenda } from '../src/pages/Agenda.tsx';
 import { api } from '../src/lib/api.ts';
 import { postField } from '../src/lib/offline.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
 vi.mock('../src/lib/offline.ts', () => ({ postField: vi.fn() }));
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 
 const m = vi.mocked(api);
 const pf = vi.mocked(postField);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const dia = (d: number, h: number): string => {
   const x = new Date(); x.setDate(d); x.setHours(h, 0, 0, 0);
@@ -27,8 +35,13 @@ const act = (over: Record<string, unknown>): Record<string, unknown> => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
+  // janela visível: /api/activities?from=…&to=…&limit=500 (fixtures no mês corrente)
   m.get.mockImplementation(async (p: string) =>
-    p === '/api/activities'
+    p.startsWith('/api/activities?')
       ? { activities: [
           act({ id: 1, titulo: 'Visita Alfa', company_id: 10, razao_social: 'Alfa LTDA' }),
           act({ id: 2, titulo: 'Visita Beta', company_id: 20, razao_social: 'Beta SA', start_at: dia(15, 14) }),

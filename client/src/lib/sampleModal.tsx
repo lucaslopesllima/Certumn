@@ -3,7 +3,7 @@ import { api } from './api.ts';
 import { Badge, Btn, Spinner, cn, type Tone } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { toast } from './toast.tsx';
-import { maskPhone } from './format.ts';
+import { dec, maskPhone } from './format.ts';
 import type { CatalogItem, Contact, SampleRequest, SampleStatus } from './types.ts';
 
 // Modais de amostra do funil: criar/editar uma solicitação e listar as da
@@ -80,7 +80,7 @@ export function SampleRequestModal({ card, catalog, sample, onClose, onSaved }: 
         });
         cid = r.contact.id;
       }
-      const qtd = quantidade.trim() === '' ? null : Number(quantidade);
+      const qtd = quantidade.trim() === '' ? null : dec(quantidade);
       const prev = dataPrevista === '' ? null : dataPrevista;
       if (editando) {
         const r = await api.patch<{ sample: SampleRequest }>(`/api/sample-requests/${sample!.id}`, {
@@ -149,7 +149,7 @@ export function SampleRequestModal({ card, catalog, sample, onClose, onSaved }: 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-ink-500">Quantidade</span>
-                <input type="number" min="0" step="0.001" value={quantidade} onChange={(e) => setQuantidade(e.target.value)}
+                <input type="number" min={0} max={1e6} step="0.001" value={quantidade} onChange={(e) => setQuantidade(e.target.value)}
                   placeholder="ex.: 1" className={inputCls} />
               </label>
               <label className="block">
@@ -168,7 +168,7 @@ export function SampleRequestModal({ card, catalog, sample, onClose, onSaved }: 
               </div>
               {novoContato ? (
                 <div className="grid gap-2 sm:grid-cols-2">
-                  <input autoFocus value={cNome} onChange={(e) => setCNome(e.target.value)} placeholder="Nome *" className={inputCls} />
+                  <input autoFocus value={cNome} maxLength={120} onChange={(e) => setCNome(e.target.value)} placeholder="Nome *" className={inputCls} />
                   <input value={cTelefone} onChange={(e) => setCTelefone(maskPhone(e.target.value))} placeholder="Telefone" inputMode="tel" className={inputCls} />
                 </div>
               ) : (
@@ -197,7 +197,7 @@ export function SampleRequestModal({ card, catalog, sample, onClose, onSaved }: 
                 </label>
                 {agendar && (
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <input value={agTitulo} onChange={(e) => setAgTitulo(e.target.value)} placeholder="Título do compromisso" className={cn(inputCls, 'sm:col-span-2')} />
+                    <input value={agTitulo} maxLength={120} onChange={(e) => setAgTitulo(e.target.value)} placeholder="Título do compromisso" className={cn(inputCls, 'sm:col-span-2')} />
                     <input type="datetime-local" value={agStart} onChange={(e) => setAgStart(e.target.value)} className={cn(inputCls, 'sm:col-span-2')} />
                   </div>
                 )}
@@ -206,7 +206,7 @@ export function SampleRequestModal({ card, catalog, sample, onClose, onSaved }: 
 
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Notas</span>
-              <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={2}
+              <textarea value={notas} maxLength={2000} onChange={(e) => setNotas(e.target.value)} rows={2}
                 placeholder="Observações livres" className={cn(inputCls, 'resize-y')} />
             </label>
           </div>

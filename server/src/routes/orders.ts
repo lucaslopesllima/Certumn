@@ -337,12 +337,18 @@ export function orderRoutes(app: FastifyInstance): void {
           owner_user_id: { type: 'integer' },
           from: { type: 'string' },
           to: { type: 'string' },
+          limit: { type: 'integer', minimum: 1, maximum: 500, default: 100 },
+          offset: { type: 'integer', minimum: 0, default: 0 },
         },
       },
     },
   }, async (req) => {
     const orgId = req.auth!.orgId;
-    const q = req.query as { status?: string; represented_id?: number; owner_user_id?: number; from?: string; to?: string };
+    const q = req.query as {
+      status?: string; represented_id?: number; owner_user_id?: number;
+      from?: string; to?: string; limit?: number; offset?: number;
+    };
+    const { limit = 100, offset = 0 } = q;
     const where: string[] = ['o.org_id = $1'];
     const params: unknown[] = [orgId];
     scopeOwner(req, where, params, 'o.owner_user_id', q.owner_user_id);
@@ -350,8 +356,11 @@ export function orderRoutes(app: FastifyInstance): void {
     if (q.represented_id !== undefined) { params.push(q.represented_id); where.push(`o.represented_id = $${params.length}`); }
     if (q.from) { params.push(q.from); where.push(`o.created_at >= $${params.length}`); }
     if (q.to) { params.push(q.to); where.push(`o.created_at < ($${params.length}::date + 1)`); }
+    params.push(limit); const limIdx = params.length;
+    params.push(offset); const offIdx = params.length;
     const orders = await query(
-      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY o.numero DESC`,
+      `${SELECT} WHERE ${where.join(' AND ')} ORDER BY o.numero DESC
+       LIMIT $${limIdx} OFFSET $${offIdx}`,
       params,
     );
     return { orders };
@@ -621,7 +630,7 @@ export function orderRoutes(app: FastifyInstance): void {
       body: {
         type: 'object',
         required: ['csv'],
-        properties: { csv: { type: 'string', minLength: 1 } },
+        properties: { csv: { type: 'string', minLength: 1, maxLength: 1_000_000 } },
       },
     },
   }, async (req, reply) => {

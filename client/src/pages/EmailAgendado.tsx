@@ -38,6 +38,9 @@ const toLocalInput = (iso: string): string => {
 // Quebra uma string de e-mails (vírgula/;/espaço/linha) em tokens não vazios.
 const splitEmails = (s: string): string[] => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
 
+// Valida formato de e-mail (não só presença de "@").
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 type Tab = 'agendados' | 'templates';
 
 // Menu de agendamento de envio de e-mail. Aba "Agendados" lista/cria envios
@@ -223,8 +226,8 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
   // Adiciona um ou mais e-mails à lista (dedup), ignorando tokens sem "@".
   const addRecipients = (raw: string): void => {
     const parts = splitEmails(raw);
-    const valid = parts.filter((p) => p.includes('@'));
-    const bad = parts.filter((p) => !p.includes('@'));
+    const valid = parts.filter((p) => EMAIL_RE.test(p));
+    const bad = parts.filter((p) => !EMAIL_RE.test(p));
     if (bad.length) toast.error(`E-mail inválido: ${bad.join(', ')}`);
     if (valid.length) setRecipients((xs) => [...new Set([...xs, ...valid])]);
     setRecipInput('');
@@ -247,7 +250,7 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
   const submit = async (ev: React.FormEvent): Promise<void> => {
     ev.preventDefault();
     // inclui o que estiver digitado mas ainda não virou chip.
-    const pending = splitEmails(recipInput).filter((p) => p.includes('@'));
+    const pending = splitEmails(recipInput).filter((p) => EMAIL_RE.test(p));
     const all = [...new Set([...recipients, ...pending])];
     if (!remetente.trim() || all.length === 0 || !assunto.trim() || !corpo.trim() || !agendadoPara) {
       toast.error('Preencha remetente, ao menos um destinatário, assunto, corpo e a data/hora.');
@@ -292,7 +295,7 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
             )}
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">E-mail de origem (remetente)</label>
-              <input type="email" value={remetente} onChange={(e) => setRemetente(e.target.value)}
+              <input type="email" value={remetente} onChange={(e) => setRemetente(e.target.value)} maxLength={160}
                 placeholder="seu@email.com" className={inputCls} />
             </div>
             <div>
@@ -305,7 +308,7 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
                       className="text-brand-400 hover:text-brand-600"><Icon name="x" size={12} /></button>
                   </span>
                 ))}
-                <input type="email" value={recipInput} onChange={(e) => setRecipInput(e.target.value)}
+                <input type="email" value={recipInput} onChange={(e) => setRecipInput(e.target.value)} maxLength={160}
                   onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ',') { e.preventDefault(); addRecipients(recipInput); } }}
                   onBlur={() => { if (recipInput.trim()) addRecipients(recipInput); }}
                   placeholder={recipients.length ? 'adicionar outro…' : 'contato@empresa.com'}
@@ -326,11 +329,11 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
 
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">Assunto</label>
-              <input value={assunto} onChange={(e) => setAssunto(e.target.value)} placeholder="Assunto do e-mail" className={inputCls} />
+              <input value={assunto} onChange={(e) => setAssunto(e.target.value)} maxLength={200} placeholder="Assunto do e-mail" className={inputCls} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">Corpo</label>
-              <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={6} placeholder="Conteúdo do e-mail" className={cn(inputCls, 'resize-y')} />
+              <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={6} maxLength={20000} placeholder="Conteúdo do e-mail" className={cn(inputCls, 'resize-y')} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -464,15 +467,15 @@ function TemplateModal({ template, onClose, onSaved }: {
           <form onSubmit={submit} className="max-h-[70vh] space-y-3 overflow-auto p-4">
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">Nome do modelo</label>
-              <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Ex.: Apresentação inicial" className={inputCls} />
+              <input value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} placeholder="Ex.: Apresentação inicial" className={inputCls} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">Assunto</label>
-              <input value={assunto} onChange={(e) => setAssunto(e.target.value)} placeholder="Assunto do e-mail" className={inputCls} />
+              <input value={assunto} onChange={(e) => setAssunto(e.target.value)} maxLength={200} placeholder="Assunto do e-mail" className={inputCls} />
             </div>
             <div>
               <label className="mb-1 block text-xs font-semibold text-ink-500">Corpo</label>
-              <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={8} placeholder="Conteúdo do e-mail" className={cn(inputCls, 'resize-y')} />
+              <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={8} maxLength={20000} placeholder="Conteúdo do e-mail" className={cn(inputCls, 'resize-y')} />
             </div>
             <div className="flex justify-end gap-2 pt-1">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>

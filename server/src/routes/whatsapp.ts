@@ -1,10 +1,10 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { one, query, withClient } from '../db.ts';
-import { requireAuth, requirePermission, verifyToken } from '../auth.ts';
+import { requireAuth, requirePermission, authorizeToken, AuthError } from '../auth.ts';
 import { audit } from '../audit.ts';
 import * as evo from '../evolution.ts';
-import { mediaEnabled, saveMedia, readMedia } from '../mediaStore.ts';
+import { mediaEnabled, saveMedia, mediaStream } from '../mediaStore.ts';
 import { addConn, removeConn, broadcast } from '../ws.ts';
 import {
   ensureSettings, setStatus, instanceName, upsertChat, insertMessage,
@@ -15,6 +15,21 @@ import {
 // Sincronização de nomes de grupo já feita nesta sessão (por org) — roda uma vez
 // ao abrir a lista de conversas, conserta grupos com nome de participante.
 const groupsSynced = new Set<number>();
+
+// Content-types que podem ser servidos inline (renderizados no browser). O mime da
+// mídia vem do metadata do contato remoto (não confiável) — qualquer coisa fora
+// desta lista vira octet-stream + attachment para nunca executar como HTML/JS.
+const INLINE_MEDIA_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'audio/ogg', 'audio/mpeg', 'audio/mp4', 'audio/aac', 'audio/amr', 'audio/wav',
+  'video/mp4', 'video/3gpp', 'video/webm', 'video/quicktime',
+  'application/pdf',
+]);
+function safeMediaType(mime: string | null): { type: string; inline: boolean } {
+  const m = ((mime ?? '').split(';')[0] ?? '').trim().toLowerCase();
+  if (INLINE_MEDIA_MIME.has(m)) return { type: m, inline: true };
+  return { type: 'application/octet-stream', inline: false };
+}
 
 // 'open' (Evolution) -> 'conectado' etc. Normaliza p/ o vocabulário do front.
 function mapState(state: string | null): string {
@@ -29,12 +44,14 @@ export function whatsappRoutes(app: FastifyInstance): void {
   app.get('/api/whatsapp/ws', { websocket: true }, (socket: WebSocket, req) => {
     const token = (req.query as { token?: string }).token;
     if (!token) { socket.close(1008, 'sem token'); return; }
-    verifyToken(token).then(
+    // authorizeToken (não verifyToken cru): valida ativo/token_version/permissão —
+    // sem isso um usuário desativado ou sem whatsapp.view abriria o stream da org.
+    authorizeToken(token, 'whatsapp.view').then(
       (claims) => {
         addConn(claims.orgId, socket);
         socket.on('close', () => removeConn(claims.orgId, socket));
       },
-      () => socket.close(1008, 'token inválido'),
+      () => socket.close(1008, 'não autorizado'),
     );
   });
 
@@ -179,11 +196,19 @@ export function whatsappRoutes(app: FastifyInstance): void {
   // tag de mídia não manda header Authorization). Serve do disco (media_path) ou
   // do base64 legado; na 1ª vez baixa da Evolution e cacheia (disco se habilitado,
   // senão base64 na linha).
-  app.get('/api/whatsapp/messages/:id/media', async (req, reply) => {
-    const token = (req.query as { token?: string }).token;
+  // compress:false — binário já vai íntegro (comprimir mídia só queima CPU e
+  // atrapalha o content-length do stream).
+  app.get('/api/whatsapp/messages/:id/media', { compress: false }, async (req, reply) => {
+    // Token pelo header Authorization (preferido — não vaza na URL/histórico/logs);
+    // fallback pra ?token= por compat (fetch autenticado do client usa o header).
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : (req.query as { token?: string }).token;
     if (!token) return reply.code(401).send({ error: 'sem token' });
     let orgId: number;
-    try { orgId = (await verifyToken(token)).orgId; } catch { return reply.code(401).send({ error: 'token inválido' }); }
+    // authorizeToken: valida ativo/token_version/whatsapp.view (verifyToken cru
+    // deixava usuário desativado/sem permissão baixar mídia da org por 7 dias).
+    try { orgId = (await authorizeToken(token, 'whatsapp.view')).orgId; }
+    catch (e) { return reply.code(e instanceof AuthError ? 403 : 401).send({ error: 'não autorizado' }); }
     const id = (req.params as { id: string }).id;
     const m = await one<{ evolution_id: string | null; from_me: boolean; tipo: string; mime: string | null; file_name: string | null; media_b64: string | null; media_path: string | null; remote_jid: string }>(
       `SELECT m.evolution_id, m.from_me, m.tipo, m.mime, m.file_name, m.media_b64, m.media_path, c.remote_jid
@@ -193,11 +218,44 @@ export function whatsappRoutes(app: FastifyInstance): void {
     );
     if (!m || m.tipo === 'texto') return reply.code(404).send({ error: 'sem mídia' });
 
+    // Mídia é imutável por mensagem: cache privado de 1 dia + ETag pelo id da
+    // mensagem — revalidação vira 304 sem reler o arquivo. Headers só nas
+    // respostas de mídia (304/200) pra não cachear resposta de erro.
+    const etag = `"wa-media-${id}"`;
+    const cacheHeaders = (): void => {
+      reply.header('etag', etag);
+      reply.header('cache-control', 'private, max-age=86400, immutable');
+      // nosniff: impede o browser de reinterpretar o corpo como HTML/JS ignorando o
+      // content-type que sanitizamos abaixo.
+      reply.header('x-content-type-options', 'nosniff');
+    };
+    // Sanitiza o content-type: o mime vem do metadata do contato remoto (não
+    // confiável). Servir cru + inline permitia XSS armazenado (mime text/html com
+    // JS executa na origem do app, com o token na URL). Fora da allowlist →
+    // octet-stream + attachment (download, nunca renderiza).
+    const applyType = (rawMime: string | null): string => {
+      const safe = safeMediaType(rawMime);
+      const fname = m.file_name ? m.file_name.replace(/[\r\n"]/g, '') : null;
+      const disp = safe.inline ? 'inline' : 'attachment';
+      reply.header('content-disposition', fname ? `${disp}; filename="${fname}"` : disp);
+      return safe.type;
+    };
+    if (req.headers['if-none-match'] === etag) {
+      cacheHeaders();
+      return reply.code(304).send();
+    }
+
     let buf: Buffer | null = null;
     let mime = m.mime;
-    // 1) disco (preferido). Arquivo sumido cai pro rebaixar abaixo.
+    // 1) disco (preferido): streama direto, sem carregar o arquivo inteiro em
+    // memória. Arquivo sumido cai pro rebaixar abaixo.
     if (m.media_path) {
-      try { buf = await readMedia(m.media_path); } catch { buf = null; }
+      try {
+        const { stream, size } = await mediaStream(m.media_path);
+        cacheHeaders();
+        reply.header('content-length', size);
+        return reply.type(applyType(mime)).send(stream);
+      } catch { /* cai pros fallbacks */ }
     }
     // 2) base64 legado na linha.
     if (!buf && m.media_b64) buf = Buffer.from(m.media_b64, 'base64');
@@ -219,11 +277,8 @@ export function whatsappRoutes(app: FastifyInstance): void {
         return reply.code(502).send({ error: 'falha ao baixar mídia' });
       }
     }
-    reply.header('cache-control', 'private, max-age=86400');
-    if (m.tipo === 'documento' && m.file_name) {
-      reply.header('content-disposition', `inline; filename="${m.file_name.replace(/"/g, '')}"`);
-    }
-    return reply.type(mime ?? 'application/octet-stream').send(buf);
+    cacheHeaders();
+    return reply.type(applyType(mime)).send(buf);
   });
 
   // Envia texto numa conversa existente. Persiste a mensagem própria, atualiza a
@@ -261,6 +316,9 @@ export function whatsappRoutes(app: FastifyInstance): void {
   // base64 na linha pra exibir de imediato sem rebaixar da Evolution.
   app.post('/api/whatsapp/chats/:id/send-media', {
     preHandler: [requireAuth, requirePermission('whatsapp.send')],
+    // Anexo chega como base64 num JSON — o limite padrão de body (1MB) barraria
+    // qualquer mídia real. 15MB cobre os anexos aceitos pelo front.
+    bodyLimit: 15 * 1024 * 1024,
     schema: {
       body: {
         type: 'object',

@@ -4,7 +4,7 @@ import { useAuth } from './auth.tsx';
 import type { Carrier, CatalogItem, CommissionEntry, KanbanCard, Order, PriceTable, RepresentedCompany, TaxDefaults } from './types.ts';
 import { Btn, Card, cn } from './ui.tsx';
 import { Icon } from './icons.tsx';
-import { brl, dec, maskPct, numStr, todayStr } from './format.ts';
+import { brl, dec, maskMoney, maskPct, numStr, todayStr } from './format.ts';
 import { toast } from './toast.tsx';
 
 // Modal de criação/edição de pedido. Reusável: a tela de Pedidos e o chat do
@@ -267,7 +267,7 @@ export function OrderModal({ order = null, prefill = null, onClose, onSaved }: {
                 return (
                 <div key={idx} className="space-y-1.5 rounded-xl border border-ink-200/70 bg-ink-50/50 p-2">
                   <div className="flex items-center gap-2">
-                    <input value={i.descricao} disabled={readOnly} aria-label={`Descrição item ${idx + 1}`} aria-invalid={err.desc}
+                    <input value={i.descricao} disabled={readOnly} maxLength={120} aria-label={`Descrição item ${idx + 1}`} aria-invalid={err.desc}
                       onChange={(e) => setItem(idx, { descricao: e.target.value })} placeholder="Descrição *"
                       className={cn('min-w-0 flex-1', fieldCls(err.desc))} />
                     {!readOnly && (
@@ -284,7 +284,7 @@ export function OrderModal({ order = null, prefill = null, onClose, onSaved }: {
                       <label key={k} className="block">
                         <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{lbl}</span>
                         <input type="text" inputMode="decimal" value={i[k]} disabled={readOnly} aria-label={`${ph} item ${idx + 1}`} aria-invalid={bad}
-                          onChange={(e) => setItem(idx, { [k]: k.endsWith('_pct') ? maskPct(e.target.value) : e.target.value.replace(/[^\d.,]/g, '') })} placeholder={ph}
+                          onChange={(e) => setItem(idx, { [k]: k.endsWith('_pct') ? maskPct(e.target.value) : k === 'qtd' ? maskMoney(e.target.value, 6) : maskMoney(e.target.value) })} placeholder={ph}
                           className={cn(fieldCls(bad), 'w-full')} />
                       </label>
                       );
@@ -318,11 +318,11 @@ export function OrderModal({ order = null, prefill = null, onClose, onSaved }: {
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Frete (R$)</span>
                 <input type="text" inputMode="decimal" value={frete} disabled={readOnly}
-                  onChange={(e) => setFrete(e.target.value.replace(/[^\d.,]/g, ''))} className={cn(inputCls, 'mt-1')} />
+                  onChange={(e) => setFrete(maskMoney(e.target.value))} className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Cond. pagamento</span>
-                <input value={condicao} disabled={readOnly} onChange={(e) => setCondicao(e.target.value)}
+                <input value={condicao} disabled={readOnly} maxLength={120} onChange={(e) => setCondicao(e.target.value)}
                   placeholder="ex.: 28/56 dias" className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
@@ -354,7 +354,7 @@ export function OrderModal({ order = null, prefill = null, onClose, onSaved }: {
               )}
             </div>
 
-            <textarea value={observacoes} disabled={readOnly} onChange={(e) => setObservacoes(e.target.value)}
+            <textarea value={observacoes} disabled={readOnly} maxLength={2000} onChange={(e) => setObservacoes(e.target.value)}
               placeholder="Observações" rows={2} className={inputCls} />
 
             {comissao && comissao.status !== 'cancelada' && (

@@ -128,10 +128,10 @@ describe('GET /api/sample-requests + kanban', () => {
     const fromB = (await inj(b, 'GET', `/api/sample-requests?relationship_id=${rel}`)).json() as { samples: unknown[] };
     expect(fromB.samples).toHaveLength(0);
 
-    // card do kanban traz o agregado de amostras
-    const board = (await inj(a, 'GET', '/api/kanban')).json() as { cards: { id: number; amostras: { id: number; produto: string; status: string }[] }[] };
+    // card do kanban traz só a contagem de amostras (detalhe carrega sob demanda)
+    const board = (await inj(a, 'GET', '/api/kanban')).json() as { cards: { id: number; amostras_count: number }[] };
     const card = board.cards.find((c) => Number(c.id) === rel)!;
-    expect(card.amostras.some((x) => Number(x.id) === Number(s.id) && x.produto === 'Produto Amostra A')).toBe(true);
+    expect(card.amostras_count).toBe(1);
   });
 });
 

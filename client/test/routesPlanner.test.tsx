@@ -4,6 +4,7 @@ import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { RoutePlanner } from '../src/pages/Routes.tsx';
 import { api, ApiError } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children?: React.ReactNode }) => <div data-testid="map">{children}</div>,
@@ -16,7 +17,14 @@ vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const FUNNEL = [
   { id: 1, company_id: 10, razao_social: 'Alfa LTDA', nome_fantasia: 'Alfa', uf: 'SP', lat: -23.5, lon: -46.6 },
@@ -36,6 +44,10 @@ beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.post).mockReset();
   vi.mocked(m.del).mockReset();
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
   m.get.mockImplementation(async (p: string) => {
     if (p.startsWith('/api/relationships')) return { relationships: FUNNEL };
     if (p === '/api/vehicles') return { vehicles: VEHICLES };
@@ -66,7 +78,7 @@ describe('RoutePlanner', () => {
     await userEvent.click(screen.getByText('Alfa'));
     await userEvent.click(otimizar);
     expect(m.post).toHaveBeenCalledWith('/api/routes/optimize',
-      { company_ids: [10], vehicle_id: null, preco_litro: null });
+      { company_ids: [10], vehicle_id: null, preco_litro: null, origem_lat: null, origem_lon: null });
 
     expect(await screen.findByText('Sequência de visitas')).toBeInTheDocument();
     expect(screen.getByText(/24,6 km/)).toBeInTheDocument();

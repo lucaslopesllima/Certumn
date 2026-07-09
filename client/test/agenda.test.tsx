@@ -4,12 +4,20 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Agenda } from '../src/pages/Agenda.tsx';
 import { api } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 // atividades no mês corrente (datas dinâmicas p/ caírem na grade visível)
 const dia = (d: number, h: number): string => {
@@ -25,8 +33,14 @@ beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.del).mockReset();
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
+  // a página busca a janela visível: /api/activities?from=…&to=…&limit=500
+  // (as fixtures caem no mês corrente, dentro da janela pedida)
   m.get.mockImplementation(async (p: string) =>
-    p === '/api/activities'
+    p.startsWith('/api/activities?')
       ? { activities: [
           act({ id: 1, titulo: 'Ligar p/ cliente', tipo: 'ligacao' }),
           act({ id: 2, titulo: 'Visita fábrica', tipo: 'visita', start_at: dia(11, 14) }),

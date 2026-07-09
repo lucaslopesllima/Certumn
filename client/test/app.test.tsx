@@ -33,8 +33,10 @@ vi.mock('../src/lib/theme.tsx', () => ({
 
 const useAuthMock = vi.mocked(useAuth);
 
+// can(): admin faz bypass; rep sem grupo não tem permissão nenhuma (ex.: users.list)
 const auth = (user: User | null, loading = false): ReturnType<typeof useAuth> => ({
   user, loading, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+  can: () => user?.role === 'admin',
 });
 
 const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };

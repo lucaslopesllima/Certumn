@@ -24,8 +24,11 @@ beforeEach(() => {
   useAuthMock.mockReturnValue({
     user: { id: 1, email: ME.email, role: 'admin', org_id: 1 },
     loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
   });
-  m.get.mockResolvedValue({ users: [ME, REP] });
+  // a página também busca /api/groups (seletor de grupo RBAC; vazio = sem coluna)
+  m.get.mockImplementation(async (p: string) =>
+    p === '/api/groups' ? { groups: [] } : { users: [ME, REP] });
 });
 
 describe('Team', () => {
@@ -52,8 +55,10 @@ describe('Team', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Criar usuário' }));
 
     expect(m.post).toHaveBeenCalledWith('/api/users',
-      { nome: 'Novo Vendedor', email: 'novo@org.com', senha: 'provisoria1', role: 'rep' });
-    await waitFor(() => expect(m.get).toHaveBeenCalledTimes(2)); // recarregou
+      { nome: 'Novo Vendedor', email: 'novo@org.com', senha: 'provisoria1', role: 'rep', group_id: null });
+    // recarregou a lista (2ª chamada a /api/users; /api/groups não conta)
+    const userCalls = (): number => m.get.mock.calls.filter((c) => c[0] === '/api/users').length;
+    await waitFor(() => expect(userCalls()).toBe(2));
   });
 
   it('erro da API ao criar aparece na tela', async () => {

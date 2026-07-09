@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { Brand, CatalogItem, Contact, KanbanCard, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
@@ -9,7 +9,7 @@ import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
 import { SampleRequestModal, SampleListModal } from '../lib/sampleModal.tsx';
-import { brl0 as brl, maskPhone, numStr } from '../lib/format.ts';
+import { brl0 as brl, clampNum, maskMoney, maskPhone, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
 const STATUS_TONE: Record<string, Tone> = {
@@ -22,19 +22,23 @@ const STATUS_OPTS = ['prospect', 'cliente', 'descartado'] as const;
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 const FILTERS_OPEN_KEY = 'funil:filtersOpen';
 const KPIS_OPEN_KEY = 'funil:kpisOpen';
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
+// Card do board: /api/kanban devolve a contagem de amostras (amostras_count)
+// em vez do array completo — a lista é carregada sob demanda no modal de amostras.
+type BoardCard = KanbanCard & { amostras_count?: number };
 
 export function Kanban(): React.JSX.Element {
-  const { can } = useAuth();
   const [stages, setStages] = useState<Stage[]>([]);
-  const [cards, setCards] = useState<KanbanCard[]>([]);
+  const [cards, setCards] = useState<BoardCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [dragId, setDragId] = useState<number | null>(null);
   const [over, setOver] = useState<number | 'none' | null>(null);
-  const [editing, setEditing] = useState<KanbanCard | null>(null);
+  const [editing, setEditing] = useState<BoardCard | null>(null);
   const [moveFor, setMoveFor] = useState<number | null>(null); // card com menu "mover" aberto
   const [viewing, setViewing] = useState<number | null>(null); // company_id em visualização
-  const [sampleFor, setSampleFor] = useState<KanbanCard | null>(null); // card criando amostra
-  const [samplesView, setSamplesView] = useState<KanbanCard | null>(null); // card vendo/editando amostras
+  const [sampleFor, setSampleFor] = useState<BoardCard | null>(null); // card criando amostra
+  const [samplesView, setSamplesView] = useState<BoardCard | null>(null); // card vendo/editando amostras
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
   const [scenarios, setScenarios] = useState<NamedItem[]>([]);
@@ -51,13 +55,13 @@ export function Kanban(): React.JSX.Element {
   const sellers = useSellers();
   const filter = useCompanyFilter('funil');
 
-  const load = async (): Promise<void> => {
-    const r = await api.get<{ stages: Stage[]; cards: KanbanCard[] }>('/api/kanban');
+  const load = useCallback(async (): Promise<void> => {
+    const r = await api.get<{ stages: Stage[]; cards: BoardCard[] }>('/api/kanban');
     setStages(r.stages);
     setCards(r.cards);
     setLoading(false);
-  };
-  useEffect(() => { void load(); }, []);
+  }, []);
+  useEffect(() => { void load(); }, [load]);
   useEffect(() => {
     void Promise.all([
       api.get<{ empresas: RepresentedCompany[] }>('/api/represented').then((r) => setReps(r.empresas)),
@@ -78,8 +82,13 @@ export function Kanban(): React.JSX.Element {
     try { localStorage.setItem(KPIS_OPEN_KEY, kpisOpen ? '1' : '0'); } catch { /* storage indisponível */ }
   }, [kpisOpen]);
 
-  const move = async (cardId: number, stageId: number | null): Promise<void> => {
-    const card = cards.find((c) => c.id === cardId);
+  // Espelho dos cards em ref: `move` fica estável (useCallback sem depender de
+  // `cards`) e os handlers do CardItem (React.memo) não recriam a cada render.
+  const cardsRef = useRef<BoardCard[]>([]);
+  cardsRef.current = cards;
+
+  const move = useCallback(async (cardId: number, stageId: number | null): Promise<void> => {
+    const card = cardsRef.current.find((c) => c.id === cardId);
     if (!card || card.stage_id === stageId) return;
     setCards((cs) => cs.map((c) => (c.id === cardId ? { ...c, stage_id: stageId } : c))); // optimistic
     try {
@@ -90,7 +99,18 @@ export function Kanban(): React.JSX.Element {
       void load(); // revert from server on failure
       toast.error('Não foi possível mover o card.');
     }
-  };
+  }, [load]);
+
+  // Handlers estáveis passados ao CardItem (React.memo).
+  const onDragStartCard = useCallback((id: number) => setDragId(id), []);
+  const onDragEndCard = useCallback(() => { setDragId(null); setOver(null); }, []);
+  const onMoveCard = useCallback((id: number, stageId: number | null) => { void move(id, stageId); setMoveFor(null); }, [move]);
+  const onEditCard = useCallback((c: BoardCard) => setEditing(c), []);
+  const onToggleMenu = useCallback((id: number) => setMoveFor((m) => (m === id ? null : id)), []);
+  const onCloseMenu = useCallback(() => setMoveFor(null), []);
+  const onViewCompany = useCallback((companyId: number) => setViewing(companyId), []);
+  const onSampleCard = useCallback((c: BoardCard) => setSampleFor(c), []);
+  const onSamplesCard = useCallback((c: BoardCard) => setSamplesView(c), []);
 
   const saveEdit = async (id: number, patch: EditPatch): Promise<void> => {
     try {
@@ -113,12 +133,23 @@ export function Kanban(): React.JSX.Element {
     [filter.apply, cards, ownerId],
   );
 
+  // Agrupa os cards por etapa uma única vez (em vez de um .filter por coluna).
+  const cardsByColumn = useMemo(() => {
+    const m = new Map<number | 'none', BoardCard[]>();
+    for (const c of visibleCards) {
+      const key = c.stage_id ?? 'none';
+      const list = m.get(key);
+      if (list) list.push(c); else m.set(key, [c]);
+    }
+    return m;
+  }, [visibleCards]);
+
   if (loading) return <div className="p-6"><Spinner /></div>;
 
   const columns: { key: number | 'none'; nome: string }[] = [
     ...stages.map((s) => ({ key: s.id as number | 'none', nome: s.nome })),
   ];
-  const hasOrphans = visibleCards.some((c) => c.stage_id === null);
+  const hasOrphans = (cardsByColumn.get('none')?.length ?? 0) > 0;
   if (hasOrphans) columns.unshift({ key: 'none', nome: 'Sem etapa' });
 
   const totalValor = visibleCards.reduce((s, c) => s + Number(c.valor_estimado ?? 0), 0);
@@ -173,13 +204,15 @@ export function Kanban(): React.JSX.Element {
 
       <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto px-4 pb-4 sm:px-6 sm:pb-6">
         {columns.map((col) => {
-          const colCards = visibleCards.filter((c) => (c.stage_id ?? 'none') === col.key);
+          const colCards = cardsByColumn.get(col.key) ?? [];
           const valor = colCards.reduce((s, c) => s + Number(c.valor_estimado ?? 0), 0);
           const target = col.key === 'none' ? null : (col.key as number);
           const active = over === col.key;
           return (
             <div key={String(col.key)}
-              onDragOver={(e) => { e.preventDefault(); setOver(col.key); }}
+              // só troca o estado quando a coluna sob o drag muda — dragover
+              // dispara continuamente e re-renderizava o board inteiro.
+              onDragOver={(e) => { e.preventDefault(); setOver((p) => (p === col.key ? p : col.key)); }}
               onDragLeave={() => setOver((o) => (o === col.key ? null : o))}
               onDrop={() => { if (dragId !== null) void move(dragId, target); setDragId(null); setOver(null); }}
               className={cn('flex w-72 shrink-0 flex-col rounded-2xl border p-2 transition-colors',
@@ -193,111 +226,12 @@ export function Kanban(): React.JSX.Element {
               )}
               <div className="flex-1 space-y-2 overflow-auto px-0.5 pb-1">
                 {colCards.map((c) => (
-                  <div key={c.id} draggable={can('relationships.update')}
-                    onDragStart={() => setDragId(c.id)}
-                    onDragEnd={() => { setDragId(null); setOver(null); }}
-                    className={cn('group relative cursor-grab rounded-xl border border-ink-200/70 bg-surface p-3 shadow-card transition active:cursor-grabbing',
-                      dragId === c.id && 'opacity-50')}>
-                    <div className="absolute right-2 top-2 flex items-center gap-0.5">
-                      {can('relationships.update') && (
-                        <button type="button"
-                          onClick={() => setEditing(c)}
-                          title="Editar prospecção"
-                          className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-                          <Icon name="pencil" size={14} />
-                        </button>
-                      )}
-                      {can('relationships.update') && (
-                        <button type="button"
-                          onClick={() => setMoveFor((m) => (m === c.id ? null : c.id))}
-                          aria-label="Mover para outra etapa" aria-haspopup="menu" aria-expanded={moveFor === c.id}
-                          title="Mover para…"
-                          className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
-                          <Icon name="arrowRight" size={14} />
-                        </button>
-                      )}
-                    </div>
-                    {moveFor === c.id && (
-                      <>
-                        <div className="fixed inset-0 z-[40]" onClick={() => setMoveFor(null)} />
-                        <div role="menu" className="absolute right-2 top-9 z-[50] w-44 overflow-hidden rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
-                          <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Mover para</p>
-                          {stages.map((s) => (
-                            <button key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
-                              onClick={() => { void move(c.id, s.id); setMoveFor(null); }}
-                              className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
-                                c.stage_id === s.id ? 'font-semibold text-brand-600' : 'text-ink-700 hover:bg-ink-50')}>
-                              {c.stage_id === s.id && <Icon name="check" size={13} />}{s.nome}
-                            </button>
-                          ))}
-                        </div>
-                      </>
-                    )}
-                    <div className="pr-12">
-                      <button type="button" onClick={() => setViewing(c.company_id)}
-                        title="Ver dados da empresa"
-                        className="block max-w-full truncate text-left text-sm font-semibold text-ink-800 transition-colors hover:text-brand-600 hover:underline">
-                        {c.nome_fantasia || c.razao_social}
-                      </button>
-                    </div>
-                    <p className="truncate text-xs text-ink-400">{c.razao_social}</p>
-                    {(c.marca || (c.contatos?.length ?? 0) > 0) && (
-                      <p className="mt-1 truncate text-xs text-ink-500">
-                        {[c.marca, (c.contatos ?? []).map((x) => x.nome).join(', ')].filter(Boolean).join(' · ')}
-                      </p>
-                    )}
-                    {(c.catalogo?.length ?? 0) > 0 && (
-                      <p className="mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs text-ink-400">
-                        <Icon name="box" size={12} className="shrink-0" />
-                        <span className="truncate">{c.catalogo.map((x) => x.nome).join(', ')}</span>
-                      </p>
-                    )}
-                    {(c.amostras?.length ?? 0) > 0 && (
-                      <button type="button" onClick={() => setSamplesView(c)}
-                        title="Ver/editar amostras solicitadas"
-                        className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
-                        <Icon name="flask" size={12} className="shrink-0" />
-                        <span className="truncate">{c.amostras.length} amostra{c.amostras.length > 1 ? 's' : ''}</span>
-                      </button>
-                    )}
-                    {c.valor_estimado && Number(c.valor_estimado) > 0 && (
-                      <p className="tabnums mt-1 text-xs font-semibold text-emerald-600">{brl(Number(c.valor_estimado))}</p>
-                    )}
-                    <div className="mt-2 flex items-center justify-between">
-                      <Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{c.status}</Badge>
-                      <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-400">
-                        <Icon name="mapPin" size={12} className="shrink-0" />
-                        <span className="truncate">{[c.cidade, c.uf].filter(Boolean).join(' · ')}</span>
-                      </span>
-                    </div>
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
-                      {can('orders.create') && (
-                        <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
-                          title="Novo pedido"
-                          className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
-                          <Icon name="plus" size={13} /> Pedido
-                        </a>
-                      )}
-                      {can('sample_requests.create') && (
-                        <button type="button" onClick={() => setSampleFor(c)} title="Solicitar amostra"
-                          className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
-                          <Icon name="flask" size={13} /> +Amostra
-                        </button>
-                      )}
-                      {c.telefone1 && (
-                        <button type="button" title="Abrir conversa no WhatsApp"
-                          onClick={() => {
-                            void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: c.company_id, numero: c.telefone1 })
-                              .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
-                              .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-emerald-50 hover:text-emerald-700">
-                          <Icon name="phone" size={13} /> WhatsApp
-                        </button>
-                      )}
-                    </div>
-                  </div>
+                  <CardItem key={c.id} c={c} stages={stages}
+                    dragging={dragId === c.id} menuOpen={moveFor === c.id}
+                    onDragStartCard={onDragStartCard} onDragEndCard={onDragEndCard}
+                    onMove={onMoveCard} onEdit={onEditCard}
+                    onToggleMenu={onToggleMenu} onCloseMenu={onCloseMenu}
+                    onView={onViewCompany} onSample={onSampleCard} onSamples={onSamplesCard} />
                 ))}
                 {colCards.length === 0 && (
                   <p className="rounded-xl border border-dashed border-ink-200 px-2 py-6 text-center text-xs text-ink-300">
@@ -339,6 +273,129 @@ export function Kanban(): React.JSX.Element {
     </div>
   );
 }
+
+// Card do board extraído em React.memo com props/handlers estáveis: arrastar
+// sobre uma coluna (over) ou abrir o menu de um card não re-renderiza os demais.
+const CardItem = memo(function CardItem({ c, stages, dragging, menuOpen, onDragStartCard, onDragEndCard, onMove, onEdit, onToggleMenu, onCloseMenu, onView, onSample, onSamples }: {
+  c: BoardCard; stages: Stage[]; dragging: boolean; menuOpen: boolean;
+  onDragStartCard: (id: number) => void; onDragEndCard: () => void;
+  onMove: (id: number, stageId: number | null) => void;
+  onEdit: (c: BoardCard) => void;
+  onToggleMenu: (id: number) => void; onCloseMenu: () => void;
+  onView: (companyId: number) => void;
+  onSample: (c: BoardCard) => void; onSamples: (c: BoardCard) => void;
+}): React.JSX.Element {
+  const { can } = useAuth();
+  // /api/kanban manda só a contagem; o array completo é fallback (compat).
+  const nAmostras = c.amostras_count ?? c.amostras?.length ?? 0;
+  return (
+    <div draggable={can('relationships.update')}
+      onDragStart={() => onDragStartCard(c.id)}
+      onDragEnd={onDragEndCard}
+      className={cn('group relative cursor-grab rounded-xl border border-ink-200/70 bg-surface p-3 shadow-card transition active:cursor-grabbing',
+        dragging && 'opacity-50')}>
+      <div className="absolute right-2 top-2 flex items-center gap-0.5">
+        {can('relationships.update') && (
+          <button type="button"
+            onClick={() => onEdit(c)}
+            title="Editar prospecção"
+            className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+            <Icon name="pencil" size={14} />
+          </button>
+        )}
+        {can('relationships.update') && (
+          <button type="button"
+            onClick={() => onToggleMenu(c.id)}
+            aria-label="Mover para outra etapa" aria-haspopup="menu" aria-expanded={menuOpen}
+            title="Mover para…"
+            className="rounded-lg p-1 text-ink-300 transition hover:bg-ink-100 hover:text-ink-600 focus:opacity-100 sm:opacity-0 sm:group-hover:opacity-100">
+            <Icon name="arrowRight" size={14} />
+          </button>
+        )}
+      </div>
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-[40]" onClick={onCloseMenu} />
+          <div role="menu" className="absolute right-2 top-9 z-[50] w-44 overflow-hidden rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
+            <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Mover para</p>
+            {stages.map((s) => (
+              <button key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
+                onClick={() => onMove(c.id, s.id)}
+                className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
+                  c.stage_id === s.id ? 'font-semibold text-brand-600' : 'text-ink-700 hover:bg-ink-50')}>
+                {c.stage_id === s.id && <Icon name="check" size={13} />}{s.nome}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+      <div className="pr-12">
+        <button type="button" onClick={() => onView(c.company_id)}
+          title="Ver dados da empresa"
+          className="block max-w-full truncate text-left text-sm font-semibold text-ink-800 transition-colors hover:text-brand-600 hover:underline">
+          {c.nome_fantasia || c.razao_social}
+        </button>
+      </div>
+      <p className="truncate text-xs text-ink-400">{c.razao_social}</p>
+      {(c.marca || (c.contatos?.length ?? 0) > 0) && (
+        <p className="mt-1 truncate text-xs text-ink-500">
+          {[c.marca, (c.contatos ?? []).map((x) => x.nome).join(', ')].filter(Boolean).join(' · ')}
+        </p>
+      )}
+      {(c.catalogo?.length ?? 0) > 0 && (
+        <p className="mt-1 inline-flex max-w-full items-center gap-1 truncate text-xs text-ink-400">
+          <Icon name="box" size={12} className="shrink-0" />
+          <span className="truncate">{c.catalogo.map((x) => x.nome).join(', ')}</span>
+        </p>
+      )}
+      {nAmostras > 0 && (
+        <button type="button" onClick={() => onSamples(c)}
+          title="Ver/editar amostras solicitadas"
+          className="mt-1 inline-flex max-w-full items-center gap-1 truncate rounded-lg bg-amber-50 px-2 py-0.5 text-xs font-semibold text-amber-700 transition hover:bg-amber-100">
+          <Icon name="flask" size={12} className="shrink-0" />
+          <span className="truncate">{nAmostras} amostra{nAmostras > 1 ? 's' : ''}</span>
+        </button>
+      )}
+      {c.valor_estimado && Number(c.valor_estimado) > 0 && (
+        <p className="tabnums mt-1 text-xs font-semibold text-emerald-600">{brl(Number(c.valor_estimado))}</p>
+      )}
+      <div className="mt-2 flex items-center justify-between">
+        <Badge tone={STATUS_TONE[c.status] ?? 'neutral'}>{c.status}</Badge>
+        <span className="inline-flex min-w-0 items-center gap-1 text-xs text-ink-400">
+          <Icon name="mapPin" size={12} className="shrink-0" />
+          <span className="truncate">{[c.cidade, c.uf].filter(Boolean).join(' · ')}</span>
+        </span>
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {/* âncora simples (não NavLink): o Kanban também renderiza fora de Router nos testes */}
+        {can('orders.create') && (
+          <a href={`/pedidos?company_id=${c.company_id}&relationship_id=${c.id}${c.represented_id != null ? `&represented_id=${c.represented_id}` : ''}`}
+            title="Novo pedido"
+            className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+            <Icon name="plus" size={13} /> Pedido
+          </a>
+        )}
+        {can('sample_requests.create') && (
+          <button type="button" onClick={() => onSample(c)} title="Solicitar amostra"
+            className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-brand-50 hover:text-brand-700">
+            <Icon name="flask" size={13} /> +Amostra
+          </button>
+        )}
+        {c.telefone1 && (
+          <button type="button" title="Abrir conversa no WhatsApp"
+            onClick={() => {
+              void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: c.company_id, numero: c.telefone1 })
+                .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+                .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
+            }}
+            className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-emerald-50 hover:text-emerald-700">
+            <Icon name="phone" size={13} /> WhatsApp
+          </button>
+        )}
+      </div>
+    </div>
+  );
+});
 
 interface EditPatch {
   stage_id: number | null; status: string; valor_estimado: number | null; notas: string | null;
@@ -418,7 +475,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
       await onSave(card.id, {
         stage_id: stageId,
         status,
-        valor_estimado: numOrNull(valor.trim()),
+        valor_estimado: valor.trim() === '' ? null : clampNum(valor, 0, 1e9),
         represented_id: representadaId,
         marca_id: marcaId,
         contato_ids: contatoIds,
@@ -473,7 +530,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
               {status === 'descartado' && (
                 <Field label="Motivo do descarte">
                   <input value={motivoDescarte} onChange={(e) => setMotivoDescarte(e.target.value)}
-                    placeholder="ex.: Preço alto, sem fit, concorrente" className={inputCls} />
+                    maxLength={2000} placeholder="ex.: Preço alto, sem fit, concorrente" className={inputCls} />
                 </Field>
               )}
               <Field label="Representada">
@@ -566,7 +623,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
                 <input type="date" value={dataContato} onChange={(e) => setDataContato(e.target.value)} className={inputCls} />
               </Field>
               <Field label="Valor estimado (R$)">
-                <input type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" className={inputCls} />
+                <input inputMode="decimal" value={valor} onChange={(e) => setValor(maskMoney(e.target.value))} placeholder="0,00" className={inputCls} />
               </Field>
               <Field label="Previsão de faturamento (data)">
                 <input type="date" value={previsaoData} onChange={(e) => setPrevisaoData(e.target.value)} className={inputCls} />
@@ -574,7 +631,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
             </div>
 
             <Field label="Notas">
-              <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={3}
+              <textarea value={notas} onChange={(e) => setNotas(e.target.value)} rows={3} maxLength={2000}
                 placeholder="Observações livres" className={cn(inputCls, 'resize-y')} />
             </Field>
           </div>
@@ -637,6 +694,7 @@ function NovoContato({ companyId, onCreated, onCancel }: {
 
   const save = async (): Promise<void> => {
     if (!nome.trim()) return;
+    if (email.trim() && !EMAIL_RE.test(email.trim())) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try {
       const r = await api.post<{ contact: Contact }>('/api/contacts', {
@@ -659,12 +717,12 @@ function NovoContato({ companyId, onCreated, onCancel }: {
           </button>
         </div>
         <div className="space-y-2.5 p-5">
-          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} />
+          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} placeholder="Nome *" className={inputCls} />
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <input value={cargo} onChange={(e) => setCargo(e.target.value)} placeholder="Cargo" className={inputCls} />
+            <input value={cargo} onChange={(e) => setCargo(e.target.value)} maxLength={120} placeholder="Cargo" className={inputCls} />
             <input value={telefone} onChange={(e) => setTelefone(maskPhone(e.target.value))} placeholder="Telefone" inputMode="tel" className={inputCls} />
           </div>
-          <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="E-mail" className={inputCls} />
+          <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={160} placeholder="E-mail" className={inputCls} />
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 p-4">
           <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
@@ -691,7 +749,7 @@ function NovoProduto({ reps, onCreated, onCancel }: {
     try {
       const r = await api.post<{ item: CatalogItem }>('/api/catalog', {
         nome: nome.trim(), codigo: txt(codigo),
-        preco: preco.trim() === '' ? null : Number(preco),
+        preco: preco.trim() === '' ? null : clampNum(preco, 0, 1e9),
         represented_id: repId === '' ? null : Number(repId),
       });
       toast.success('Produto criado.');
@@ -711,10 +769,10 @@ function NovoProduto({ reps, onCreated, onCancel }: {
           </button>
         </div>
         <div className="space-y-2.5 p-5">
-          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} />
+          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} placeholder="Nome *" className={inputCls} />
           <div className="grid gap-2.5 sm:grid-cols-2">
-            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} placeholder="Código / SKU" className={inputCls} />
-            <input type="number" min="0" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} placeholder="Preço (R$)" className={inputCls} />
+            <input value={codigo} onChange={(e) => setCodigo(e.target.value)} maxLength={120} placeholder="Código / SKU" className={inputCls} />
+            <input inputMode="decimal" value={preco} onChange={(e) => setPreco(maskMoney(e.target.value))} placeholder="Preço (R$)" className={inputCls} />
           </div>
           <select value={repId} onChange={(e) => setRepId(e.target.value)} className={inputCls}>
             <option value="">Representada (opcional)</option>

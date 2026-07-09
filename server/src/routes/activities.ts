@@ -18,18 +18,22 @@ export function activityRoutes(app: FastifyInstance): void {
           to: { type: 'string' },
           status: { type: 'string' },
           owner_user_id: { type: 'integer' },
+          limit: { type: 'integer', minimum: 1, maximum: 1000, default: 500 },
         },
       },
     },
   }, async (req) => {
     const orgId = req.auth!.orgId;
-    const { from, to, status, owner_user_id } = req.query as { from?: string; to?: string; status?: string; owner_user_id?: number };
+    const { from, to, status, owner_user_id, limit = 500 } = req.query as {
+      from?: string; to?: string; status?: string; owner_user_id?: number; limit?: number;
+    };
     const where: string[] = ['a.org_id = $1'];
     const params: unknown[] = [orgId];
     scopeOwner(req, where, params, 'a.owner_user_id', owner_user_id);
     if (from) { params.push(from); where.push(`a.start_at >= $${params.length}`); }
     if (to) { params.push(to); where.push(`a.start_at <= $${params.length}`); }
     if (status) { params.push(status); where.push(`a.status = $${params.length}::activity_status`); }
+    params.push(limit); const limIdx = params.length;
     const rows = await query(
       `SELECT a.id, a.tipo, a.titulo, a.start_at, a.end_at, a.owner_user_id, a.company_id, a.status,
               a.checkin_lat, a.checkin_lon, a.checkin_at, a.relatorio,
@@ -40,7 +44,8 @@ export function activityRoutes(app: FastifyInstance): void {
        LEFT JOIN represented_companies rc ON rc.id = a.represented_id
        LEFT JOIN contacts ct ON ct.id = a.contact_id
        WHERE ${where.join(' AND ')}
-       ORDER BY a.start_at`,
+       ORDER BY a.start_at
+       LIMIT $${limIdx}`,
       params,
     );
     return { activities: rows };

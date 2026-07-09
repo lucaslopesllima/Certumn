@@ -8,7 +8,6 @@ import { ErrorBoundary } from './lib/ErrorBoundary.tsx';
 import { ToastHost } from './lib/toast.tsx';
 import { App } from './App.tsx';
 import { initOfflineSync } from './lib/offline.ts';
-import 'leaflet/dist/leaflet.css';
 import './index.css';
 
 // PWA: registra o service worker (autoUpdate) e liga o flush da fila offline

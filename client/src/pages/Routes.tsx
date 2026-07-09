@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
+// CSS do Leaflet viaja junto com o chunk lazy da página (fora do bundle inicial).
+import 'leaflet/dist/leaflet.css';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, Tooltip, useMap } from 'react-leaflet';
 import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';
 import type { FunnelCompany, Vehicle, OptimizeResult, RouteStop, SavedRoute } from '../lib/types.ts';
 import { Btn, Badge, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, maskPlaca } from '../lib/format.ts';
+import { brl, maskPlaca, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { loadPartida, type Partida } from '../lib/companyFilter.tsx';
 import { useAuth } from '../lib/auth.tsx';
@@ -32,9 +34,10 @@ function PromptModal({ state, onClose }: { state: PromptState; onClose: () => vo
           <form onSubmit={submit} className="space-y-3">
             <label className="block">
               <span className="mb-1 block text-xs font-semibold text-ink-600">{state.label}</span>
-              <input autoFocus value={val} onChange={(e) => setVal(e.target.value)}
+              <input autoFocus value={val} onChange={(e) => setVal(state.kind === 'decimal' ? maskMoney(e.target.value) : e.target.value)}
                 type={state.kind === 'date' ? 'date' : 'text'}
                 inputMode={state.kind === 'decimal' ? 'decimal' : undefined}
+                maxLength={state.kind === 'decimal' ? undefined : 120}
                 placeholder={state.placeholder}
                 className="w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
             </label>
@@ -257,7 +260,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
     });
   };
   const doLancarCusto = async (r: SavedRoute, raw: string): Promise<void> => {
-    const valor = raw.trim() === '' ? undefined : Number(raw.replace(',', '.'));
+    const valor = raw.trim() === '' ? undefined : clampNum(raw, 0, 1e9);
     try {
       await api.post(`/api/routes/${r.id}/expense`, valor != null ? { valor } : {});
       toast.success('Despesa de viagem lançada no Financeiro.');
@@ -283,7 +286,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
           </div>
           <div className="relative mb-2">
             <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400"><Icon name="search" size={15} /></span>
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa…"
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar empresa…" maxLength={120}
               className="w-full rounded-xl border border-ink-200 bg-surface py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400" />
           </div>
           <div className="max-h-[42vh] space-y-1 overflow-auto pr-1">
@@ -322,7 +325,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">Preço do litro (R$) — opcional</label>
-            <input value={preco} onChange={(e) => setPreco(e.target.value)} inputMode="decimal" placeholder="ex.: 6,19"
+            <input value={preco} onChange={(e) => setPreco(maskMoney(e.target.value))} inputMode="decimal" placeholder="ex.: 6,19"
               className="w-full rounded-xl border border-ink-200 bg-surface px-3 py-2 text-sm outline-none focus:border-brand-400" />
             <p className="mt-1 text-[11px] text-ink-400">Vazio usa o preço cadastrado no veículo.</p>
           </div>
@@ -513,7 +516,7 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
   };
   const cancel = (): void => { setEditId(null); setForm(EMPTY_FORM); setErr(''); };
 
-  const num = (s: string): number | null => (s.trim() ? Number(s.replace(',', '.')) : null);
+  const num = (s: string): number | null => (s.trim() ? clampNum(s, 0, 1e6) : null);
 
   const submit = async (): Promise<void> => {
     if (!form.nome.trim() || !form.consumo_kml.trim()) { setErr('Nome e consumo são obrigatórios.'); return; }
@@ -579,7 +582,7 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
         <p className="text-sm font-semibold text-ink-700">{editId != null ? 'Editar veículo' : 'Novo veículo'}</p>
         <div>
           <label className="mb-1 block text-xs font-medium text-ink-500">Nome *</label>
-          <input value={form.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Fiat Strada 2022"
+          <input value={form.nome} onChange={(e) => set('nome', e.target.value)} placeholder="Fiat Strada 2022" maxLength={120}
             className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400" />
         </div>
         <div className="grid grid-cols-2 gap-3">
@@ -599,17 +602,17 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
         <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">km/litro *</label>
-            <input value={form.consumo_kml} onChange={(e) => set('consumo_kml', e.target.value)} inputMode="decimal" placeholder="12,5"
+            <input value={form.consumo_kml} onChange={(e) => set('consumo_kml', maskMoney(e.target.value))} inputMode="decimal" placeholder="12,5"
               className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">Tanque (L)</label>
-            <input value={form.tanque_litros} onChange={(e) => set('tanque_litros', e.target.value)} inputMode="decimal" placeholder="55"
+            <input value={form.tanque_litros} onChange={(e) => set('tanque_litros', maskMoney(e.target.value))} inputMode="decimal" placeholder="55"
               className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400" />
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-ink-500">R$/litro</label>
-            <input value={form.preco_litro} onChange={(e) => set('preco_litro', e.target.value)} inputMode="decimal" placeholder="6,19"
+            <input value={form.preco_litro} onChange={(e) => set('preco_litro', maskMoney(e.target.value))} inputMode="decimal" placeholder="6,19"
               className="w-full rounded-xl border border-ink-200 px-3 py-2 text-sm outline-none focus:border-brand-400" />
           </div>
         </div>

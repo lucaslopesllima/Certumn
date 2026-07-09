@@ -126,10 +126,10 @@ export function Account(): React.JSX.Element {
         <p className="mt-0.5 text-xs text-ink-400">Usados também como origem das rotas e na sua identificação.</p>
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          <Field label="Nome / Razão social"><input value={org.nome} onChange={set('nome')} className={inputCls} /></Field>
+          <Field label="Nome / Razão social"><input value={org.nome} onChange={set('nome')} maxLength={120} className={inputCls} /></Field>
           <Field label="CNPJ"><input value={org.cnpj ?? ''} inputMode="numeric"
             onChange={(e) => setOrg((o) => (o ? { ...o, cnpj: maskCNPJ(e.target.value) } : o))} placeholder="00.000.000/0000-00" className={inputCls} /></Field>
-          <Field label="E-mail (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className={inputCls} /></Field>
+          <Field label="E-mail (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={160} className={inputCls} /></Field>
           <Field label="Telefone"><input value={org.telefone ?? ''} inputMode="tel"
             onChange={(e) => setOrg((o) => (o ? { ...o, telefone: maskPhone(e.target.value) } : o))} placeholder="(00) 00000-0000" className={inputCls} /></Field>
         </div>
@@ -148,11 +148,11 @@ export function Account(): React.JSX.Element {
               </span>
             )}
           </Field>
-          <Field label="Logradouro" className="sm:col-span-3"><input value={org.logradouro ?? ''} onChange={set('logradouro')} className={inputCls} /></Field>
-          <Field label="Número" className="sm:col-span-1"><input value={org.numero ?? ''} onChange={set('numero')} className={inputCls} /></Field>
-          <Field label="Complemento" className="sm:col-span-2"><input value={org.complemento ?? ''} onChange={set('complemento')} className={inputCls} /></Field>
-          <Field label="Bairro" className="sm:col-span-2"><input value={org.bairro ?? ''} onChange={set('bairro')} className={inputCls} /></Field>
-          <Field label="Cidade" className="sm:col-span-1"><input value={org.cidade ?? ''} onChange={set('cidade')} className={inputCls} /></Field>
+          <Field label="Logradouro" className="sm:col-span-3"><input value={org.logradouro ?? ''} onChange={set('logradouro')} maxLength={120} className={inputCls} /></Field>
+          <Field label="Número" className="sm:col-span-1"><input value={org.numero ?? ''} onChange={set('numero')} maxLength={120} className={inputCls} /></Field>
+          <Field label="Complemento" className="sm:col-span-2"><input value={org.complemento ?? ''} onChange={set('complemento')} maxLength={120} className={inputCls} /></Field>
+          <Field label="Bairro" className="sm:col-span-2"><input value={org.bairro ?? ''} onChange={set('bairro')} maxLength={120} className={inputCls} /></Field>
+          <Field label="Cidade" className="sm:col-span-1"><input value={org.cidade ?? ''} onChange={set('cidade')} maxLength={120} className={inputCls} /></Field>
           <Field label="UF" className="sm:col-span-1"><input value={org.uf ?? ''} maxLength={2} onChange={set('uf')} className={cn(inputCls, 'uppercase')} /></Field>
         </div>
 
@@ -166,9 +166,9 @@ export function Account(): React.JSX.Element {
       <Card className="max-w-3xl p-4">
         <h3 className="text-sm font-semibold text-ink-900">Atualizar senha</h3>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <Field label="Senha atual"><input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} className={inputCls} /></Field>
-          <Field label="Nova senha"><input type="password" value={nova} onChange={(e) => setNova(e.target.value)} className={inputCls} /></Field>
-          <Field label="Confirmar nova senha"><input type="password" value={conf} onChange={(e) => setConf(e.target.value)} className={inputCls} /></Field>
+          <Field label="Senha atual"><input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} maxLength={200} className={inputCls} /></Field>
+          <Field label="Nova senha"><input type="password" value={nova} onChange={(e) => setNova(e.target.value)} maxLength={200} className={inputCls} /></Field>
+          <Field label="Confirmar nova senha"><input type="password" value={conf} onChange={(e) => setConf(e.target.value)} maxLength={200} className={inputCls} /></Field>
         </div>
         {(nova || conf) && (
           <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1">

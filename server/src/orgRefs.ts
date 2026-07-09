@@ -31,11 +31,14 @@ export async function invalidOrgRef(
   body: Record<string, unknown>,
   fields: readonly OrgRefField[],
 ): Promise<OrgRefField | null> {
-  for (const f of fields) {
-    const v = body[f];
-    if (v === undefined || v === null) continue;
-    const row = await one(`SELECT 1 FROM ${REF_TABLES[f]} WHERE id = $1 AND org_id = $2`, [v, orgId]);
-    if (!row) return f;
+  // Checagens independentes entre si: dispara em paralelo e devolve o primeiro
+  // campo inválido na ordem de `fields` (determinístico, não por ordem de resposta).
+  const presentes = fields.filter((f) => body[f] !== undefined && body[f] !== null);
+  const rows = await Promise.all(presentes.map((f) =>
+    one(`SELECT 1 FROM ${REF_TABLES[f]} WHERE id = $1 AND org_id = $2`, [body[f], orgId]),
+  ));
+  for (let i = 0; i < presentes.length; i++) {
+    if (!rows[i]) return presentes[i]!;
   }
   return null;
 }

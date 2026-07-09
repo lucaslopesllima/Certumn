@@ -41,6 +41,24 @@ const REL_LABELS = `rc.nome AS representada, mb.nome AS marca,
     FROM sample_requests sr WHERE sr.relationship_id = r.id
   ), '[]') AS amostras`;
 
+// Labels do board do Kanban: contatos/catálogo continuam agregados (o card
+// mostra os nomes e o modal de edição usa os ids), mas amostras vira só a
+// contagem — a lista completa é carregada sob demanda pelo modal de amostras
+// via GET /api/sample-requests?relationship_id=.
+const KANBAN_LABELS = `rc.nome AS representada, mb.nome AS marca,
+  cen.nome AS cenario, act.nome AS acao,
+  COALESCE((
+    SELECT json_agg(json_build_object('id', ct.id, 'nome', ct.nome, 'cargo', ct.cargo) ORDER BY ct.nome)
+    FROM relationship_contacts rcj JOIN contacts ct ON ct.id = rcj.contact_id
+    WHERE rcj.relationship_id = r.id
+  ), '[]') AS contatos,
+  COALESCE((
+    SELECT json_agg(json_build_object('id', ci.id, 'nome', ci.nome, 'codigo', ci.codigo, 'preco', ci.preco) ORDER BY ci.nome)
+    FROM relationship_catalog rcc JOIN catalog_items ci ON ci.id = rcc.catalog_item_id
+    WHERE rcc.relationship_id = r.id
+  ), '[]') AS catalogo,
+  (SELECT count(*)::int FROM sample_requests sr WHERE sr.relationship_id = r.id) AS amostras_count`;
+
 // JOINs that resolve the FK labels above. Reused by GET /relationships and /kanban.
 // org no join: rótulo de outra org nunca resolve, mesmo que um id alheio escape.
 const REL_JOINS = `LEFT JOIN represented_companies rc ON rc.id = r.represented_id AND rc.org_id = r.org_id
@@ -458,8 +476,10 @@ export function relationshipRoutes(app: FastifyInstance): void {
     const where: string[] = ['r.org_id = $1'];
     const params: unknown[] = [orgId];
     scopeOwner(req, where, params, 'r.owner_user_id', owner_user_id);
+    // LIMIT 1000 de segurança: um board não renderiza mais que isso — evita
+    // resposta gigante numa org com carteira muito grande.
     const cards = await query(
-      `SELECT ${REL_COLS}, r.owner_user_id, ${REL_LABELS},
+      `SELECT ${REL_COLS}, r.owner_user_id, ${KANBAN_LABELS},
               c.razao_social, c.nome_fantasia, c.uf, c.municipio_id, m.nome AS cidade,
               c.cnpj, c.cnae_principal, c.porte, c.capital_social, c.telefone1
        FROM company_relationships r
@@ -467,7 +487,8 @@ export function relationshipRoutes(app: FastifyInstance): void {
        LEFT JOIN municipios m ON m.id = c.municipio_id
        ${REL_JOINS}
        WHERE ${where.join(' AND ')}
-       ORDER BY r.updated_at DESC`,
+       ORDER BY r.updated_at DESC
+       LIMIT 1000`,
       params,
     );
     return { stages, cards };

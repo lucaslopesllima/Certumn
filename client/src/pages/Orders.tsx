@@ -30,11 +30,16 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
   faturado: { to: 'entregue', label: 'Entregar' },
 };
 
+// Página de pedidos vinda do servidor (default do GET /api/orders).
+const PAGE = 100;
+
 export function Orders(): React.JSX.Element {
   const { user, can } = useAuth();
   const [params, setParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [status, setStatus] = useState<'todos' | OrderStatus>('todos');
   const [representedId, setRepresentedId] = useState<'todos' | number>('todos');
   const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
@@ -57,18 +62,41 @@ export function Orders(): React.JSX.Element {
     };
   }, [params]);
 
+  // Filtros de status/representada/vendedor vão para o servidor (paginado);
+  // o vendedor (owner_user_id) só tem efeito para admin — para o rep o escopo
+  // do token vence o querystring (scopeOwner).
+  const buildQs = (offset: number): string => {
+    const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+    if (status !== 'todos') qs.set('status', status);
+    if (representedId !== 'todos') qs.set('represented_id', String(representedId));
+    if (ownerId !== 'todos') qs.set('owner_user_id', String(ownerId));
+    return qs.toString();
+  };
+
   const load = async (): Promise<void> => {
-    const r = await api.get<{ orders: Order[] }>('/api/orders');
+    const r = await api.get<{ orders: Order[] }>(`/api/orders?${buildQs(0)}`);
     setOrders(r.orders);
+    setHasMore(r.orders.length === PAGE);
     setLoading(false);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [status, representedId, ownerId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadMore = async (): Promise<void> => {
+    setLoadingMore(true);
+    try {
+      const r = await api.get<{ orders: Order[] }>(`/api/orders?${buildQs(orders.length)}`);
+      setOrders((xs) => [...xs, ...r.orders]);
+      setHasMore(r.orders.length === PAGE);
+    } finally { setLoadingMore(false); }
+  };
   useEffect(() => {
     void api.get<{ empresas: RepresentedCompany[] }>('/api/represented')
       .then((r) => setReps(r.empresas.filter((e) => e.ativo))).catch(() => undefined);
   }, []);
   useEffect(() => { if (prefill) setAdding(true); }, [prefill]);
 
+  // O servidor já filtra; o refino local só esconde linhas que deixaram de
+  // casar após uma mutação otimista (ex.: transição de status).
   const filtered = useMemo(() => orders.filter((o) =>
     (status === 'todos' || o.status === status)
     && (representedId === 'todos' || o.represented_id === representedId)
@@ -113,17 +141,23 @@ export function Orders(): React.JSX.Element {
     setEditing(r.order);
   };
 
-  // Abre o HTML do pedido/cotação numa aba e dispara a impressão (→ PDF). O HTML
-  // vem do servidor (papel timbrado da org); evita gerador de PDF no bundle.
+  // Imprime o HTML do pedido/cotação (→ PDF). O HTML vem do servidor (papel
+  // timbrado da org). Renderiza num iframe sandbox SEM allow-scripts: qualquer
+  // <script> que escape do escape do servidor não executa (defesa em profundidade
+  // contra XSS) — antes o document.write numa janela herdava a origem do app e
+  // teria acesso ao token. allow-same-origin só p/ o parent disparar o print.
   const printOrder = async (o: Order): Promise<void> => {
     try {
       const { html } = await api.get<{ html: string }>(`/api/orders/${o.id}/print`);
-      const w = window.open('', '_blank');
-      if (!w) { toast.error('Permita pop-ups para gerar a impressão.'); return; }
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      w.print();
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('sandbox', 'allow-same-origin allow-modals');
+      iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+      iframe.srcdoc = html;
+      iframe.onload = (): void => {
+        try { iframe.contentWindow?.focus(); iframe.contentWindow?.print(); }
+        finally { setTimeout(() => iframe.remove(), 60_000); }
+      };
+      document.body.appendChild(iframe);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível gerar a impressão.'); }
   };
 
@@ -197,6 +231,14 @@ export function Orders(): React.JSX.Element {
         </Card>
       )}
 
+      {!loading && hasMore && (
+        <div className="flex justify-center">
+          <Btn variant="soft" onClick={() => void loadMore()} disabled={loadingMore}>
+            {loadingMore ? 'Carregando…' : 'Carregar mais'}
+          </Btn>
+        </div>
+      )}
+
       {(adding || editing) && (
         <OrderModal order={editing} prefill={editing ? null : prefill}
           onClose={closeModal} onSaved={() => { closeModal(); void load(); }} />
@@ -224,7 +266,7 @@ function NfModal({ order, onClose, onConfirm }: { order: Order; onClose: () => v
           <p className="mb-3 text-xs text-ink-400">Informe o número da nota fiscal (opcional).</p>
           <form onSubmit={submit} className="space-y-3">
             <input value={nf} onChange={(e) => setNf(e.target.value)} autoFocus inputMode="numeric"
-              placeholder="Número da NF" className={inputCls} />
+              maxLength={20} placeholder="Número da NF" className={inputCls} />
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
               <Btn icon="check" type="submit">Faturar</Btn>
@@ -332,7 +374,7 @@ function ImportModal({ onClose, onDone }: { onClose: () => void; onDone: () => v
                 Cabeçalho com colunas <code>nf, data, cnpj, valor</code> (separador vírgula ou ponto-e-vírgula).
                 Pedidos <strong>enviados</strong> com mesmo CNPJ e valor são marcados como faturados.
               </p>
-              <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={8}
+              <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={8} maxLength={1000000}
                 placeholder={'nf;data;cnpj;valor\n123;01/06/2026;00.000.000/0000-00;1.234,56'}
                 className={cn(inputCls, 'font-mono text-xs')} />
               <div className="flex justify-end gap-2">

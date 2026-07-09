@@ -1,5 +1,6 @@
 import fastifyStatic from '@fastify/static';
 import { existsSync } from 'node:fs';
+import { sep } from 'node:path';
 import { config } from './config.ts';
 import { buildApp } from './app.ts';
 import { materializeRecurrences } from './recurrence.ts';
@@ -49,12 +50,31 @@ setInterval(runDueWhatsapp, 60_000).unref();
 
 // Serve the built React app (Dockerfile sets CLIENT_DIR). SPA fallback for client routes.
 if (config.clientDir && existsSync(config.clientDir)) {
-  await app.register(fastifyStatic, { root: config.clientDir, wildcard: false });
+  await app.register(fastifyStatic, {
+    root: config.clientDir,
+    wildcard: false,
+    // preCompressed serve os .br/.gz gerados no build do client, se existirem.
+    preCompressed: true,
+    // Cache-control por arquivo via setHeaders (cacheControl:false evita que o
+    // header global do plugin sobreponha): assets com hash no nome (/assets/*)
+    // podem ser cacheados "para sempre" (1 ano, immutable); o resto (index.html,
+    // favicon…) precisa revalidar a cada deploy — index.html NUNCA em cache longo.
+    cacheControl: false,
+    setHeaders: (res, filePath) => {
+      if (filePath.includes(`${sep}assets${sep}`)) {
+        res.setHeader('cache-control', 'public, max-age=31536000, immutable');
+      } else {
+        res.setHeader('cache-control', 'no-cache');
+      }
+    },
+  });
   app.setNotFoundHandler((req, reply) => {
     if (req.raw.url && req.raw.url.startsWith('/api')) {
       return reply.code(404).send({ error: 'not found' });
     }
-    return reply.sendFile('index.html');
+    // SPA fallback: sempre revalidar — um index.html velho apontaria pra assets
+    // que já não existem após um deploy.
+    return reply.header('cache-control', 'no-cache').sendFile('index.html');
   });
 }
 

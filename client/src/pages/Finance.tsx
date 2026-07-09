@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth.tsx';
 import type { Activity, FinanceCategory, FinanceEntry, KanbanCard, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, fmtDate, numStr, todayStr } from '../lib/format.ts';
+import { brl, fmtDate, numStr, todayStr, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -23,11 +23,21 @@ const STATUS_META: Record<string, { label: string; tone: Tone }> = {
 /* opções de vínculo (empresa prospect / representada / compromisso) */
 type Opt = { id: number; label: string };
 
+// Totais globais (org + carteira) somados no servidor — os KPIs não podem
+// depender só das linhas paginadas.
+interface Totais { receber_aberto: number; pagar_aberto: number; recebido: number; pago: number }
+
+// Página de lançamentos vinda do servidor (default do GET /api/finance).
+const PAGE = 200;
+
 export function Finance(): React.JSX.Element {
   const { can } = useAuth();
   const [view, setView] = useState<'lancamentos' | 'fluxo' | 'dre'>('lancamentos');
   const [entries, setEntries] = useState<FinanceEntry[]>([]);
+  const [totais, setTotais] = useState<Totais | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [kind, setKind] = useState<'todos' | 'receber' | 'pagar'>('todos');
   const [status, setStatus] = useState<'todos' | 'pendente' | 'liquidado' | 'cancelado'>('todos');
   const [periodo, setPeriodo] = useState<'mes' | 'todos'>('mes');
@@ -48,12 +58,33 @@ export function Finance(): React.JSX.Element {
   };
   useEffect(() => { loadCategories(); }, []);
 
+  // Tipo/status vão para o servidor (paginado); o recorte por mês continua
+  // local sobre as linhas carregadas (a regra "vencido pendente sempre
+  // aparece" não é expressável com from/to simples).
+  const buildQs = (offset: number): string => {
+    const qs = new URLSearchParams({ limit: String(PAGE), offset: String(offset) });
+    if (kind !== 'todos') qs.set('kind', kind);
+    if (status !== 'todos') qs.set('status', status);
+    return qs.toString();
+  };
+
   const load = async (): Promise<void> => {
-    const r = await api.get<{ entries: FinanceEntry[] }>('/api/finance');
+    const r = await api.get<{ entries: FinanceEntry[]; totais?: Totais }>(`/api/finance?${buildQs(0)}&totais=1`);
     setEntries(r.entries);
+    setTotais(r.totais ?? null);
+    setHasMore(r.entries.length === PAGE);
     setLoading(false);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [kind, status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadMore = async (): Promise<void> => {
+    setLoadingMore(true);
+    try {
+      const r = await api.get<{ entries: FinanceEntry[] }>(`/api/finance?${buildQs(entries.length)}`);
+      setEntries((xs) => [...xs, ...r.entries]);
+      setHasMore(r.entries.length === PAGE);
+    } finally { setLoadingMore(false); }
+  };
 
   useEffect(() => {
     void api.get<{ cards: KanbanCard[] }>('/api/kanban').then((r) => {
@@ -94,8 +125,16 @@ export function Finance(): React.JSX.Element {
     });
   }, [entries, kind, status, periodo, mesRef]);
 
-  // KPIs (somente lançamentos não cancelados)
+  // KPIs (somente lançamentos não cancelados): preferem o agregado do servidor
+  // (?totais=1, global); o cálculo local sobre as linhas carregadas é só fallback.
   const kpis = useMemo(() => {
+    if (totais) {
+      return {
+        receberAberto: totais.receber_aberto, pagarAberto: totais.pagar_aberto,
+        recebido: totais.recebido, pago: totais.pago,
+        saldo: totais.receber_aberto - totais.pagar_aberto,
+      };
+    }
     let receberAberto = 0, pagarAberto = 0, recebido = 0, pago = 0;
     for (const e of entries) {
       const v = Number(e.valor);
@@ -104,7 +143,7 @@ export function Finance(): React.JSX.Element {
       else { e.status === 'liquidado' ? (pago += v) : (pagarAberto += v); }
     }
     return { receberAberto, pagarAberto, recebido, pago, saldo: receberAberto - pagarAberto };
-  }, [entries]);
+  }, [entries, totais]);
 
   // Mutações otimistas com rollback: se o servidor recusar, o estado volta —
   // a UI nunca fica mentindo sobre o que está salvo.
@@ -194,6 +233,13 @@ export function Finance(): React.JSX.Element {
           {filtered.map((e) => (
             <Row key={e.id} e={e} onEdit={() => setEditing(e)} onRemove={() => remove(e)} onLiquidar={() => liquidar(e)} />
           ))}
+          {hasMore && (
+            <div className="flex justify-center pt-1">
+              <Btn variant="soft" onClick={() => void loadMore()} disabled={loadingMore}>
+                {loadingMore ? 'Carregando…' : 'Carregar mais'}
+              </Btn>
+            </div>
+          )}
         </div>
       )}
       </>}
@@ -431,8 +477,8 @@ function CategoriesModal({ categories, onClose, onChanged }: {
           </div>
           {can('finance_categories.create') && (
             <form onSubmit={add} className="mb-3 grid grid-cols-2 gap-2">
-              <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" className={inputCls} />
-              <input value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="Grupo DRE (ex.: Operacional)" className={inputCls} />
+              <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome *" maxLength={120} className={inputCls} />
+              <input value={grupo} onChange={(e) => setGrupo(e.target.value)} placeholder="Grupo DRE (ex.: Operacional)" maxLength={120} className={inputCls} />
               <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} className={inputCls}>
                 <option value="">Pagar e receber</option>
                 <option value="pagar">Só a pagar</option>
@@ -490,7 +536,7 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
 
   const submit = async (ev: React.FormEvent): Promise<void> => {
     ev.preventDefault();
-    const v = Number(valor.replace(',', '.'));
+    const v = clampNum(valor, 0, 1e9);
     if (!descricao.trim()) { toast.error('Informe a descrição.'); return; }
     if (!vencimento) { toast.error('Informe o vencimento.'); return; }
     if (!Number.isFinite(v) || v <= 0) { toast.error('Informe um valor maior que zero.'); return; }
@@ -545,11 +591,11 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
                 </button>
               ))}
             </div>
-            <input autoFocus value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descrição" className={inputCls} />
+            <input autoFocus value={descricao} onChange={(e) => setDescricao(e.target.value)} placeholder="Descrição" maxLength={120} className={inputCls} />
             <div className="grid grid-cols-2 gap-2">
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Valor (R$)</span>
-                <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} placeholder="0,00" className={cn(inputCls, 'mt-1')} />
+                <input inputMode="decimal" value={valor} onChange={(e) => setValor(maskMoney(e.target.value))} placeholder="0,00" className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Vencimento</span>
@@ -570,7 +616,7 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
               </select>
             </label>
             {categoriaId == null && (
-              <input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Categoria livre (opcional)" className={inputCls} />
+              <input value={categoria} onChange={(e) => setCategoria(e.target.value)} placeholder="Categoria livre (opcional)" maxLength={120} className={inputCls} />
             )}
             {showRecorrencia && (
               <div className="grid grid-cols-2 gap-2">
@@ -601,7 +647,7 @@ function FinanceModal({ entry, companies, represented, activities, categories, o
               <span className="text-xs font-semibold text-ink-600">Compromisso</span>
               {sel(activityId, setActivityId, activities, 'Sem vínculo')}
             </label>
-            <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas (opcional)" rows={2} className={inputCls} />
+            <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas (opcional)" rows={2} maxLength={2000} className={inputCls} />
             <div className="flex justify-end gap-2 pt-1">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
               <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>

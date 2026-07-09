@@ -23,9 +23,24 @@ export const requireSecret = (secret: string, nodeEnv: string | undefined): stri
 };
 const jwtSecretEnv = requireSecret(process.env.JWT_SECRET ?? INSECURE_JWT_DEFAULT, process.env.NODE_ENV);
 
+// Webhook da Evolution não usa JWT (máquina-a-máquina). Sem um token compartilhado
+// o endpoint fica aberto: qualquer um que saiba o nome da instância (org_<id>,
+// previsível) injeta mensagens forjadas em qualquer org. Em produção, exigir o
+// token OU a integração desligada (EVOLUTION_API_URL vazio) — nunca ligado e aberto.
+export const requireWebhookToken = (token: string, evolutionUrl: string, nodeEnv: string | undefined): string => {
+  if (nodeEnv === 'production' && evolutionUrl !== '' && token === '') {
+    throw new Error('WHATSAPP_WEBHOOK_TOKEN ausente em produção com Evolution ligada — defina um token antes do boot');
+  }
+  return token;
+};
+
 export const config = {
   port: Number(process.env.PORT ?? 8080),
   host: process.env.HOST ?? '0.0.0.0',
+  // Nº de proxies reversos à frente da app. Fastify confia apenas nos últimos N
+  // saltos do X-Forwarded-For — impede spoof de XFF (que burlaria o rate-limit por
+  // IP). Padrão 1 (um proxy no Docker/compose). 0 = ignora XFF (dev direto).
+  trustProxyHops: Number(process.env.TRUST_PROXY_HOPS ?? 1),
   databaseUrl: process.env.DATABASE_URL ?? 'postgres://postgres:postgres@localhost:5432/rs',
   jwtSecret: jwtSecretEnv,
   jwtTtlSeconds: Number(process.env.JWT_TTL_SECONDS ?? 60 * 60 * 24 * 7),
@@ -44,7 +59,11 @@ export const config = {
   evolutionApiUrl: process.env.EVOLUTION_API_URL ?? '',
   evolutionApiKey: process.env.EVOLUTION_API_KEY ?? '',
   whatsappWebhookUrl: process.env.WHATSAPP_WEBHOOK_URL ?? '',
-  whatsappWebhookToken: process.env.WHATSAPP_WEBHOOK_TOKEN ?? '',
+  whatsappWebhookToken: requireWebhookToken(
+    process.env.WHATSAPP_WEBHOOK_TOKEN ?? '',
+    process.env.EVOLUTION_API_URL ?? '',
+    process.env.NODE_ENV,
+  ),
   // Diretório (volume) onde a mídia descriptografada do WhatsApp é gravada. Setado
   // = grava em disco e guarda só o caminho no banco; vazio = mantém base64 no
   // Postgres (comportamento legado). Ver mediaStore.ts.

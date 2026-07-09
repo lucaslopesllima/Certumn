@@ -5,17 +5,29 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Settings } from '../src/pages/Settings.tsx';
 import { api } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.post).mockReset();
   vi.mocked(m.del).mockReset();
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
   m.get.mockImplementation(async (p: string) => {
     if (p === '/api/stages') return { stages: [{ id: 1, nome: 'Prospecção', ordem: 1 }] };
     if (p === '/api/represented') return { empresas: [] };

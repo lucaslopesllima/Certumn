@@ -204,7 +204,7 @@ export function Carteiras(): React.JSX.Element {
             <div className="mt-3 rounded-xl border border-brand-200 bg-brand-50/40 p-3">
               <div className="relative mb-2">
                 <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-                <input value={pickQ} onChange={(e) => setPickQ(maskSearchCNPJ(e.target.value))} placeholder="Buscar cliente por nome ou CNPJ…"
+                <input value={pickQ} onChange={(e) => setPickQ(maskSearchCNPJ(e.target.value))} maxLength={120} placeholder="Buscar cliente por nome ou CNPJ…"
                   className="w-full rounded-xl border border-ink-200 bg-surface py-2 pl-9 pr-3 text-sm outline-none focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
               </div>
               <div className="max-h-60 space-y-1 overflow-auto">

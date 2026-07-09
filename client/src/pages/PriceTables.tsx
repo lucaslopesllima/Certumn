@@ -112,7 +112,7 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!nome.trim() || representedId === '' || !inicio) { toast.error('Preencha nome, representada e início de vigência.'); return; }
-    if (items.some((i) => i.preco.trim() === '' || !Number.isFinite(Number(i.preco)))) {
+    if (items.some((i) => i.preco.trim() === '' || !Number.isFinite(dec(i.preco)))) {
       toast.error('Todo item precisa de preço.');
       return;
     }
@@ -122,7 +122,7 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
       vigencia_inicio: inicio, vigencia_fim: fim || null, ativo,
     };
     const payloadItems = items.map((i) => ({
-      catalog_item_id: i.catalog_item_id, preco: Number(i.preco),
+      catalog_item_id: i.catalog_item_id, preco: dec(i.preco),
       desconto_max_pct: i.desconto_max_pct.trim() === '' ? null : dec(i.desconto_max_pct),
     }));
     try {
@@ -143,7 +143,7 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
     <Card className="border-brand-200 bg-brand-50/40 p-3">
       <form onSubmit={submit} className="space-y-2.5">
         <div className="grid gap-2.5 sm:grid-cols-2">
-          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} placeholder="Nome da tabela *" className={inputCls} />
+          <input autoFocus value={nome} onChange={(e) => setNome(e.target.value)} maxLength={120} placeholder="Nome da tabela *" className={inputCls} />
           <select value={representedId} onChange={(e) => setRepresentedId(e.target.value)} className={inputCls}>
             <option value="">Representada *</option>
             {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
@@ -169,7 +169,7 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
             return (
               <div key={i.catalog_item_id} className="flex items-center gap-2 rounded-xl border border-ink-200/70 bg-surface p-2">
                 <span className="min-w-0 flex-1 truncate text-sm text-ink-700">{cat?.nome ?? `#${i.catalog_item_id}`}</span>
-                <input type="number" min="0" step="0.01" value={i.preco} aria-label={`Preço ${cat?.nome ?? i.catalog_item_id}`}
+                <input type="number" min={0} max={1e9} step="0.01" value={i.preco} aria-label={`Preço ${cat?.nome ?? i.catalog_item_id}`}
                   onChange={(e) => setItem(idx, { preco: e.target.value })} placeholder="Preço *"
                   className="w-28 rounded-lg border border-ink-200 px-2 py-1.5 text-sm" />
                 <input type="text" inputMode="decimal" value={i.desconto_max_pct} aria-label={`Desconto máx ${cat?.nome ?? i.catalog_item_id}`}

@@ -2,6 +2,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { compression } from 'vite-plugin-compression2';
 
 // Dev: proxy /api to the Fastify server. Prod: Fastify serves the built assets.
 // In docker-compose.dev the API service is reachable at http://app:8080 (VITE_PROXY_TARGET).
@@ -32,6 +33,9 @@ export default defineConfig({
       },
       workbox: {
         navigateFallbackDenylist: [/^\/api/],
+        // Os artefatos pré-comprimidos (.gz/.br) ficam fora do precache — o
+        // navegador negocia a compressão via Accept-Encoding no arquivo original.
+        globIgnores: ['**/*.gz', '**/*.br'],
         runtimeCaching: [
           {
             // agenda do dia + rotas: leitura cacheada p/ uso offline em campo.
@@ -49,6 +53,9 @@ export default defineConfig({
       },
       devOptions: { enabled: false },
     }),
+    // Emite .gz e .br pré-comprimidos no build — o Fastify serve via
+    // preCompressed sem gastar CPU comprimindo a cada request.
+    compression({ algorithms: ['gzip', 'brotliCompress'] }),
   ],
   server: {
     host: true, // listen on 0.0.0.0 so the container port is reachable
@@ -62,5 +69,18 @@ export default defineConfig({
       usePolling: process.env.VITE_USE_POLLING === '1',
     },
   },
-  build: { outDir: 'dist' },
+  build: {
+    outDir: 'dist',
+    rollupOptions: {
+      output: {
+        // Vendor estável (react + router): muda pouco entre deploys, então o
+        // hash sobrevive e o navegador reaproveita o cache. Leaflet fica no
+        // split natural do dynamic import das páginas de mapa.
+        manualChunks(id: string): string | undefined {
+          if (/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(id)) return 'vendor';
+          return undefined;
+        },
+      },
+    },
+  },
 });

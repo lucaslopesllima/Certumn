@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth.tsx';
 import type { GoalProgress, OrgUser, PermissionGroup, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, todayStr } from '../lib/format.ts';
+import { brl, dec, maskMoney, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -127,10 +127,10 @@ function Usuarios(): React.JSX.Element {
             Informe uma senha provisória — o usuário será obrigado a trocá-la no primeiro acesso.
           </p>
           <form onSubmit={create} className="mt-4 grid gap-3 sm:grid-cols-2">
-            <Field label="Nome"><input value={nome} onChange={(e) => setNome(e.target.value)} required className={inputCls} /></Field>
-            <Field label="E-mail"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required className={inputCls} /></Field>
+            <Field label="Nome"><input value={nome} onChange={(e) => setNome(e.target.value)} required maxLength={120} className={inputCls} /></Field>
+            <Field label="E-mail"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} required maxLength={160} className={inputCls} /></Field>
             <Field label="Senha provisória">
-              <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} required minLength={6} className={inputCls} />
+              <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} required minLength={6} maxLength={200} className={inputCls} />
               <span className={cn('mt-1 block text-[11px]', senha.length === 0 ? 'text-ink-400' : senha.length >= 6 ? 'text-emerald-600' : 'text-amber-600')}>
                 Mínimo 6 caracteres{senha.length > 0 && senha.length < 6 ? ` (faltam ${6 - senha.length})` : ''}
               </span>
@@ -260,7 +260,7 @@ function ResetPwdModal({ user, onClose, onConfirm }: { user: OrgUser; onClose: (
           <h3 className="mb-1 text-sm font-bold text-ink-900">Redefinir senha</h3>
           <p className="mb-3 text-xs text-ink-400">Nova senha provisória para {user.nome ?? user.email}. O usuário troca no próximo acesso.</p>
           <form onSubmit={submit} className="space-y-3">
-            <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus minLength={6}
+            <input type="text" value={senha} onChange={(e) => setSenha(e.target.value)} autoFocus minLength={6} maxLength={200}
               placeholder="Nova senha provisória" className={inputCls} />
             <span className={cn('block text-[11px]', senha.length === 0 ? 'text-ink-400' : ok ? 'text-emerald-600' : 'text-amber-600')}>
               Mínimo 6 caracteres{senha.length > 0 && !ok ? ` (faltam ${6 - senha.length})` : ''}
@@ -293,7 +293,7 @@ function NameCell({ u, self, onSave }: { u: OrgUser; self: boolean; onSave: (nom
 
   if (editing) {
     return (
-      <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} onBlur={() => void commit()}
+      <input autoFocus value={val} onChange={(e) => setVal(e.target.value)} maxLength={120} onBlur={() => void commit()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') void commit();
           if (e.key === 'Escape') { setVal(u.nome ?? ''); setEditing(false); }
@@ -421,7 +421,7 @@ function Metas(): React.JSX.Element {
         user_id: userId,
         represented_id: representedId === '' ? null : representedId,
         competencia,
-        valor_meta: Number(valor),
+        valor_meta: dec(valor),
       });
       setUserId(''); setRepresentedId(''); setValor('');
       await load();
@@ -459,7 +459,7 @@ function Metas(): React.JSX.Element {
               </select>
             </Field>
             <Field label="Meta (R$)">
-              <input type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} required className={cn(inputCls, 'w-36')} />
+              <input type="text" inputMode="decimal" value={valor} onChange={(e) => setValor(maskMoney(e.target.value))} required className={cn(inputCls, 'w-36')} />
             </Field>
             <Btn icon="plus" type="submit" disabled={busy}>{busy ? '…' : 'Definir meta'}</Btn>
           </form>

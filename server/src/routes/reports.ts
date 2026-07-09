@@ -122,16 +122,28 @@ export function reportRoutes(app: FastifyInstance): void {
 
     const params: unknown[] = [orgId, municipios];
     const owner = ownerClause(req, q.user_id, 'r.owner_user_id', params);
+    // Contagens set-based (um GROUP BY por fonte) em vez de subquery
+    // correlacionada por município — evita N varreduras em companies.
     const rows = await query(
       `SELECT m.id, m.nome, m.uf,
               ST_Y(m.geom::geometry) AS lat, ST_X(m.geom::geometry) AS lon,
-              (SELECT count(*) FROM companies c
-                 WHERE c.municipio_id = m.id AND c.situacao_cadastral = 'ativa')::int AS potencial,
-              (SELECT count(*) FROM company_relationships r
-                 JOIN companies c2 ON c2.id = r.company_id
-                 WHERE r.org_id = $1 AND r.status = 'cliente'
-                   AND c2.municipio_id = m.id${owner})::int AS clientes
+              COALESCE(pot.qtd, 0)::int AS potencial,
+              COALESCE(cli.qtd, 0)::int AS clientes
        FROM municipios m
+       LEFT JOIN (
+         SELECT c.municipio_id, count(*) AS qtd
+         FROM companies c
+         WHERE c.municipio_id = ANY($2::int[]) AND c.situacao_cadastral = 'ativa'
+         GROUP BY c.municipio_id
+       ) pot ON pot.municipio_id = m.id
+       LEFT JOIN (
+         SELECT c2.municipio_id, count(*) AS qtd
+         FROM company_relationships r
+         JOIN companies c2 ON c2.id = r.company_id
+         WHERE r.org_id = $1 AND r.status = 'cliente'
+           AND c2.municipio_id = ANY($2::int[])${owner}
+         GROUP BY c2.municipio_id
+       ) cli ON cli.municipio_id = m.id
        WHERE m.id = ANY($2::int[])
        ORDER BY m.uf, m.nome`,
       params,

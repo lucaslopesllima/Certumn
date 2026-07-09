@@ -49,10 +49,59 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: R
   return data as T;
 }
 
+// Cache leve em memória p/ GETs de dados de referência (TTL 60s): devolve a
+// mesma promise enquanto fresca (deduplica chamadas concorrentes idênticas) e
+// é invalidado quando qualquer mutação toca o mesmo recurso. Nada de auth
+// passa por aqui — só o allowlist abaixo.
+const CACHE_TTL_MS = 60_000;
+const CACHEABLE_PREFIXES = [
+  '/api/represented', '/api/catalog', '/api/users', '/api/stages',
+  '/api/carriers', '/api/price-tables', '/api/cnae',
+];
+const cache = new Map<string, { promise: Promise<unknown>; expira: number }>();
+
+// Prefixo cacheável do path (query string fora da comparação). null = não cacheia.
+function cachePrefix(path: string): string | null {
+  const clean = path.split('?')[0];
+  return CACHEABLE_PREFIXES.find((p) => clean === p || clean.startsWith(`${p}/`)) ?? null;
+}
+
+// Sem prefixo, limpa tudo; com prefixo, só as entradas daquele recurso.
+function invalidate(prefix?: string): void {
+  if (!prefix) { cache.clear(); return; }
+  for (const key of [...cache.keys()]) {
+    const clean = key.split('?')[0];
+    if (clean === prefix || clean.startsWith(`${prefix}/`)) cache.delete(key);
+  }
+}
+
+function cachedGet<T>(path: string): Promise<T> {
+  const hit = cache.get(path);
+  if (hit && hit.expira > Date.now()) return hit.promise as Promise<T>;
+  // Signal omitido de propósito: a promise é compartilhada, então o abort de um
+  // consumidor não pode derrubar os demais.
+  const p = request<T>('GET', path);
+  cache.set(path, { promise: p, expira: Date.now() + CACHE_TTL_MS });
+  // Erro não fica cacheado — a próxima chamada tenta de novo.
+  p.catch(() => { if (cache.get(path)?.promise === p) cache.delete(path); });
+  return p;
+}
+
+// Mutação: depois de resolver (ou falhar), invalida o cache do recurso tocado.
+async function mutate<T>(method: string, path: string, body?: unknown, opts?: RequestOpts): Promise<T> {
+  try {
+    return await request<T>(method, path, body, opts);
+  } finally {
+    const prefix = cachePrefix(path);
+    if (prefix) invalidate(prefix);
+  }
+}
+
 export const api = {
-  get: <T>(p: string, o?: RequestOpts) => request<T>('GET', p, undefined, o),
-  post: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('POST', p, b, o),
-  put: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('PUT', p, b, o),
-  patch: <T>(p: string, b?: unknown, o?: RequestOpts) => request<T>('PATCH', p, b, o),
-  del: <T>(p: string, o?: RequestOpts) => request<T>('DELETE', p, undefined, o),
+  get: <T>(p: string, o?: RequestOpts) => (cachePrefix(p) ? cachedGet<T>(p) : request<T>('GET', p, undefined, o)),
+  post: <T>(p: string, b?: unknown, o?: RequestOpts) => mutate<T>('POST', p, b, o),
+  put: <T>(p: string, b?: unknown, o?: RequestOpts) => mutate<T>('PUT', p, b, o),
+  patch: <T>(p: string, b?: unknown, o?: RequestOpts) => mutate<T>('PATCH', p, b, o),
+  del: <T>(p: string, o?: RequestOpts) => mutate<T>('DELETE', p, undefined, o),
+  invalidate,
 };

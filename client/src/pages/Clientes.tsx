@@ -7,7 +7,7 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { toast } from '../lib/toast.tsx';
-import { brl0, dec, maskCNPJ, maskSearchCNPJ, numStr } from '../lib/format.ts';
+import { brl0, dec, maskCNPJ, maskMoney, maskSearchCNPJ, numStr } from '../lib/format.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -154,7 +154,7 @@ export function Clientes(): React.JSX.Element {
             {list.length > 0 && (
               <div className="relative mb-3">
                 <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
-                <input value={q} onChange={(e) => setQ(maskSearchCNPJ(e.target.value))} placeholder="Filtrar por nome ou CNPJ…"
+                <input value={q} onChange={(e) => setQ(maskSearchCNPJ(e.target.value))} maxLength={120} placeholder="Filtrar por nome ou CNPJ…"
                   className="w-full rounded-xl border border-ink-200 bg-surface py-2.5 pl-9 pr-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
               </div>
             )}
@@ -239,8 +239,8 @@ function ClienteForm({ cliente, onSave, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <p className="text-sm font-semibold text-ink-800">{cliente.nome_fantasia || cliente.razao_social}</p>
-      <input value={valor} inputMode="decimal" onChange={(e) => setValor(e.target.value)} placeholder="Valor estimado (R$)" className={inputCls} />
-      <textarea value={notas} onChange={(e) => setNotas(e.target.value)} placeholder="Notas do relacionamento" rows={2} className={cn(inputCls, 'resize-y')} />
+      <input value={valor} type="text" inputMode="decimal" onChange={(e) => setValor(maskMoney(e.target.value))} placeholder="Valor estimado (R$)" className={inputCls} />
+      <textarea value={notas} onChange={(e) => setNotas(e.target.value)} maxLength={2000} placeholder="Notas do relacionamento" rows={2} className={cn(inputCls, 'resize-y')} />
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
         <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>

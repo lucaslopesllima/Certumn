@@ -135,6 +135,10 @@ function CarrierForm({ initial, onSave, onCancel }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!f.nome.trim()) return;
+    if (f.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) {
+      toast.error('E-mail inválido.');
+      return;
+    }
     setBusy(true);
     try { await onSave(f); } finally { setBusy(false); }
   };
@@ -152,14 +156,14 @@ function CarrierForm({ initial, onSave, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
-      <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da transportadora *" className={inputCls} />
+      <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome da transportadora *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-3">
         <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
         <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
-        <input value={f.email} onChange={set('email')} placeholder="E-mail" className={inputCls} />
+        <input type="email" value={f.email} onChange={set('email')} maxLength={160} placeholder="E-mail" className={inputCls} />
       </div>
-      <input value={f.contato} onChange={set('contato')} placeholder="Pessoa de contato" className={inputCls} />
-      <textarea value={f.observacoes} onChange={set('observacoes')} placeholder="Observações" rows={2} className={cn(inputCls, 'resize-y')} />
+      <input value={f.contato} onChange={set('contato')} maxLength={120} placeholder="Pessoa de contato" className={inputCls} />
+      <textarea value={f.observacoes} onChange={set('observacoes')} maxLength={2000} placeholder="Observações" rows={2} className={cn(inputCls, 'resize-y')} />
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
         <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>

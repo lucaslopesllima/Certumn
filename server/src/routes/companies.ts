@@ -9,9 +9,11 @@ export function companyRoutes(app: FastifyInstance): void {
   // Busca rápida na base global (CNPJ ou razão/fantasia) para autopreencher
   // cadastros (transportadoras, representadas, etc.). q só com dígitos vira
   // prefixo de CNPJ (índice pattern_ops); senão ILIKE trigram em razão/fantasia.
+  // minLength 3: <3 chars o GIN trgm não indexa o padrão -> ILIKE '%x%' vira
+  // seq scan na base inteira (mesma regra do recommend).
   app.get('/api/companies/search', {
     preHandler: [requireAuth, requirePermission('prospeccao.view')],
-    schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 2 } } } },
+    schema: { querystring: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 3 } } } },
   }, async (req) => {
     const { q } = req.query as { q: string };
     const orgId = req.auth!.orgId;
@@ -78,7 +80,8 @@ export function companyRoutes(app: FastifyInstance): void {
     );
     if (!company) return reply.code(404).send({ error: 'empresa não encontrada' });
 
-    // quadro societário (ligado pelo cnpj_base = 8 primeiros dígitos do CNPJ)
+    // quadro societário (ligado pelo cnpj_base = 8 primeiros dígitos do CNPJ).
+    // O cnpj já veio na consulta acima — passa direto, sem re-selecionar a empresa.
     const socios = await query(
       `SELECT s.identificador, s.nome, s.cnpj_cpf,
               s.qualificacao, q.descricao AS qualificacao_descricao,
@@ -86,9 +89,9 @@ export function companyRoutes(app: FastifyInstance): void {
               s.nome_representante, s.representante_legal
        FROM socios s
        LEFT JOIN rfb_qualificacao q ON q.codigo = s.qualificacao
-       WHERE s.cnpj_base = left((SELECT cnpj FROM companies WHERE id = $1), 8)::char(8)
+       WHERE s.cnpj_base = left($1, 8)::char(8)
        ORDER BY s.nome`,
-      [id],
+      [company.cnpj],
     );
     return { company, socios };
   });

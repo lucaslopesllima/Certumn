@@ -164,7 +164,7 @@ function GroupEditor({ group, catalog, onClose, onSaved }: {
             )}
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Nome do grupo</span>
-              <input value={nome} disabled={readOnly} onChange={(e) => setNome(e.target.value)} className={inputCls} />
+              <input value={nome} disabled={readOnly} maxLength={120} onChange={(e) => setNome(e.target.value)} className={inputCls} />
             </label>
 
             {!readOnly && modules.map(([mod, items]) => {

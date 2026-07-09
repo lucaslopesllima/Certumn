@@ -67,20 +67,18 @@ export async function verifyToken(token: string): Promise<TokenClaims> {
   };
 }
 
-// Fastify preHandler: require a valid Bearer token, attach claims to request.auth.
-// Também derruba usuário desativado na hora — sem isso o JWT (TTL 7d) seguiria
-// válido muito depois do admin desligar o vendedor.
-export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
-  const header = req.headers.authorization;
-  if (!header || !header.startsWith('Bearer ')) {
-    return reply.code(401).send({ error: 'missing token' });
-  }
-  let claims: TokenClaims;
-  try {
-    claims = await verifyToken(header.slice(7));
-  } catch {
-    return reply.code(401).send({ error: 'invalid token' });
-  }
+// Erro de autorização (usuário desativado, sessão expirada, sem permissão) — o
+// token pode ser válido criptograficamente mas não autoriza. Separado dos erros do
+// jose (assinatura/expiração) para o caller mapear o status HTTP.
+export class AuthError extends Error {}
+
+// Autoriza um token e devolve as claims completas (permissões carregadas do banco).
+// Usado tanto pelo preHandler requireAuth quanto por fluxos onde o token não vem no
+// header Authorization (WebSocket do browser, URL de mídia com ?token=) — que ANTES
+// só faziam verifyToken e por isso ignoravam ativo/token_version/permissão. Lança:
+// erro do jose (token inválido/expirado) ou AuthError (desativado/sessão/permissão).
+export async function authorizeToken(token: string, requiredPerm?: string): Promise<AuthClaims> {
+  const claims = await verifyToken(token); // lança se assinatura/expiração inválidas
   // Mesma ida ao banco que valida ativo/token_version já traz o grupo do usuário
   // (LEFT JOIN, sem N+1). group_id NULL → sem permissões (admin ainda passa via role).
   const u = await one<{
@@ -91,18 +89,28 @@ export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Pro
       WHERE u.id = $1`,
     [claims.userId],
   );
-  if (!u || !u.ativo) {
-    return reply.code(401).send({ error: 'usuário desativado' });
-  }
+  if (!u || !u.ativo) throw new AuthError('usuário desativado');
   // Token de versão antiga (senha trocada/resetada depois da emissão) não vale mais.
-  if (u.token_version !== claims.tokenVersion) {
-    return reply.code(401).send({ error: 'sessão expirada' });
+  if (u.token_version !== claims.tokenVersion) throw new AuthError('sessão expirada');
+  const isAdmin = claims.role === 'admin' || u.is_admin === true;
+  const permissions = new Set(u.permissions ?? []);
+  if (requiredPerm && !isAdmin && !permissions.has(requiredPerm)) throw new AuthError('sem permissão');
+  return { ...claims, permissions, isAdmin };
+}
+
+// Fastify preHandler: require a valid Bearer token, attach claims to request.auth.
+// Também derruba usuário desativado na hora — sem isso o JWT (TTL 7d) seguiria
+// válido muito depois do admin desligar o vendedor.
+export async function requireAuth(req: FastifyRequest, reply: FastifyReply): Promise<void> {
+  const header = req.headers.authorization;
+  if (!header || !header.startsWith('Bearer ')) {
+    return reply.code(401).send({ error: 'missing token' });
   }
-  req.auth = {
-    ...claims,
-    permissions: new Set(u.permissions ?? []),
-    isAdmin: claims.role === 'admin' || u.is_admin === true,
-  };
+  try {
+    req.auth = await authorizeToken(header.slice(7));
+  } catch (e) {
+    return reply.code(401).send({ error: e instanceof AuthError ? e.message : 'invalid token' });
+  }
 }
 
 // preHandler complementar (depois de requireAuth): só admin passa.

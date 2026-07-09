@@ -4,12 +4,20 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Carriers } from '../src/pages/Carriers.tsx';
 import { api } from '../src/lib/api.ts';
+import { useAuth, type User } from '../src/lib/auth.tsx';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
   return { ...real, api: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), del: vi.fn() } };
 });
+vi.mock('../src/lib/auth.tsx', () => {
+  const useAuth = vi.fn();
+  return { useAuth, useOptionalUser: () => useAuth().user ?? null };
+});
 const m = vi.mocked(api);
+const useAuthMock = vi.mocked(useAuth);
+
+const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const CARRIER = {
   id: 4, nome: 'Transp X', cnpj: '11222333000144', telefone: '11 99999-0000',
@@ -23,6 +31,10 @@ beforeEach(() => {
   vi.mocked(m.del).mockReset();
   vi.stubGlobal('confirm', vi.fn(() => true));
   vi.stubGlobal('alert', vi.fn());
+  useAuthMock.mockReturnValue({
+    user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => true,
+  });
   m.get.mockResolvedValue({ carriers: [CARRIER] });
 });
 

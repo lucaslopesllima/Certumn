@@ -177,7 +177,7 @@ export function commissionRoutes(app: FastifyInstance): void {
         type: 'object',
         required: ['csv'],
         properties: {
-          csv: { type: 'string', minLength: 1 },
+          csv: { type: 'string', minLength: 1, maxLength: 1_000_000 },
           tolerancia: { type: 'number', minimum: 0 },
         },
       },

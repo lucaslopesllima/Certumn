@@ -23,7 +23,8 @@ export function CompanySearch({ onPick, placeholder = 'Buscar empresa por CNPJ o
   const boxRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (q.trim().length < 2) { setHits([]); setOpen(false); return; }
+    // mínimo 3 chars: acompanha o schema do servidor (trigram precisa de 3; com 2 vira seq scan)
+    if (q.trim().length < 3) { setHits([]); setOpen(false); return; }
     const ctrl = new AbortController();
     const t = setTimeout(() => {
       setLoading(true);
@@ -54,7 +55,7 @@ export function CompanySearch({ onPick, placeholder = 'Buscar empresa por CNPJ o
       <div className="relative">
         <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-400" />
         <input value={q} onChange={(e) => setQ(maskSearchCNPJ(e.target.value))} onFocus={() => hits.length && setOpen(true)}
-          placeholder={placeholder}
+          maxLength={120} placeholder={placeholder}
           className="w-full rounded-xl border border-ink-200 bg-surface py-2.5 pl-9 pr-3 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
         {loading && <span className="absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 animate-spin rounded-full border-2 border-ink-200 border-t-brand-500" />}
       </div>

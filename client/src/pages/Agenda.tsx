@@ -62,12 +62,27 @@ export function Agenda(): React.JSX.Element {
 
   const today = useMemo(() => new Date(), []);
 
+  // Janela visível ± 1 período de buffer — evita carregar todo o histórico.
+  // Mês (e lista) = mês do cursor ± 1 mês; semana = semana da âncora ± 1 semana.
+  // Recarrega quando o usuário navega (cursor/âncora mudam).
+  const range = useMemo(() => {
+    if (view === 'semana') {
+      const s = startOfWeek(weekAnchor);
+      return { from: addDays(s, -7), to: addDays(s, 14) };
+    }
+    const first = startOfMonth(cursor);
+    return { from: addMonths(first, -1), to: addMonths(first, 2) };
+  }, [view, cursor, weekAnchor]);
+
   const load = async (): Promise<void> => {
-    const r = await api.get<{ activities: Activity[] }>('/api/activities');
+    const qs = new URLSearchParams({
+      from: range.from.toISOString(), to: range.to.toISOString(), limit: '500',
+    });
+    const r = await api.get<{ activities: Activity[] }>(`/api/activities?${qs.toString()}`);
     setItems(r.activities);
     setLoading(false);
   };
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { void load(); }, [range]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Empresas do funil para vincular numa atividade (uma opção por company_id).
   useEffect(() => {

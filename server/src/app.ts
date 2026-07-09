@@ -1,6 +1,8 @@
 import Fastify, { type FastifyInstance } from 'fastify';
 import rateLimit from '@fastify/rate-limit';
+import compress from '@fastify/compress';
 import websocket from '@fastify/websocket';
+import helmet from '@fastify/helmet';
 import { pool } from './db.ts';
 import { config } from './config.ts';
 import { authRoutes } from './routes/auth.ts';
@@ -41,8 +43,45 @@ import { webhookRoutes } from './routes/webhooks.ts';
 // Async porque o plugin de rate limit precisa estar registrado ANTES das rotas
 // que o referenciam via config.rateLimit.
 export async function buildApp(opts: { logger?: boolean; authRateLimitMax?: number } = {}): Promise<FastifyInstance> {
-  const app = Fastify({ logger: opts.logger ?? true, trustProxy: true });
+  // Produção: nível configurável, sem log por request (ruído/custo) e com redact
+  // dos campos sensíveis. Dev mantém o logger padrão; testes passam logger:false.
+  const isProd = process.env.NODE_ENV === 'production';
+  const logger = opts.logger ?? (isProd
+    ? { level: process.env.LOG_LEVEL ?? 'info', redact: ['req.headers.authorization', 'req.query.token'] }
+    : true);
+  // trustProxy como número de saltos (não `true`): confia só nos últimos N hops do
+  // X-Forwarded-For. `true` confiaria em XFF forjado por qualquer cliente, burlando
+  // o rate-limit por IP dos endpoints de auth. Ver config.trustProxyHops.
+  const app = Fastify({ logger, trustProxy: config.trustProxyHops, disableRequestLogging: isProd });
 
+  // Security headers (CSP, nosniff, frame-ancestors, HSTS em prod). App e API são
+  // same-origin; a CSP libera só os hosts externos realmente usados pelo client:
+  // tiles do OpenStreetMap (Leaflet), Nominatim/BrasilAPI/OSRM (geocode e rotas).
+  // 'unsafe-inline' em style: Leaflet e Tailwind injetam estilos inline; blob: em
+  // img/worker: avatares/impressão via Blob URL e o service worker do PWA.
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        'default-src': ["'self'"],
+        'script-src': ["'self'"],
+        'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'blob:', 'https://*.tile.openstreetmap.org', 'https://tile.openstreetmap.org'],
+        'connect-src': ["'self'", 'https://nominatim.openstreetmap.org', 'https://brasilapi.com.br', 'https://router.project-osrm.org'],
+        'worker-src': ["'self'", 'blob:'],
+        'object-src': ["'none'"],
+        'frame-ancestors': ["'self'"],
+        'base-uri': ["'self'"],
+      },
+    },
+    // HSTS só faz sentido sob HTTPS (produção atrás do proxy TLS).
+    hsts: isProd ? { maxAge: 15552000, includeSubDomains: true } : false,
+    // COEP off: bloquearia tiles/recursos cross-origin sem CORP; não precisamos de
+    // cross-origin isolation aqui.
+    crossOriginEmbedderPolicy: false,
+  });
+  // Compressão HTTP global (br/gzip) — respostas JSON grandes (listas, dashboard)
+  // encolhem bem; threshold evita comprimir payload pequeno. Registrado antes das rotas.
+  await app.register(compress, { global: true, encodings: ['br', 'gzip'], threshold: 1024 });
   // global:false — só as rotas que declaram config.rateLimit (autenticação) limitam.
   await app.register(rateLimit, { global: false });
   // WebSocket: espelho de chat WhatsApp ao vivo (rota /api/whatsapp/ws).

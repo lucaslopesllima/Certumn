@@ -12,6 +12,10 @@ import {
 // cada mensagem. Limpa a entrada em falha p/ permitir nova tentativa depois.
 const groupNameDone = new Set<string>();
 
+// Teto de eventos processados por request — evita que um POST forjado com um
+// data[] gigante enfileire milhares de queries/chamadas Evolution (DoS).
+const MAX_WEBHOOK_BATCH = 200;
+
 // Extrai o texto da mensagem dos vários formatos do Baileys/Evolution.
 function extractText(message: Record<string, unknown> | undefined): string | null {
   if (!message) return null;
@@ -70,7 +74,12 @@ export function webhookRoutes(app: FastifyInstance): void {
   // Recebe eventos da Evolution. Sem JWT (é máquina-a-máquina): valida o token
   // opcional da query e mapeia a instância -> org. Responde rápido e nunca
   // derruba — erro de um evento não pode travar a entrega dos próximos.
-  app.post('/api/webhooks/whatsapp', async (req, reply) => {
+  app.post('/api/webhooks/whatsapp', {
+    // Rate-limit generoso: a Evolution é a única origem legítima, mas sem limite o
+    // endpoint (sem JWT) vira vetor de DoS/amplificação. config.ts já obriga o token
+    // em produção com Evolution ligada.
+    config: { rateLimit: { max: 600, timeWindow: '1 minute' } },
+  }, async (req, reply) => {
     if (config.whatsappWebhookToken) {
       const token = (req.query as { token?: string }).token;
       if (token !== config.whatsappWebhookToken) return reply.code(401).send({ error: 'token inválido' });
@@ -91,7 +100,7 @@ export function webhookRoutes(app: FastifyInstance): void {
 
       if (event === 'messages.upsert') {
         // data pode vir como objeto único ou lista de mensagens.
-        const list = Array.isArray(body.data) ? body.data : [body.data];
+        const list = (Array.isArray(body.data) ? body.data : [body.data]).slice(0, MAX_WEBHOOK_BATCH);
         for (const raw of list as WaMsg[]) {
           const jid = raw?.key?.remoteJid;
           if (!jid || jid === 'status@broadcast') continue;
@@ -152,7 +161,7 @@ export function webhookRoutes(app: FastifyInstance): void {
 
       if (event === 'messages.update') {
         // Atualização de status de entrega/leitura (saída). Reflete no registro.
-        const list = Array.isArray(body.data) ? body.data : [body.data];
+        const list = (Array.isArray(body.data) ? body.data : [body.data]).slice(0, MAX_WEBHOOK_BATCH);
         for (const raw of list as Array<{ key?: WaKey; update?: { status?: string }; status?: string }>) {
           const id = raw?.key?.id;
           const st = raw.update?.status ?? raw.status;
@@ -185,7 +194,7 @@ export function webhookRoutes(app: FastifyInstance): void {
         // Sincronização de contatos: traz a foto de perfil (profilePicUrl), que o
         // webhook de mensagem não entrega. Só ATUALIZA conversas já existentes no
         // espelho — não cria contato pra cada entrada da agenda.
-        const list = Array.isArray(body.data) ? body.data : [body.data];
+        const list = (Array.isArray(body.data) ? body.data : [body.data]).slice(0, MAX_WEBHOOK_BATCH);
         for (const raw of list as Array<{ remoteJid?: string; id?: string; pushName?: string; profilePicUrl?: string | null }>) {
           const jid = raw?.remoteJid ?? raw?.id;
           if (!jid || jid === 'status@broadcast') continue;

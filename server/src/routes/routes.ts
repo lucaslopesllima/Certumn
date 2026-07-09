@@ -66,9 +66,15 @@ async function geocodeCompany(id: number): Promise<Geo | null> {
   return null;
 }
 
+// Máximo de geocodificações on-demand (Nominatim ~1 req/s) dentro de uma request:
+// acima disso a resposta demoraria vários segundos só esperando o throttle.
+const MAX_GEOCODE_INLINE = 5;
+
 // Geocode em lote. O caminho comum (todas as empresas já cacheadas) resolve em
 // UMA query em vez de N round-trips; só os cache-miss caem no geocodeCompany
-// sequencial (que respeita o throttle do Nominatim).
+// sequencial (que respeita o throttle do Nominatim), limitado a MAX_GEOCODE_INLINE
+// por request. O excedente responde já com o centroide do município e é
+// geocodificado em segundo plano — a próxima request bate no cache.
 async function geocodeManyCompanies(ids: number[]): Promise<Record<number, Geo>> {
   const geo: Record<number, Geo> = {};
   if (ids.length === 0) return geo;
@@ -76,10 +82,31 @@ async function geocodeManyCompanies(ids: number[]): Promise<Record<number, Geo>>
     'SELECT company_id, lat, lon FROM company_geocode WHERE company_id = ANY($1::bigint[])', [ids],
   );
   for (const r of cached) geo[Number(r.company_id)] = { lat: r.lat, lon: r.lon };
-  for (const id of ids) {
-    if (geo[id]) continue;
+  const misses = ids.filter((id) => !geo[id]);
+  for (const id of misses.slice(0, MAX_GEOCODE_INLINE)) {
     const g = await geocodeCompany(id);
     if (g) geo[id] = g;
+  }
+  const deferred = misses.slice(MAX_GEOCODE_INLINE);
+  if (deferred.length > 0) {
+    // Resposta imediata com o centroide do município (companies.geom) — mesma
+    // fonte do último fallback do geocodeCompany.
+    const cents = await query<{ id: string; lat: number | null; lon: number | null }>(
+      `SELECT id, ST_Y(geom::geometry) AS lat, ST_X(geom::geometry) AS lon
+       FROM companies WHERE id = ANY($1::bigint[])`, [deferred],
+    );
+    for (const r of cents) {
+      if (r.lat != null && r.lon != null) geo[Number(r.id)] = { lat: r.lat, lon: r.lon };
+    }
+    // Geocodifica o excedente fora do caminho crítico (sequencial, ainda sob o
+    // throttle do Nominatim) para popular o cache das próximas requests.
+    setImmediate(() => {
+      void (async () => {
+        for (const id of deferred) {
+          try { await geocodeCompany(id); } catch { /* best-effort: fica pro próximo request */ }
+        }
+      })();
+    });
   }
   return geo;
 }
@@ -105,7 +132,7 @@ async function osrmTrip(pts: Geo[]): Promise<{
 }> {
   const coordStr = pts.map((p) => `${p.lon},${p.lat}`).join(';');
   const url = `${OSRM}/trip/v1/driving/${coordStr}?source=first&roundtrip=true&geometries=geojson&overview=full`;
-  const resp = await fetch(url);
+  const resp = await fetch(url, { signal: AbortSignal.timeout(8000) }); // OSRM público lento não pode travar a request
   if (!resp.ok) throw new Error(`OSRM ${resp.status}`);
   const j = (await resp.json()) as OsrmResp;
   if (j.code !== 'Ok' || !j.trips?.length || !j.waypoints) throw new Error(`OSRM ${j.code}`);

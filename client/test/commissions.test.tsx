@@ -37,9 +37,11 @@ const RULE = {
   company_nome: null, user_nome: null, user_email: null,
 };
 
+// admin faz bypass do RBAC; vendedor (sem grupo) não tem settle/reconcile
 const setRole = (u: User): void => {
   useAuthMock.mockReturnValue({
     user: u, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+    can: () => u.role === 'admin',
   });
 };
 

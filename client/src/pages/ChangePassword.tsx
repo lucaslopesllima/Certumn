@@ -60,15 +60,15 @@ export function ChangePassword(): React.JSX.Element {
         <form onSubmit={submit} className="mt-5 space-y-3">
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Senha provisória</span>
-            <input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} required autoFocus className={inputCls} />
+            <input type="password" value={atual} onChange={(e) => setAtual(e.target.value)} required autoFocus maxLength={200} className={inputCls} />
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Nova senha</span>
-            <input type="password" value={nova} onChange={(e) => setNova(e.target.value)} required minLength={6} className={inputCls} />
+            <input type="password" value={nova} onChange={(e) => setNova(e.target.value)} required minLength={6} maxLength={200} className={inputCls} />
           </label>
           <label className="block">
             <span className="text-xs font-semibold text-ink-600">Confirmar nova senha</span>
-            <input type="password" value={conf} onChange={(e) => setConf(e.target.value)} required className={inputCls} />
+            <input type="password" value={conf} onChange={(e) => setConf(e.target.value)} required maxLength={200} className={inputCls} />
           </label>
           <ul className="space-y-1">
             <Rule ok={nova.length >= 6}>Ao menos 6 caracteres</Rule>

@@ -133,14 +133,19 @@ describe('account', () => {
     expect((got.json() as { user: { id: number } }).user.id).toBe(a.user.id);
 
     const newMail = mail('conta');
+    // trocar email exige a senha atual (senha do register() nos helpers)
     const up = await inj(a, 'PATCH', '/api/account',
-      { nome: 'Org Renomeada', email: newMail, cidade: 'São Paulo', uf: 'SP' });
+      { nome: 'Org Renomeada', email: newMail, senha_atual: 'senha123', cidade: 'São Paulo', uf: 'SP' });
     expect((up.json() as { user: { email: string } }).user.email).toBe(newMail);
 
+    // sem senha atual -> 400
+    const semSenha = await inj(a, 'PATCH', '/api/account', { email: mail('outro') });
+    expect(semSenha.statusCode).toBe(400);
+
     // email de outro usuário -> 409
-    const dup = await inj(a, 'PATCH', '/api/account', { email: `${b.user.id}.${newMail}` });
+    const dup = await inj(a, 'PATCH', '/api/account', { email: `${b.user.id}.${newMail}`, senha_atual: 'senha123' });
     expect(dup.statusCode).toBe(200); // email diferente passa
-    const taken = await inj(b, 'PATCH', '/api/account', { email: `${b.user.id}.${newMail}` });
+    const taken = await inj(b, 'PATCH', '/api/account', { email: `${b.user.id}.${newMail}`, senha_atual: 'senha123' });
     expect(taken.statusCode).toBe(409);
 
     // endereço mudou -> origem cacheada zera

@@ -6,7 +6,7 @@ import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser, useAuth } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
-import { dec, maskCNPJ, maskPct, maskPhone } from '../lib/format.ts';
+import { clampNum, dec, maskCNPJ, maskPct, maskPhone } from '../lib/format.ts';
 
 type Section = 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
@@ -20,6 +20,7 @@ const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; adm
   { key: 'smtp', label: 'E-mail (SMTP)', icon: 'mail', desc: 'Servidor de envio dos e-mails agendados', admin: true },
 ];
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
+const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 export function Settings(): React.JSX.Element {
   const user = useOptionalUser();
@@ -82,7 +83,7 @@ function AlertasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   const save = async (): Promise<void> => {
     if (dias === '' || dias < 1) { toast.error('Informe um número de dias válido.'); return; }
     try {
-      await api.patch('/api/account', { inatividade_dias: Number(dias) });
+      await api.patch('/api/account', { inatividade_dias: clampNum(dias, 1, 365) });
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
       toast.success('Alerta de inatividade salvo.');
@@ -150,7 +151,7 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
     setBusy(true);
     try {
       await api.put('/api/settings/smtp', {
-        host: host.trim(), port, secure,
+        host: host.trim(), port: clampNum(port, 1, 65535), secure,
         username: username.trim() || null,
         // só envia password quando preenchida — branco mantém a atual.
         password: password ? password : null,
@@ -184,7 +185,7 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
         <div className="grid grid-cols-3 gap-3">
           <label className="col-span-2 block">
             <span className="mb-1 block text-xs font-medium text-ink-500">Host</span>
-            <input value={host} onChange={(e) => setHost(e.target.value)} placeholder="smtp.seudominio.com" className={inputCls} />
+            <input value={host} onChange={(e) => setHost(e.target.value)} maxLength={200} placeholder="smtp.seudominio.com" className={inputCls} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">Porta</span>
@@ -200,11 +201,11 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">Usuário</span>
-            <input value={username} onChange={(e) => setUsername(e.target.value)} placeholder="login do SMTP" className={inputCls} />
+            <input value={username} onChange={(e) => setUsername(e.target.value)} maxLength={200} placeholder="login do SMTP" className={inputCls} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">Senha {hasPassword && <span className="text-emerald-600">(definida)</span>}</span>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} maxLength={200}
               placeholder={hasPassword ? '•••••• (manter atual)' : 'senha do SMTP'} className={inputCls} />
           </label>
         </div>
@@ -212,11 +213,11 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
         <div className="grid grid-cols-2 gap-3">
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">E-mail de origem</span>
-            <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} placeholder="naoresponda@seudominio.com" className={inputCls} />
+            <input type="email" value={fromEmail} onChange={(e) => setFromEmail(e.target.value)} maxLength={160} placeholder="naoresponda@seudominio.com" className={inputCls} />
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-medium text-ink-500">Nome de exibição</span>
-            <input value={fromName} onChange={(e) => setFromName(e.target.value)} placeholder="Sua Empresa" className={inputCls} />
+            <input value={fromName} onChange={(e) => setFromName(e.target.value)} maxLength={120} placeholder="Sua Empresa" className={inputCls} />
           </label>
         </div>
 
@@ -372,7 +373,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
             <span className="tabnums grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface text-xs font-bold text-ink-400 shadow-card">
               {i + 1}
             </span>
-            <input defaultValue={st.nome} disabled={!can('stages.update')}
+            <input defaultValue={st.nome} disabled={!can('stages.update')} maxLength={120}
               onBlur={(e) => { if (e.target.value.trim() !== st.nome) void rename(st.id, e.target.value); }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               className="min-w-0 flex-1 rounded-lg border border-transparent bg-surface px-2 py-1.5 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
@@ -399,7 +400,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
 
       {can('stages.create') && (
         <form onSubmit={add} className="mt-3 flex gap-2">
-          <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Nova fase (ex.: Pós-venda)" className={cn(inputCls, 'flex-1')} />
+          <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={120} placeholder="Nova fase (ex.: Pós-venda)" className={cn(inputCls, 'flex-1')} />
           <Btn icon="plus" type="submit">Adicionar</Btn>
         </form>
       )}
@@ -552,14 +553,14 @@ function EmpresaForm({ inputCls, initial, onSave, onCancel }: {
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
-      <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome da empresa / marca *" className={inputCls} />
+      <input autoFocus value={f.nome} onChange={set('nome')} maxLength={200} placeholder="Nome da empresa / marca *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
-        <input value={f.segmento} onChange={set('segmento')} placeholder="Segmento (ex.: Calçados)" className={inputCls} />
+        <input value={f.segmento} onChange={set('segmento')} maxLength={120} placeholder="Segmento (ex.: Calçados)" className={inputCls} />
         <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
-        <input value={f.contato} onChange={set('contato')} placeholder="Contato (telefone/e-mail)" className={inputCls} />
-        <input value={f.site} onChange={set('site')} placeholder="Site" className={inputCls} />
+        <input type="text" value={f.contato} onChange={set('contato')} maxLength={120} placeholder="Contato (telefone/e-mail)" className={inputCls} />
+        <input value={f.site} onChange={set('site')} maxLength={200} placeholder="Site" className={inputCls} />
       </div>
-      <textarea value={f.notas} onChange={set('notas')} placeholder="Notas (linha de produtos, comissão, etc.)" rows={2} className={cn(inputCls, 'resize-y')} />
+      <textarea value={f.notas} onChange={set('notas')} maxLength={2000} placeholder="Notas (linha de produtos, comissão, etc.)" rows={2} className={cn(inputCls, 'resize-y')} />
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
         <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>
@@ -611,7 +612,7 @@ function BrandsEditor({ representedId, inputCls }: { representedId: number; inpu
       </div>
       {can('brands.create') && (
         <form onSubmit={add} className="mt-2 flex gap-2">
-          <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder="Nova marca" className={cn(inputCls, 'flex-1')} />
+          <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={200} placeholder="Nova marca" className={cn(inputCls, 'flex-1')} />
           <Btn size="sm" icon="plus" type="submit">Add</Btn>
         </form>
       )}
@@ -671,7 +672,7 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
         {items.map((it) => (
           <li key={it.id} className="flex items-center gap-2 rounded-xl border border-ink-200/70 bg-ink-50 p-2">
             <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-surface text-ink-400 shadow-card"><Icon name={icon} size={15} /></span>
-            <input defaultValue={it.nome} disabled={!can(`${path}.update`)}
+            <input defaultValue={it.nome} disabled={!can(`${path}.update`)} maxLength={120}
               onBlur={(e) => { if (e.target.value.trim() !== it.nome) void rename(it.id, e.target.value); }}
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               className="min-w-0 flex-1 rounded-lg border border-transparent bg-surface px-2 py-1.5 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
@@ -688,7 +689,7 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
 
       {can(`${path}.create`) && (
         <form onSubmit={add} className="mt-3 flex gap-2">
-          <input value={novo} onChange={(e) => setNovo(e.target.value)} placeholder={placeholder} className={cn(inputCls, 'flex-1')} />
+          <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={120} placeholder={placeholder} className={cn(inputCls, 'flex-1')} />
           <Btn icon="plus" type="submit">Adicionar</Btn>
         </form>
       )}
@@ -818,20 +819,21 @@ function ContatoForm({ inputCls, reps, initial, onSave, onCancel }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!f.nome.trim()) return;
+    if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try { await onSave(f); } finally { setBusy(false); }
   };
 
   return (
     <form onSubmit={submit} className="space-y-2.5">
-      <input autoFocus value={f.nome} onChange={set('nome')} placeholder="Nome *" className={inputCls} />
+      <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
-        <input value={f.cargo} onChange={set('cargo')} placeholder="Cargo (ex.: Comprador)" className={inputCls} />
+        <input value={f.cargo} onChange={set('cargo')} maxLength={120} placeholder="Cargo (ex.: Comprador)" className={inputCls} />
         <select value={f.represented_id} onChange={set('represented_id')} className={inputCls}>
           <option value="">Representada (opcional)</option>
           {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
         </select>
-        <input value={f.email} onChange={set('email')} placeholder="E-mail" className={inputCls} />
+        <input type="email" value={f.email} onChange={set('email')} maxLength={160} placeholder="E-mail" className={inputCls} />
         <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
       </div>
       <div className="flex justify-end gap-2">

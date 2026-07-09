@@ -63,6 +63,9 @@ function Extrato({ reps }: { reps: RepresentedCompany[] }): React.JSX.Element {
   const [reconciling, setReconciling] = useState(false);
 
   const load = async (): Promise<void> => {
+    // competencia é o que mantém o extrato limitado a um mês no servidor —
+    // input type=month pode ser limpo pelo usuário; sem valor, não consulta.
+    if (!competencia) return;
     setLoading(true);
     const qs = new URLSearchParams({ competencia });
     if (representedId !== 'todas') qs.set('represented_id', String(representedId));
@@ -224,11 +227,11 @@ function SettleModal({ entry, onClose, onSaved }: {
 
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
-    if (valor.trim() === '' || !Number.isFinite(Number(valor)) || !data) return;
+    if (valor.trim() === '' || !Number.isFinite(dec(valor)) || !data) return;
     setBusy(true);
     try {
       await api.patch(`/api/commissions/${entry.id}/settle`, {
-        valor_recebido: Number(valor), recebida_em: data, observacao: observacao.trim() || null,
+        valor_recebido: dec(valor), recebida_em: data, observacao: observacao.trim() || null,
       });
       toast.success('Baixa registrada.');
       onSaved();
@@ -255,7 +258,7 @@ function SettleModal({ entry, onClose, onSaved }: {
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Valor recebido *</span>
-                <input type="number" min="0" step="0.01" value={valor} autoFocus
+                <input type="number" min={0} max={1e9} step="0.01" value={valor} autoFocus
                   onChange={(e) => setValor(e.target.value)} className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
@@ -263,7 +266,7 @@ function SettleModal({ entry, onClose, onSaved }: {
                 <input type="date" value={data} onChange={(e) => setData(e.target.value)} className={cn(inputCls, 'mt-1')} />
               </label>
             </div>
-            <textarea value={observacao} onChange={(e) => setObservacao(e.target.value)}
+            <textarea value={observacao} onChange={(e) => setObservacao(e.target.value)} maxLength={2000}
               placeholder="Observação" rows={2} className={inputCls} />
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
@@ -320,7 +323,7 @@ function ReconcileModal({ onClose, onDone }: { onClose: () => void; onDone: () =
                 <code> data</code> opcional. Cada linha dá baixa na comissão do pedido; valor fora da
                 tolerância marca divergência.
               </p>
-              <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={8}
+              <textarea value={csv} onChange={(e) => setCsv(e.target.value)} rows={8} maxLength={1000000}
                 placeholder={'pedido;valor;data\n12;345,67;05/06/2026'}
                 className={cn(inputCls, 'font-mono text-xs')} />
               <div className="flex justify-end gap-2">

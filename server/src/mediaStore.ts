@@ -2,7 +2,8 @@
 // ao base64-no-Postgres: descriptografa uma vez (via Evolution) e grava o binário
 // num volume, guardando só o caminho relativo no banco. Vazio em config =
 // desligado (cai no base64 legado).
-import { mkdir, writeFile, readFile } from 'node:fs/promises';
+import { mkdir, writeFile, readFile, stat } from 'node:fs/promises';
+import { createReadStream, type ReadStream } from 'node:fs';
 import { join, resolve, sep } from 'node:path';
 import { config } from './config.ts';
 
@@ -40,11 +41,25 @@ export async function saveMedia(
   return rel;
 }
 
-// Lê a mídia do disco. relPath vem do banco, mas validamos que resolve dentro do
-// diretório configurado (defesa em profundidade contra path traversal).
-export async function readMedia(relPath: string): Promise<Buffer> {
+// Resolve o caminho absoluto validando que fica dentro do diretório configurado
+// (defesa em profundidade contra path traversal) — relPath vem do banco.
+function resolveMediaPath(relPath: string): string {
   const root = resolve(config.whatsappMediaDir);
   const abs = resolve(root, relPath);
   if (abs !== root && !abs.startsWith(root + sep)) throw new Error('caminho de mídia inválido');
-  return readFile(abs);
+  return abs;
+}
+
+// Lê a mídia do disco (buffer inteiro — usar mediaStream para servir via HTTP).
+export async function readMedia(relPath: string): Promise<Buffer> {
+  return readFile(resolveMediaPath(relPath));
+}
+
+// Stream da mídia do disco — serve arquivos grandes sem carregar tudo em memória.
+// stat antes do createReadStream: arquivo sumido lança aqui e o caller cai no
+// fallback (base64/Evolution); o size alimenta o content-length.
+export async function mediaStream(relPath: string): Promise<{ stream: ReadStream; size: number }> {
+  const abs = resolveMediaPath(relPath);
+  const st = await stat(abs);
+  return { stream: createReadStream(abs), size: st.size };
 }

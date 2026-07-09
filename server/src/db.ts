@@ -10,7 +10,7 @@ pg.types.setTypeParser(1082, (v) => v);
 // Single shared pool. Raw parameterized SQL everywhere — no ORM.
 export const pool = new pg.Pool({
   connectionString: config.databaseUrl,
-  max: Number(process.env.PG_POOL_MAX ?? 10),
+  max: Number(process.env.PG_POOL_MAX ?? 20),
   idleTimeoutMillis: 30_000,
   // Query patológica não pode segurar conexão do pool indefinidamente.
   // 30s cobre o recommend frio na base inteira; ETL usa Client próprio, não passa por aqui.

@@ -17,11 +17,20 @@ export function evolutionEnabled(): boolean {
 }
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${base()}${path}`, {
-    method,
-    headers: { apikey: config.evolutionApiKey, 'content-type': 'application/json' },
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${base()}${path}`, {
+      method,
+      headers: { apikey: config.evolutionApiKey, 'content-type': 'application/json' },
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(10_000), // Evolution fora do ar não pode segurar a request
+    });
+  } catch (e) {
+    if (e instanceof Error && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new Error('Evolution API: tempo de resposta esgotado');
+    }
+    throw e;
+  }
   const text = await res.text();
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
