@@ -8,6 +8,7 @@ import { CompanySearch } from '../lib/companySearch.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { toast } from '../lib/toast.tsx';
 import { brl0, dec, maskCNPJ, maskMoney, maskSearchCNPJ, numStr } from '../lib/format.ts';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -99,7 +100,7 @@ export function Clientes(): React.JSX.Element {
   };
 
   const remove = async (c: Cliente): Promise<void> => {
-    if (!confirm(`Remover ${c.nome_fantasia || c.razao_social} dos clientes? A empresa permanece na base; só o vínculo é removido.`)) return;
+    if (!(await confirmDialog(`Remover ${c.nome_fantasia || c.razao_social} dos clientes? A empresa permanece na base; só o vínculo é removido.`))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== c.id));
     try { await api.del(`/api/relationships/${c.id}`); toast.success('Vínculo removido.'); }

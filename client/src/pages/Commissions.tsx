@@ -11,6 +11,7 @@ import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
 import { brl, csvNum, dec, fmtDate, maskPct, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -377,7 +378,7 @@ function Rules({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }):
   }, [admin]);
 
   const remove = async (r: CommissionRule): Promise<void> => {
-    if (!confirm('Excluir esta regra de comissão?')) return;
+    if (!(await confirmDialog('Excluir esta regra de comissão?'))) return;
     const before = rules;
     setRules((xs) => xs.filter((x) => x.id !== r.id));
     try { await api.del(`/api/commission-rules/${r.id}`); toast.success('Regra excluída.'); }

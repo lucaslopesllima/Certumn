@@ -5,6 +5,7 @@ import { Icon } from './icons.tsx';
 import { toast } from './toast.tsx';
 import { dec, maskPhone } from './format.ts';
 import type { CatalogItem, Contact, SampleRequest, SampleStatus } from './types.ts';
+import { confirmDialog } from './confirm.ts';
 
 // Modais de amostra do funil: criar/editar uma solicitação e listar as da
 // prospecção. Amostra escolhe um produto do catálogo, opcionalmente um contato
@@ -237,7 +238,7 @@ export function SampleListModal({ card, catalog, onClose, onChanged }: {
   useEffect(load, [card.id]);
 
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir esta solicitação de amostra?')) return;
+    if (!(await confirmDialog('Excluir esta solicitação de amostra?'))) return;
     try {
       await api.del(`/api/sample-requests/${id}`);
       toast.success('Amostra excluída.');

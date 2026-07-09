@@ -6,6 +6,8 @@ import userEvent from '@testing-library/user-event';
 import { SampleRequestModal, SampleListModal } from '../src/lib/sampleModal.tsx';
 import { api } from '../src/lib/api.ts';
 import type { CatalogItem, SampleRequest } from '../src/lib/types.ts';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -31,7 +33,7 @@ beforeEach(() => {
   vi.mocked(m.post).mockReset();
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.del).mockReset();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(confirmDialog).mockResolvedValue(true);
   m.get.mockImplementation(async (p: string) => {
     if (p.startsWith('/api/contacts')) return { contacts: [{ id: 50, nome: 'João', cargo: 'Compras', email: null, telefone: null, company_id: 100, represented_id: null }] };
     if (p.startsWith('/api/sample-requests')) return { samples: [sample()] };

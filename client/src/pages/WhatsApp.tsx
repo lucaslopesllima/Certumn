@@ -10,6 +10,7 @@ import { CompanySearch } from '../lib/companySearch.tsx';
 import { OrderModal } from '../lib/orderModal.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import type { Contact, CompanyHit, WaChat, WaMessage, WaSchedule, WaStatus } from '../lib/types.ts';
+import { confirmDialog } from '../lib/confirm.ts';
 
 // base64 do QR pode vir cru ou já como data URL — normaliza p/ <img src>.
 function qrSrc(b64: string): string {
@@ -350,7 +351,7 @@ function MergeModal({ current, chats, onClose, onMerged }: { current: WaChat; ch
       .filter((c) => !s || nomeChat(c).toLowerCase().includes(s) || (c.numero ?? '').includes(s) || (c.lid ?? '').includes(s));
   }, [chats, current, q]);
   const merge = async (other: WaChat): Promise<void> => {
-    if (!confirm(`Conciliar "${nomeChat(other)}" em "${nomeChat(current)}"? As mensagens serão unificadas e a outra conversa removida.`)) return;
+    if (!(await confirmDialog(`Conciliar "${nomeChat(other)}" em "${nomeChat(current)}"? As mensagens serão unificadas e a outra conversa removida.`))) return;
     setBusy(true);
     try {
       await api.post(`/api/whatsapp/chats/${current.id}/merge`, { other_id: other.id });
@@ -474,7 +475,7 @@ function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, 
   };
 
   const remove = async (): Promise<void> => {
-    if (!contact || !confirm(`Excluir o contato "${contact.nome}"?`)) return;
+    if (!contact || !(await confirmDialog(`Excluir o contato "${contact.nome}"?`))) return;
     setBusy(true);
     try {
       await api.del(`/api/contacts/${contact.id}`);
@@ -744,7 +745,7 @@ export function WhatsApp(): React.JSX.Element {
 
   // Remove a conversa do espelho local (mensagens/agendamentos vão junto).
   const delChat = async (chat: WaChat): Promise<void> => {
-    if (!confirm(`Apagar a conversa com "${nomeChat(chat)}"? As mensagens serão removidas deste painel.`)) return;
+    if (!(await confirmDialog(`Apagar a conversa com "${nomeChat(chat)}"? As mensagens serão removidas deste painel.`))) return;
     try {
       await api.del(`/api/whatsapp/chats/${chat.id}`);
       setChats((cs) => cs.filter((c) => c.id !== chat.id));

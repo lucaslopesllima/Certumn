@@ -4,6 +4,7 @@ import type { PermissionGroup, PermissionCatalogItem } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -133,7 +134,7 @@ function GroupEditor({ group, catalog, onClose, onSaved }: {
   };
 
   const remove = async (): Promise<void> => {
-    if (!group || !confirm(`Excluir o grupo "${group.nome}"?`)) return;
+    if (!group || !(await confirmDialog(`Excluir o grupo "${group.nome}"?`))) return;
     try {
       await api.del(`/api/groups/${group.id}`);
       toast.success('Grupo excluído.');

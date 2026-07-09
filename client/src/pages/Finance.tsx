@@ -6,6 +6,7 @@ import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard,
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, numStr, todayStr, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -460,7 +461,7 @@ function CategoriesModal({ categories, onClose, onChanged }: {
     finally { setBusy(false); }
   };
   const remove = async (c: FinanceCategory): Promise<void> => {
-    if (!confirm(`Excluir a categoria "${c.nome}"? Os lançamentos ficam sem categoria.`)) return;
+    if (!(await confirmDialog(`Excluir a categoria "${c.nome}"? Os lançamentos ficam sem categoria.`))) return;
     await api.del(`/api/finance/categories/${c.id}`).catch(() => undefined);
     onChanged();
   };

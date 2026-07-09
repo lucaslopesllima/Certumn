@@ -6,6 +6,7 @@ import { Badge, Btn, Card, EmptyState, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, dec, fmtDate, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -30,7 +31,7 @@ export function PriceTables({ reps, catalog, adding, onCloseAdd }: {
   useEffect(() => { void load(); }, []);
 
   const remove = async (t: PriceTable): Promise<void> => {
-    if (!confirm('Excluir esta tabela de preço?')) return;
+    if (!(await confirmDialog('Excluir esta tabela de preço?'))) return;
     const before = tables;
     setTables((xs) => xs.filter((x) => x.id !== t.id));
     try { await api.del(`/api/price-tables/${t.id}`); toast.success('Tabela excluída.'); }

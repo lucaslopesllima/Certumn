@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { Catalog } from '../src/pages/Catalog.tsx';
 import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -25,7 +27,7 @@ beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.del).mockReset();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(confirmDialog).mockResolvedValue(true);
   vi.stubGlobal('alert', vi.fn());
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
@@ -55,13 +57,13 @@ describe('Catalog', () => {
   });
 
   it('exclusão: confirm cancelado não chama API; falha de DELETE reverte', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.mocked(confirmDialog).mockResolvedValue(false);
     render(<Catalog />);
     await screen.findByText('Furadeira');
     await userEvent.click(screen.getByLabelText('Excluir'));
     expect(m.del).not.toHaveBeenCalled();
 
-    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.mocked(confirmDialog).mockResolvedValue(true);
     m.del.mockRejectedValueOnce(new Error('offline'));
     await userEvent.click(screen.getByLabelText('Excluir'));
     // sumiu otimista, voltou no rollback

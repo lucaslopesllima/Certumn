@@ -6,6 +6,7 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -99,7 +100,7 @@ function SchedulesTab(): React.JSX.Element {
   const filtered = useMemo(() => filter === 'todos' ? list : list.filter((e) => e.status === filter), [list, filter]);
 
   const cancelar = async (e: EmailSchedule): Promise<void> => {
-    if (!confirm(`Cancelar o envio para ${e.destinatario}?`)) return;
+    if (!(await confirmDialog(`Cancelar o envio para ${e.destinatario}?`))) return;
     try {
       const r = await api.patch<{ schedule: EmailSchedule }>(`/api/email-schedules/${e.id}`, { status: 'cancelado' });
       setList((xs) => xs.map((x) => (x.id === e.id ? r.schedule : x)));
@@ -108,7 +109,7 @@ function SchedulesTab(): React.JSX.Element {
   };
 
   const remove = async (e: EmailSchedule): Promise<void> => {
-    if (!confirm(`Remover o agendamento para ${e.destinatario}?`)) return;
+    if (!(await confirmDialog(`Remover o agendamento para ${e.destinatario}?`))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== e.id));
     try { await api.del(`/api/email-schedules/${e.id}`); toast.success('Agendamento removido.'); }
@@ -379,7 +380,7 @@ function TemplatesTab(): React.JSX.Element {
   useEffect(() => { void load(); }, []);
 
   const remove = async (t: EmailTemplate): Promise<void> => {
-    if (!confirm(`Remover o modelo "${t.nome}"?`)) return;
+    if (!(await confirmDialog(`Remover o modelo "${t.nome}"?`))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== t.id));
     try { await api.del(`/api/email-templates/${t.id}`); toast.success('Modelo removido.'); }

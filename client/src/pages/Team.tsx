@@ -6,6 +6,7 @@ import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from
 import { Icon } from '../lib/icons.tsx';
 import { brl, dec, maskMoney, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -433,7 +434,7 @@ function Metas(): React.JSX.Element {
   };
 
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir esta meta?')) return;
+    if (!(await confirmDialog('Excluir esta meta?'))) return;
     try { await api.del(`/api/goals/${id}`); await load(); toast.success('Meta excluída.'); }
     catch (e) { toast.error(e instanceof ApiError ? e.message : 'Erro ao excluir meta'); }
   };

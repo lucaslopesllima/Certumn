@@ -7,6 +7,7 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
 import { maskCNPJ, maskPhone } from '../lib/format.ts';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -63,7 +64,7 @@ export function Carriers(): React.JSX.Element {
     catch { setList(before); toast.error('Não foi possível atualizar a transportadora.'); }
   };
   const remove = async (c: Carrier): Promise<void> => {
-    if (!confirm('Desativar esta transportadora? Pedidos já emitidos mantêm o vínculo.')) return;
+    if (!(await confirmDialog('Desativar esta transportadora? Pedidos já emitidos mantêm o vínculo.'))) return;
     const before = list;
     setList((xs) => xs.map((x) => (x.id === c.id ? { ...x, ativo: false } : x)));
     try { await api.del(`/api/carriers/${c.id}`); toast.success('Transportadora desativada.'); }

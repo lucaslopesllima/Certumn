@@ -7,6 +7,7 @@ import { useOptionalUser, useAuth } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
 import { clampNum, dec, maskCNPJ, maskPct, maskPhone } from '../lib/format.ts';
+import { confirmDialog } from '../lib/confirm.ts';
 
 type Section = 'empresas' | 'funil' | 'contatos' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
@@ -333,7 +334,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   };
 
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir esta fase? Os cards nela ficam sem etapa.')) return;
+    if (!(await confirmDialog('Excluir esta fase? Os cards nela ficam sem etapa.'))) return;
     try {
       await api.del(`/api/stages/${id}`);
       setStages((s) => s.filter((x) => x.id !== id));
@@ -450,7 +451,7 @@ function RepresentadasEditor({ inputCls }: { inputCls: string }): React.JSX.Elem
     catch { setList((xs) => xs.map((x) => (x.id === e.id ? { ...x, ativo: e.ativo } : x))); toast.error('Não foi possível atualizar.'); }
   };
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir esta empresa representada?')) return;
+    if (!(await confirmDialog('Excluir esta empresa representada?'))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
     try { await api.del(`/api/represented/${id}`); toast.success('Representada excluída.'); }
@@ -654,7 +655,7 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
     catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível renomear.'); }
   };
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir este item? Prospecções que o usavam ficam sem valor.')) return;
+    if (!(await confirmDialog('Excluir este item? Prospecções que o usavam ficam sem valor.'))) return;
     const before = items;
     setItems((xs) => xs.filter((x) => x.id !== id));
     try { await api.del(`/api/${path}/${id}`); toast.success('Item excluído.'); }
@@ -749,7 +750,7 @@ function ContatosEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar o contato.'); }
   };
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir este contato?')) return;
+    if (!(await confirmDialog('Excluir este contato?'))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
     try { await api.del(`/api/contacts/${id}`); toast.success('Contato excluído.'); }

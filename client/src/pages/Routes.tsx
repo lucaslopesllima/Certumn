@@ -11,6 +11,7 @@ import { brl, maskPlaca, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { loadPartida, type Partida } from '../lib/companyFilter.tsx';
 import { useAuth } from '../lib/auth.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 // Navega até um ponto único. Origem omitida de propósito → no celular o Maps usa
 // o GPS atual como ponto de partida; no desktop abre a aba com o destino.
@@ -171,7 +172,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
   };
 
   const delSaved = async (id: number): Promise<void> => {
-    if (!window.confirm('Excluir esta rota?')) return;
+    if (!(await confirmDialog('Excluir esta rota?'))) return;
     try { await api.del(`/api/routes/${id}`); toast.success('Rota excluída.'); }
     catch { toast.error('Não foi possível excluir a rota.'); }
     reloadSaved();
@@ -536,7 +537,7 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
   };
 
   const remove = async (id: number): Promise<void> => {
-    if (!window.confirm('Remover este veículo?')) return;
+    if (!(await confirmDialog('Remover este veículo?'))) return;
     try { await api.del(`/api/vehicles/${id}`); toast.success('Veículo removido.'); }
     catch { toast.error('Não foi possível remover o veículo.'); }
     if (editId === id) cancel();

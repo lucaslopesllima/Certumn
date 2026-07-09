@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { Catalog } from '../src/pages/Catalog.tsx';
 import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -31,7 +33,7 @@ beforeEach(() => {
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.put).mockReset();
   vi.mocked(m.del).mockReset();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(confirmDialog).mockResolvedValue(true);
   vi.stubGlobal('alert', vi.fn());
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),

@@ -7,6 +7,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { Orders } from '../src/pages/Orders.tsx';
 import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -45,7 +47,7 @@ beforeEach(() => {
   vi.mocked(m.post).mockReset();
   vi.mocked(m.del).mockReset();
   vi.stubGlobal('alert', vi.fn());
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(confirmDialog).mockResolvedValue(true);
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
     can: () => true,

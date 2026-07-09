@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { Carriers } from '../src/pages/Carriers.tsx';
 import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -29,7 +31,7 @@ beforeEach(() => {
   vi.mocked(m.post).mockReset();
   vi.mocked(m.patch).mockReset();
   vi.mocked(m.del).mockReset();
-  vi.stubGlobal('confirm', vi.fn(() => true));
+  vi.mocked(confirmDialog).mockResolvedValue(true);
   vi.stubGlobal('alert', vi.fn());
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
@@ -87,13 +89,13 @@ describe('Carriers', () => {
   });
 
   it('desativar: confirm cancelado não chama API; sucesso marca inativa (linha fica)', async () => {
-    vi.stubGlobal('confirm', vi.fn(() => false));
+    vi.mocked(confirmDialog).mockResolvedValue(false);
     render(<Carriers />);
     await screen.findByText('Transp X');
     await userEvent.click(screen.getByLabelText('Excluir transportadora'));
     expect(m.del).not.toHaveBeenCalled();
 
-    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.mocked(confirmDialog).mockResolvedValue(true);
     m.del.mockResolvedValueOnce({ deleted: true });
     await userEvent.click(screen.getByLabelText('Excluir transportadora'));
     await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/carriers/4'));

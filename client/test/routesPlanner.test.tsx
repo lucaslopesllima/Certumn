@@ -5,6 +5,8 @@ import userEvent from '@testing-library/user-event';
 import { RoutePlanner } from '../src/pages/Routes.tsx';
 import { api, ApiError } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { confirmDialog } from '../src/lib/confirm.ts';
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 
 vi.mock('react-leaflet', () => ({
   MapContainer: ({ children }: { children?: React.ReactNode }) => <div data-testid="map">{children}</div>,
@@ -127,7 +129,7 @@ describe('RoutePlanner', () => {
       return {};
     });
     m.del.mockResolvedValueOnce({});
-    vi.stubGlobal('confirm', vi.fn(() => true));
+    vi.mocked(confirmDialog).mockResolvedValue(true);
     render(<RoutePlanner />);
     expect(await screen.findByText('Rota Salva')).toBeInTheDocument();
     await userEvent.click(screen.getByLabelText('Excluir'));

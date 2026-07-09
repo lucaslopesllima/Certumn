@@ -11,6 +11,7 @@ import { ActivityCreateModal } from '../lib/activityModal.tsx';
 import { SampleRequestModal, SampleListModal } from '../lib/sampleModal.tsx';
 import { brl0 as brl, clampNum, maskMoney, maskPhone, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const STATUS_TONE: Record<string, Tone> = {
   prospect: 'info', cliente: 'success', descartado: 'neutral',
@@ -638,7 +639,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
           <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 p-4">
             {can('relationships.delete') && (
               <Btn variant="danger" type="button" icon="x"
-                onClick={() => { if (confirm('Remover esta empresa do funil?')) void onRemove(card.id); }}>
+                onClick={() => void confirmDialog('Remover esta empresa do funil?').then((ok) => { if (ok) void onRemove(card.id); })}>
                 Remover do funil
               </Btn>
             )}

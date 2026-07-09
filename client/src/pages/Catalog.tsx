@@ -8,6 +8,7 @@ import { brl, dec, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 import { UNIDADES_MEDIDA_GRUPOS } from '../lib/units.ts';
+import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -88,7 +89,7 @@ export function Catalog(): React.JSX.Element {
     catch { setList(before); toast.error('Não foi possível atualizar o item.'); }
   };
   const remove = async (id: number): Promise<void> => {
-    if (!confirm('Excluir este item do catálogo?')) return;
+    if (!(await confirmDialog('Excluir este item do catálogo?'))) return;
     const before = list;
     setList((xs) => xs.filter((x) => x.id !== id));
     try { await api.del(`/api/catalog/${id}`); toast.success('Item excluído.'); }
