@@ -114,6 +114,7 @@ export interface AccountOrg {
   id: number; nome: string; cnpj: string | null; telefone: string | null;
   cep: string | null; logradouro: string | null; numero: string | null; complemento: string | null;
   bairro: string | null; cidade: string | null; uf: string | null;
+  tipo_conta: 'escritorio' | 'individual';
 }
 export interface AccountUser { id: number; email: string; role: string }
 

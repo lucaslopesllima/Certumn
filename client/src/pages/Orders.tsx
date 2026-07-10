@@ -35,7 +35,9 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
 const PAGE = 100;
 
 export function Orders(): React.JSX.Element {
-  const { user, can } = useAuth();
+  const { user, can, isOffice } = useAuth();
+  // Coluna "Vendedor" só faz sentido com equipe: admin em conta escritório.
+  const showOwner = user?.role === 'admin' && isOffice;
   const [params, setParams] = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,7 +218,7 @@ export function Orders(): React.JSX.Element {
               <tr>
                 <th className="w-14 px-3 py-2.5">#</th>
                 <th className="px-3 py-2.5">Cliente</th>
-                {user?.role === 'admin' && <th className="px-3 py-2.5">Vendedor</th>}
+                {showOwner && <th className="px-3 py-2.5">Vendedor</th>}
                 <th className="px-3 py-2.5">Status</th>
                 <th className="px-3 py-2.5">Total</th>
                 <th className="px-3 py-2.5">Ações</th>
@@ -224,7 +226,7 @@ export function Orders(): React.JSX.Element {
             </thead>
             <tbody>
               {filtered.map((o) => (
-                <Row key={o.id} o={o} showOwner={user?.role === 'admin'} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
+                <Row key={o.id} o={o} showOwner={showOwner} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
                   onTransition={(to) => void transition(o, to)} onPrint={() => void printOrder(o)} />
               ))}
             </tbody>

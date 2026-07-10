@@ -26,11 +26,14 @@ export function authRoutes(app: FastifyInstance): void {
           org_nome: { type: 'string', minLength: 1 },
           email: { type: 'string', minLength: 3 },
           senha: { type: 'string', minLength: 6 },
+          tipo_conta: { type: 'string', enum: ['escritorio', 'individual'], default: 'escritorio' },
         },
       },
     },
   }, async (req, reply) => {
-    const { org_nome, email, senha } = req.body as { org_nome: string; email: string; senha: string };
+    const { org_nome, email, senha, tipo_conta } = req.body as {
+      org_nome: string; email: string; senha: string; tipo_conta: 'escritorio' | 'individual';
+    };
     const normEmail = email.trim().toLowerCase();
 
     const existing = await one('SELECT id FROM users WHERE email = $1', [normEmail]);
@@ -39,7 +42,10 @@ export function authRoutes(app: FastifyInstance): void {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      const org = (await client.query('INSERT INTO organizations (nome) VALUES ($1) RETURNING id', [org_nome])).rows[0];
+      const org = (await client.query(
+        'INSERT INTO organizations (nome, tipo_conta) VALUES ($1,$2) RETURNING id',
+        [org_nome, tipo_conta],
+      )).rows[0];
       const senhaHash = await hashPassword(senha);
       const user = (await client.query(
         'INSERT INTO users (org_id, email, senha_hash, role) VALUES ($1,$2,$3,$4) RETURNING id, role',
@@ -55,7 +61,7 @@ export function authRoutes(app: FastifyInstance): void {
       const token = await signToken({ userId: user.id, orgId: org.id, role: user.role, tokenVersion: 0 });
       return reply.code(201).send({
         token,
-        user: { id: user.id, email: normEmail, role: user.role, org_id: org.id, is_admin: true, permissions: [] },
+        user: { id: user.id, email: normEmail, role: user.role, org_id: org.id, org_nome, tipo_conta, is_admin: true, permissions: [] },
       });
     } catch (e) {
       await client.query('ROLLBACK');
@@ -81,10 +87,14 @@ export function authRoutes(app: FastifyInstance): void {
       nome: string | null; ativo: boolean; must_change_password: boolean;
       is_admin: boolean | null; permissions: string[] | null;
       group_id: number | null; group_nome: string | null;
+      org_nome: string; tipo_conta: string;
     }>(
       `SELECT u.id, u.org_id, u.senha_hash, u.role, u.nome, u.ativo, u.must_change_password,
-              u.token_version, u.group_id, g.is_admin, g.permissions, g.nome AS group_nome
-         FROM users u LEFT JOIN permission_groups g ON g.id = u.group_id
+              u.token_version, u.group_id, g.is_admin, g.permissions, g.nome AS group_nome,
+              o.nome AS org_nome, o.tipo_conta
+         FROM users u
+         JOIN organizations o ON o.id = u.org_id
+         LEFT JOIN permission_groups g ON g.id = u.group_id
         WHERE u.email = $1`,
       [email.trim().toLowerCase()],
     );
@@ -104,6 +114,7 @@ export function authRoutes(app: FastifyInstance): void {
       token,
       user: {
         id: user.id, email: email.trim().toLowerCase(), role: user.role, org_id: user.org_id,
+        org_nome: user.org_nome, tipo_conta: user.tipo_conta,
         nome: user.nome, must_change_password: user.must_change_password,
         group_id: user.group_id, group_nome: user.group_nome,
         is_admin: user.role === 'admin' || user.is_admin === true,
@@ -117,7 +128,7 @@ export function authRoutes(app: FastifyInstance): void {
     const user = await one<{ role: string; is_admin: boolean | null; permissions: string[] | null }>(
       `SELECT u.id, u.email, u.nome, u.role, u.must_change_password, u.group_id,
               g.nome AS group_nome, g.is_admin, g.permissions,
-              o.nome AS org_nome, o.id AS org_id
+              o.nome AS org_nome, o.id AS org_id, o.tipo_conta
          FROM users u
          JOIN organizations o ON o.id = u.org_id
          LEFT JOIN permission_groups g ON g.id = u.group_id

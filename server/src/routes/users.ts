@@ -69,6 +69,13 @@ export function userRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const b = req.body as { nome: string; email: string; senha: string; role?: string; group_id?: number | null };
+
+    // Conta individual é single-user por definição — não admite usuários extras.
+    const org = await one<{ tipo_conta: string }>('SELECT tipo_conta FROM organizations WHERE id = $1', [orgId]);
+    if (org?.tipo_conta === 'individual') {
+      return reply.code(403).send({ error: 'conta individual não permite usuários adicionais — migre para escritório em Conta' });
+    }
+
     const email = b.email.trim().toLowerCase();
     const dup = await one('SELECT id FROM users WHERE email = $1', [email]);
     if (dup) return reply.code(409).send({ error: 'email já cadastrado' });

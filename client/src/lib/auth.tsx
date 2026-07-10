@@ -16,17 +16,22 @@ export interface User {
   group_nome?: string | null;
   is_admin?: boolean;
   permissions?: string[];
+  // escritório = multi-usuário (default); individual = single-user, esconde equipe/RBAC/carteiras.
+  tipo_conta?: 'escritorio' | 'individual';
 }
 
 interface AuthState {
   user: User | null;
   loading: boolean;
   login: (email: string, senha: string) => Promise<void>;
-  register: (org_nome: string, email: string, senha: string) => Promise<void>;
+  register: (org_nome: string, email: string, senha: string, tipo_conta: 'escritorio' | 'individual') => Promise<void>;
   refresh: () => Promise<void>;
   logout: () => void;
   // true se o usuário pode executar a ação (admin faz bypass).
   can: (code: string) => boolean;
+  // true = conta escritório (recursos de equipe visíveis). undefined trata como escritório
+  // (sessão antiga sem o campo, até o /me repopular).
+  isOffice: boolean;
 }
 
 const AuthCtx = createContext<AuthState | null>(null);
@@ -51,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setUser(r.user);
   }, []);
 
-  const register = useCallback(async (org_nome: string, email: string, senha: string): Promise<void> => {
-    const r = await api.post<{ token: string; user: User }>('/api/auth/register', { org_nome, email, senha });
+  const register = useCallback(async (org_nome: string, email: string, senha: string, tipo_conta: 'escritorio' | 'individual'): Promise<void> => {
+    const r = await api.post<{ token: string; user: User }>('/api/auth/register', { org_nome, email, senha, tipo_conta });
     setToken(r.token);
     setUser(r.user);
   }, []);
@@ -83,11 +88,14 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const can = useCallback((code: string): boolean =>
     !!user && (user.is_admin === true || (user.permissions?.includes(code) ?? false)), [user]);
 
+  // undefined (sessão antiga) → escritório, preservando o comportamento atual.
+  const isOffice = user?.tipo_conta !== 'individual';
+
   // Valor memoizado: sem isso todo render do provider re-renderiza a árvore
   // inteira de consumidores do contexto.
   const value = useMemo<AuthState>(
-    () => ({ user, loading, login, register, refresh, logout, can }),
-    [user, loading, login, register, refresh, logout, can],
+    () => ({ user, loading, login, register, refresh, logout, can, isOffice }),
+    [user, loading, login, register, refresh, logout, can, isOffice],
   );
 
   return <AuthCtx.Provider value={value}>{children}</AuthCtx.Provider>;

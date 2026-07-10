@@ -38,17 +38,44 @@ describe('Login', () => {
     expect(login).toHaveBeenCalledWith('eu@org.com', 'senha123');
   });
 
-  it('modo registro pede nome da empresa e chama register', async () => {
+  it('modo registro tem tipo de conta com Individual pré-selecionado', async () => {
+    useAuthMock.mockReturnValue(authState());
+    mount();
+    await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
+
+    const individual = screen.getByRole('radio', { name: /Individual/ }) as HTMLInputElement;
+    const escritorio = screen.getByRole('radio', { name: /Escritório/ }) as HTMLInputElement;
+    expect(individual.checked).toBe(true);
+    expect(escritorio.checked).toBe(false);
+    // default individual → label/placeholder do nome
+    expect(screen.getByPlaceholderText('João Silva Representações')).toBeInTheDocument();
+  });
+
+  it('registro default (individual) chama register com tipo_conta', async () => {
     const register = vi.fn().mockResolvedValue(undefined);
     useAuthMock.mockReturnValue(authState({ register }));
     mount();
 
     await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
-    await userEvent.type(screen.getByPlaceholderText('Minha Representação'), 'Minha Org');
+    await userEvent.type(screen.getByPlaceholderText('João Silva Representações'), 'Minha Org');
     await userEvent.type(screen.getByPlaceholderText('voce@empresa.com'), 'eu@org.com');
     await userEvent.type(screen.getByPlaceholderText('mínimo 6 caracteres'), 'senha123');
     await userEvent.click(screen.getAllByRole('button', { name: 'Criar conta' })[1]!);
-    expect(register).toHaveBeenCalledWith('Minha Org', 'eu@org.com', 'senha123');
+    expect(register).toHaveBeenCalledWith('Minha Org', 'eu@org.com', 'senha123', 'individual');
+  });
+
+  it('escolher Escritório muda o label do nome e o tipo enviado', async () => {
+    const register = vi.fn().mockResolvedValue(undefined);
+    useAuthMock.mockReturnValue(authState({ register }));
+    mount();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Criar conta' }));
+    await userEvent.click(screen.getByRole('radio', { name: /Escritório/ }));
+    await userEvent.type(screen.getByPlaceholderText('Minha Representação'), 'Meu Escritório');
+    await userEvent.type(screen.getByPlaceholderText('voce@empresa.com'), 'eu@org.com');
+    await userEvent.type(screen.getByPlaceholderText('mínimo 6 caracteres'), 'senha123');
+    await userEvent.click(screen.getAllByRole('button', { name: 'Criar conta' })[1]!);
+    expect(register).toHaveBeenCalledWith('Meu Escritório', 'eu@org.com', 'senha123', 'escritorio');
   });
 
   it('mostra a mensagem de erro da API', async () => {

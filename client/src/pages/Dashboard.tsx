@@ -25,7 +25,7 @@ interface DashboardData {
 const hora = (iso: string): string => new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 
 export function Dashboard(): React.JSX.Element {
-  const { user } = useAuth();
+  const { user, isOffice } = useAuth();
   const sellers = useSellers();
   const [competencia, setCompetencia] = useState(todayStr().slice(0, 7));
   const [ownerId, setOwnerId] = useState<'todos' | number>('todos');
@@ -189,8 +189,8 @@ export function Dashboard(): React.JSX.Element {
             </Card>
           </div>
 
-          {/* Ranking (admin consolidado) */}
-          {data.ranking.length > 0 && (
+          {/* Ranking (admin consolidado) — só em conta escritório com equipe. */}
+          {isOffice && data.ranking.length > 0 && (
             <Card className="p-4">
               <h3 className="mb-3 text-sm font-semibold text-ink-900">Ranking de vendas do mês</h3>
               <div className="space-y-2">
@@ -212,9 +212,11 @@ export function Dashboard(): React.JSX.Element {
             </Card>
           )}
 
-          <p className="text-center text-xs text-ink-300">
-            {user?.role === 'admin' && ownerId === 'todos' ? 'Visão consolidada da organização' : `Vendedor: ${ownerId === 'todos' ? (user?.nome ?? user?.email) : sellerLabel(sellers.find((s) => s.id === ownerId) ?? { id: 0, nome: null, email: String(ownerId), role: 'rep', ativo: true })}`}
-          </p>
+          {isOffice && (
+            <p className="text-center text-xs text-ink-300">
+              {user?.role === 'admin' && ownerId === 'todos' ? 'Visão consolidada da organização' : `Vendedor: ${ownerId === 'todos' ? (user?.nome ?? user?.email) : sellerLabel(sellers.find((s) => s.id === ownerId) ?? { id: 0, nome: null, email: String(ownerId), role: 'rep', ativo: true })}`}
+            </p>
+          )}
         </>
       )}
     </div>

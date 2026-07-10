@@ -5,6 +5,7 @@ import { Btn, Card, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { maskCNPJ, maskPhone, maskCEP } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
+import { useAuth } from '../lib/auth.tsx';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 const t = (s: string): string | null => (s.trim() === '' ? null : s.trim());
@@ -19,9 +20,12 @@ function Field({ label, children, className }: { label: string; children: React.
 }
 
 export function Account(): React.JSX.Element {
+  const { user, refresh } = useAuth();
   const [org, setOrg] = useState<AccountOrg | null>(null);
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(true);
+  const [confirmUpgrade, setConfirmUpgrade] = useState(false);
+  const [busyUpgrade, setBusyUpgrade] = useState(false);
   const [savedInfo, setSavedInfo] = useState(false);
   const [busyInfo, setBusyInfo] = useState(false);
   const [errInfo, setErrInfo] = useState('');
@@ -114,6 +118,20 @@ export function Account(): React.JSX.Element {
     } finally { setBusyPwd(false); }
   };
 
+  const upgrade = async (): Promise<void> => {
+    setBusyUpgrade(true);
+    try {
+      const r = await api.post<{ org: AccountOrg }>('/api/account/upgrade');
+      setOrg(r.org);
+      setConfirmUpgrade(false);
+      // repopula user.tipo_conta → menu ganha Equipe/Grupos/Carteiras sem relogar.
+      await refresh();
+      toast.success('Conta migrada para escritório.');
+    } catch (e) {
+      toast.error(e instanceof ApiError ? e.message : 'Erro ao migrar conta');
+    } finally { setBusyUpgrade(false); }
+  };
+
   if (loading) return <div className="p-6"><Spinner /></div>;
   if (!org) return <div className="p-6 text-sm text-ink-400">Não foi possível carregar o perfil.</div>;
 
@@ -161,6 +179,41 @@ export function Account(): React.JSX.Element {
           {savedInfo && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
           {errInfo && <span className="text-sm text-rose-600">{errInfo}</span>}
         </div>
+      </Card>
+
+      <Card className="max-w-3xl p-4">
+        <h3 className="text-sm font-semibold text-ink-900">Tipo de conta</h3>
+        {org.tipo_conta === 'individual' ? (
+          <>
+            <p className="mt-0.5 text-xs text-ink-400">
+              Conta <span className="font-semibold text-ink-600">Individual</span> — sem equipe, grupos ou carteiras.
+            </p>
+            {user?.is_admin && (
+              confirmUpgrade ? (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <p className="flex items-start gap-1.5 text-xs text-amber-800">
+                    <Icon name="alertTriangle" size={14} className="mt-0.5 shrink-0" />
+                    Ação permanente — habilita Equipe, Grupos e Carteiras. Não é possível voltar para individual.
+                  </p>
+                  <div className="mt-3 flex items-center gap-2">
+                    <Btn icon="check" onClick={() => void upgrade()} disabled={busyUpgrade}>
+                      {busyUpgrade ? '…' : 'Confirmar migração'}
+                    </Btn>
+                    <Btn variant="soft" onClick={() => setConfirmUpgrade(false)} disabled={busyUpgrade}>Cancelar</Btn>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-3">
+                  <Btn icon="users" variant="soft" onClick={() => setConfirmUpgrade(true)}>Migrar para escritório</Btn>
+                </div>
+              )
+            )}
+          </>
+        ) : (
+          <p className="mt-0.5 text-xs text-ink-400">
+            Conta <span className="font-semibold text-ink-600">Escritório de representação</span> — equipe, grupos e carteiras habilitados.
+          </p>
+        )}
       </Card>
 
       <Card className="max-w-3xl p-4">

@@ -59,7 +59,14 @@ function RequirePermission({ code, children }: { code: string; children: ReactNo
   return <>{children}</>;
 }
 
-type NavItem = { to: string; label: string; icon: IconName; requires?: string };
+// Bloqueia rotas de equipe (Equipe/Grupos/Carteiras) em conta individual.
+function RequireOffice({ children }: { children: ReactNode }): React.JSX.Element {
+  const { isOffice } = useAuth();
+  if (!isOffice) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+type NavItem = { to: string; label: string; icon: IconName; requires?: string; officeOnly?: boolean };
 type NavGroup = { label?: string; items: NavItem[] };
 
 // Menu agrupado por intenção (chunking): reduz carga cognitiva e aproxima
@@ -70,7 +77,7 @@ const NAV_GROUPS: NavGroup[] = [
     { to: '/prospeccao', label: 'Buscar Empresas', icon: 'target', requires: 'prospeccao.view' },
     { to: '/funil', label: 'Funil', icon: 'columns', requires: 'relationships.list' },
     { to: '/clientes', label: 'Clientes', icon: 'users', requires: 'relationships.list' },
-    { to: '/carteiras', label: 'Carteiras', icon: 'layers', requires: 'carteiras.view' },
+    { to: '/carteiras', label: 'Carteiras', icon: 'layers', requires: 'carteiras.view', officeOnly: true },
     { to: '/pedidos', label: 'Pedidos', icon: 'list', requires: 'orders.list' },
     { to: '/whatsapp', label: 'WhatsApp', icon: 'phone', requires: 'whatsapp.view' },
     { to: '/email', label: 'E-mail', icon: 'mail', requires: 'email_schedules.list' },
@@ -87,8 +94,8 @@ const NAV_GROUPS: NavGroup[] = [
     { to: '/relatorios', label: 'Relatórios', icon: 'barChart', requires: 'reports.sales' },
   ] },
   { label: 'Sistema', items: [
-    { to: '/equipe', label: 'Equipe', icon: 'users', requires: 'users.list' },
-    { to: '/grupos', label: 'Grupos', icon: 'layers', requires: 'groups.list' },
+    { to: '/equipe', label: 'Equipe', icon: 'users', requires: 'users.list', officeOnly: true },
+    { to: '/grupos', label: 'Grupos', icon: 'layers', requires: 'groups.list', officeOnly: true },
     { to: '/config', label: 'Config', icon: 'settings' },
   ] },
 ];
@@ -96,17 +103,18 @@ const NAV_GROUPS: NavGroup[] = [
 // Lista achatada — mobile (barra + folha "Mais") e título da página usam ordem linear.
 const NAV: NavItem[] = NAV_GROUPS.flatMap((g) => g.items);
 
-// Itens visíveis para as permissões do grupo do usuário (sem `requires` = livre).
+// Itens visíveis: permissão do grupo (sem `requires` = livre) e, para itens de
+// equipe (officeOnly), só em conta escritório.
 function useNav(): NavItem[] {
-  const { can } = useAuth();
-  return NAV.filter((n) => !n.requires || can(n.requires));
+  const { can, isOffice } = useAuth();
+  return NAV.filter((n) => (!n.officeOnly || isOffice) && (!n.requires || can(n.requires)));
 }
 
-// Grupos visíveis: filtra itens por permissão e descarta grupos que ficaram vazios.
+// Grupos visíveis: filtra itens por permissão/tipo de conta e descarta grupos vazios.
 function useNavGroups(): NavGroup[] {
-  const { can } = useAuth();
+  const { can, isOffice } = useAuth();
   return NAV_GROUPS
-    .map((g) => ({ ...g, items: g.items.filter((n) => !n.requires || can(n.requires)) }))
+    .map((g) => ({ ...g, items: g.items.filter((n) => (!n.officeOnly || isOffice) && (!n.requires || can(n.requires))) }))
     .filter((g) => g.items.length > 0);
 }
 
@@ -437,7 +445,7 @@ export function App(): React.JSX.Element {
       <Route path="/perfil" element={<Navigate to="/config" replace />} />
       <Route path="/funil" element={<RequireAuth><RequirePermission code="relationships.list"><Shell><Kanban /></Shell></RequirePermission></RequireAuth>} />
       <Route path="/clientes" element={<RequireAuth><RequirePermission code="relationships.list"><Shell><Clientes /></Shell></RequirePermission></RequireAuth>} />
-      <Route path="/carteiras" element={<RequireAuth><RequirePermission code="carteiras.view"><Shell><Carteiras /></Shell></RequirePermission></RequireAuth>} />
+      <Route path="/carteiras" element={<RequireAuth><RequireOffice><RequirePermission code="carteiras.view"><Shell><Carteiras /></Shell></RequirePermission></RequireOffice></RequireAuth>} />
       <Route path="/pedidos" element={<RequireAuth><RequirePermission code="orders.list"><Shell><Orders /></Shell></RequirePermission></RequireAuth>} />
       <Route path="/whatsapp" element={<RequireAuth><RequirePermission code="whatsapp.view"><Shell><WhatsApp /></Shell></RequirePermission></RequireAuth>} />
       <Route path="/comissoes" element={<RequireAuth><RequirePermission code="commissions.list"><Shell><Commissions /></Shell></RequirePermission></RequireAuth>} />
@@ -448,8 +456,8 @@ export function App(): React.JSX.Element {
       <Route path="/agenda" element={<RequireAuth><RequirePermission code="activities.list"><Shell><Agenda /></Shell></RequirePermission></RequireAuth>} />
       <Route path="/email" element={<RequireAuth><RequirePermission code="email_schedules.list"><Shell><EmailAgendado /></Shell></RequirePermission></RequireAuth>} />
       <Route path="/financeiro" element={<RequireAuth><RequirePermission code="finance.list"><Shell><Finance /></Shell></RequirePermission></RequireAuth>} />
-      <Route path="/equipe" element={<RequireAuth><RequirePermission code="users.list"><Shell><Team /></Shell></RequirePermission></RequireAuth>} />
-      <Route path="/grupos" element={<RequireAuth><RequirePermission code="groups.list"><Shell><Groups /></Shell></RequirePermission></RequireAuth>} />
+      <Route path="/equipe" element={<RequireAuth><RequireOffice><RequirePermission code="users.list"><Shell><Team /></Shell></RequirePermission></RequireOffice></RequireAuth>} />
+      <Route path="/grupos" element={<RequireAuth><RequireOffice><RequirePermission code="groups.list"><Shell><Groups /></Shell></RequirePermission></RequireOffice></RequireAuth>} />
       <Route path="/trocar-senha" element={<RequireAuth><ChangePassword /></RequireAuth>} />
       <Route path="/config" element={<RequireAuth><Shell><Settings /></Shell></RequireAuth>} />
       <Route path="/conta" element={<RequireAuth><Shell><Account /></Shell></RequireAuth>} />

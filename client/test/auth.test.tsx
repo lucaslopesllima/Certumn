@@ -65,8 +65,24 @@ describe('AuthProvider', () => {
 
     setToken(null);
     fetchMock.mockResolvedValueOnce(resp(201, { token: 't2', user: USER }));
-    await act(() => ctx.register('Org', 'a@b.c', 'senha123'));
+    await act(() => ctx.register('Org', 'a@b.c', 'senha123', 'individual'));
     expect(getToken()).toBe('t2');
+  });
+
+  it('isOffice: escritório/sem campo = true, individual = false', async () => {
+    setToken('tok');
+    fetchMock.mockResolvedValueOnce(resp(200, { user: USER })); // sem tipo_conta
+    mount();
+    await waitFor(() => expect(screen.getByText('user:a@b.c')).toBeInTheDocument());
+    expect(ctx.isOffice).toBe(true);
+
+    fetchMock.mockResolvedValueOnce(resp(200, { user: { ...USER, tipo_conta: 'escritorio' } }));
+    await act(() => ctx.refresh());
+    expect(ctx.isOffice).toBe(true);
+
+    fetchMock.mockResolvedValueOnce(resp(200, { user: { ...USER, tipo_conta: 'individual' } }));
+    await act(() => ctx.refresh());
+    expect(ctx.isOffice).toBe(false);
   });
 
   it('logout limpa token e usuário', async () => {

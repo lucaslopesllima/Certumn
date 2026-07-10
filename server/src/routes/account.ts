@@ -1,12 +1,13 @@
 import type { FastifyInstance } from 'fastify';
 import { one, query } from '../db.ts';
-import { requireAuth, hashPassword, verifyPassword, signToken } from '../auth.ts';
+import { requireAuth, requireAdmin, hashPassword, verifyPassword, signToken } from '../auth.ts';
+import { audit } from '../audit.ts';
 import { geocodeAddr, geocodeText } from '../geocode.ts';
 import { config } from '../config.ts';
 
 const ADDR_FIELDS = ['cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'];
 
-const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf, inatividade_dias';
+const ORG_COLS = 'id, nome, cnpj, telefone, cep, logradouro, numero, complemento, bairro, cidade, uf, inatividade_dias, tipo_conta';
 const ORG_FIELDS = ['nome', 'cnpj', 'telefone', 'cep', 'logradouro', 'numero', 'complemento', 'bairro', 'cidade', 'uf'] as const;
 
 // Perfil do representante: dados da org (endereço/cnpj/telefone) + usuário (email) + senha.
@@ -83,6 +84,21 @@ export function accountRoutes(app: FastifyInstance): void {
     const org = await one(`SELECT ${ORG_COLS} FROM organizations WHERE id = $1`, [orgId]);
     const user = await one('SELECT id, email, role FROM users WHERE id = $1', [userId]);
     return { org, user };
+  });
+
+  // Upgrade one-way individual → escritório: habilita equipe/RBAC/carteiras.
+  // Sem downgrade — reverter exigiria decidir o destino de usuários/carteiras extras.
+  app.post('/api/account/upgrade', { preHandler: [requireAuth, requireAdmin] }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const rows = await query(
+      `UPDATE organizations SET tipo_conta = 'escritorio'
+       WHERE id = $1 AND tipo_conta = 'individual' RETURNING id`,
+      [orgId],
+    );
+    if (rows.length === 0) return reply.code(409).send({ error: 'conta já é escritório' });
+    await audit(req, 'organization', orgId, 'upgrade_tipo_conta', { de: 'individual', para: 'escritorio' });
+    const org = await one(`SELECT ${ORG_COLS} FROM organizations WHERE id = $1`, [orgId]);
+    return { org };
   });
 
   // Origem das rotas = endereço da org (representante logado), geocodificado + cacheado.

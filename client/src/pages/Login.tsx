@@ -13,6 +13,7 @@ const FEATURES: { icon: IconName; title: string; desc: string }[] = [
 export function Login(): React.JSX.Element {
   const { user, login, register } = useAuth();
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [tipoConta, setTipoConta] = useState<'individual' | 'escritorio'>('individual');
   const [orgNome, setOrgNome] = useState('');
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
@@ -27,7 +28,7 @@ export function Login(): React.JSX.Element {
     setBusy(true);
     try {
       if (mode === 'login') await login(email, senha);
-      else await register(orgNome, email, senha);
+      else await register(orgNome, email, senha, tipoConta);
     } catch (e2) {
       setErr((e2 as Error).message);
     } finally {
@@ -96,7 +97,17 @@ export function Login(): React.JSX.Element {
 
           <form onSubmit={submit} className="mt-5 space-y-3">
             {mode === 'register' && (
-              <Field label="Nome da empresa" value={orgNome} onChange={setOrgNome} placeholder="Minha Representação" autoFocus maxLength={120} />
+              <TipoContaPicker value={tipoConta} onChange={setTipoConta} />
+            )}
+            {mode === 'register' && (
+              <Field
+                label={tipoConta === 'individual' ? 'Seu nome / razão social' : 'Nome do escritório'}
+                value={orgNome}
+                onChange={setOrgNome}
+                placeholder={tipoConta === 'individual' ? 'João Silva Representações' : 'Minha Representação'}
+                autoFocus
+                maxLength={120}
+              />
             )}
             <Field label="E-mail" type="email" value={email} onChange={setEmail} placeholder="voce@empresa.com" autoFocus={mode === 'login'} maxLength={160} />
             <Field label="Senha" type="password" value={senha} onChange={setSenha} placeholder="mínimo 6 caracteres" maxLength={200} />
@@ -108,6 +119,41 @@ export function Login(): React.JSX.Element {
         </div>
       </div>
     </div>
+  );
+}
+
+// Escolha do tipo de conta no cadastro. Default individual: erro recuperável
+// (individual→escritório tem upgrade em /conta; o inverso não).
+function TipoContaPicker({ value, onChange }: {
+  value: 'individual' | 'escritorio';
+  onChange: (v: 'individual' | 'escritorio') => void;
+}): React.JSX.Element {
+  const opts: { v: 'individual' | 'escritorio'; icon: IconName; title: string; desc: string }[] = [
+    { v: 'individual', icon: 'target', title: 'Individual', desc: 'Represento sozinho(a)' },
+    { v: 'escritorio', icon: 'users', title: 'Escritório', desc: 'Tenho equipe de vendedores' },
+  ];
+  return (
+    <fieldset>
+      <legend className="text-xs font-semibold text-ink-600">Tipo de conta</legend>
+      <div className="mt-1 grid grid-cols-2 gap-2">
+        {opts.map((o) => {
+          const active = value === o.v;
+          return (
+            <label key={o.v}
+              className={cn('flex cursor-pointer flex-col gap-1 rounded-xl border p-3 text-left transition',
+                active ? 'border-brand-400 bg-brand-50/40 ring-2 ring-brand-200' : 'border-ink-200 hover:border-ink-300')}>
+              <input type="radio" name="tipo_conta" value={o.v} checked={active}
+                onChange={() => onChange(o.v)} className="sr-only" />
+              <span className="flex items-center gap-1.5 text-sm font-semibold text-ink-900">
+                <Icon name={o.icon} size={16} className={active ? 'text-brand-600' : 'text-ink-400'} />
+                {o.title}
+              </span>
+              <span className="text-xs text-ink-500">{o.desc}</span>
+            </label>
+          );
+        })}
+      </div>
+    </fieldset>
   );
 }
 

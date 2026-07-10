@@ -11,6 +11,11 @@ vi.mock('../src/lib/api.ts', async (orig) => {
 });
 const m = vi.mocked(api);
 
+// Account consome useAuth (is_admin p/ o card de tipo de conta, refresh após upgrade).
+vi.mock('../src/lib/auth.tsx', () => ({
+  useAuth: () => ({ user: { id: 1, email: 'eu@org.com', role: 'admin', org_id: 1, is_admin: true }, refresh: vi.fn() }),
+}));
+
 const fetchMock = vi.fn(); // ViaCEP usa fetch direto, não o api.ts
 vi.stubGlobal('fetch', fetchMock);
 afterAll(() => vi.unstubAllGlobals());

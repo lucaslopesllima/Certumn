@@ -30,7 +30,7 @@ const DATA = {
 };
 
 beforeEach(() => {
-  useAuthMock.mockReturnValue({ user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn() });
+  useAuthMock.mockReturnValue({ user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(), can: () => true, isOffice: true });
   m.get.mockReset();
   m.get.mockImplementation(async (p: string) => {
     if (p.startsWith('/api/dashboard')) return DATA;

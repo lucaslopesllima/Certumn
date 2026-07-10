@@ -34,9 +34,11 @@ vi.mock('../src/lib/theme.tsx', () => ({
 const useAuthMock = vi.mocked(useAuth);
 
 // can(): admin faz bypass; rep sem grupo não tem permissão nenhuma (ex.: users.list)
+// isOffice deriva de tipo_conta (undefined = escritório, comportamento default).
 const auth = (user: User | null, loading = false): ReturnType<typeof useAuth> => ({
   user, loading, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
   can: () => user?.role === 'admin',
+  isOffice: user?.tipo_conta !== 'individual',
 });
 
 const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
@@ -101,5 +103,24 @@ describe('App routing', () => {
   it('/perfil redireciona para /config', async () => {
     mount('/perfil');
     expect(await screen.findByText('PAGE-CONFIG')).toBeInTheDocument();
+  });
+
+  it('conta individual: /equipe redireciona e o menu não tem Equipe/Grupos/Carteiras', async () => {
+    useAuthMock.mockReturnValue(auth({ ...admin, tipo_conta: 'individual' }));
+    mount('/equipe');
+    expect(await screen.findByText('PAGE-DASHBOARD')).toBeInTheDocument();
+    expect(screen.queryByText('PAGE-EQUIPE')).not.toBeInTheDocument();
+    expect(screen.queryByText('Equipe')).not.toBeInTheDocument();
+    expect(screen.queryByText('Grupos')).not.toBeInTheDocument();
+    expect(screen.queryByText('Carteiras')).not.toBeInTheDocument();
+  });
+
+  it('conta escritório (admin): menu mostra Equipe/Grupos/Carteiras', async () => {
+    useAuthMock.mockReturnValue(auth({ ...admin, tipo_conta: 'escritorio' }));
+    mount('/');
+    expect(await screen.findByText('PAGE-DASHBOARD')).toBeInTheDocument();
+    expect(screen.getAllByText('Equipe').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Grupos').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Carteiras').length).toBeGreaterThan(0);
   });
 });

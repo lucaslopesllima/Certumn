@@ -10,11 +10,12 @@ export function useSellers(): OrgUser[] {
   const user = useOptionalUser();
   const [users, setUsers] = useState<OrgUser[]>([]);
   useEffect(() => {
-    if (user?.role !== 'admin') { setUsers([]); return; }
+    // Conta individual não tem equipe: evita o fetch e some com o SellerFilter.
+    if (user?.role !== 'admin' || user?.tipo_conta === 'individual') { setUsers([]); return; }
     void api.get<{ users: OrgUser[] }>('/api/users')
       .then((r) => setUsers(r.users.filter((u) => u.ativo)))
       .catch(() => undefined);
-  }, [user?.role]);
+  }, [user?.role, user?.tipo_conta]);
   return users;
 }
 

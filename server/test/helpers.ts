@@ -20,10 +20,10 @@ export async function makeApp(): Promise<FastifyInstance> {
   return app;
 }
 
-export async function register(app: FastifyInstance, tag: string): Promise<Session> {
+export async function register(app: FastifyInstance, tag: string, opts: { tipo_conta?: 'escritorio' | 'individual' } = {}): Promise<Session> {
   const r = await app.inject({
     method: 'POST', url: '/api/auth/register',
-    payload: { org_nome: `Org ${tag}`, email: mail(tag), senha: 'senha123' },
+    payload: { org_nome: `Org ${tag}`, email: mail(tag), senha: 'senha123', ...opts },
   });
   expect(r.statusCode).toBe(201);
   return r.json() as Session;
