@@ -5,7 +5,7 @@ import type {
   CatalogItem, CommissionEntry, CommissionRule, CommissionStatus,
   KanbanCard, OrgUser, RepresentedCompany,
 } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
@@ -429,8 +429,8 @@ function Rules({ reps, admin }: { reps: RepresentedCompany[]; admin: boolean }):
                     className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                 )}
                 {can('commission_rules.delete') && (
-                  <button onClick={() => void remove(r)} aria-label="Excluir regra"
-                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                  <SafeButton onClick={() => remove(r)} aria-label="Excluir regra"
+                    className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                 )}
               </div>
             )}

@@ -4,7 +4,7 @@ import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import type { Order, OrderStatus, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, csvNum, fmtDate } from '../lib/format.ts';
 import { downloadCsv } from '../lib/export.ts';
@@ -226,8 +226,8 @@ export function Orders(): React.JSX.Element {
             </thead>
             <tbody>
               {filtered.map((o) => (
-                <Row key={o.id} o={o} showOwner={showOwner} onEdit={() => void openEdit(o)} onRemove={() => void remove(o)}
-                  onTransition={(to) => void transition(o, to)} onPrint={() => void printOrder(o)} />
+                <Row key={o.id} o={o} showOwner={showOwner} onEdit={() => openEdit(o)} onRemove={() => remove(o)}
+                  onTransition={(to) => transition(o, to)} onPrint={() => printOrder(o)} />
               ))}
             </tbody>
           </table>
@@ -236,7 +236,7 @@ export function Orders(): React.JSX.Element {
 
       {!loading && hasMore && (
         <div className="flex justify-center">
-          <Btn variant="soft" onClick={() => void loadMore()} disabled={loadingMore}>
+          <Btn variant="soft" onClick={() => loadMore()} disabled={loadingMore}>
             {loadingMore ? 'Carregando…' : 'Carregar mais'}
           </Btn>
         </div>
@@ -282,8 +282,8 @@ function NfModal({ order, onClose, onConfirm }: { order: Order; onClose: () => v
 }
 
 function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
-  o: Order; showOwner: boolean; onEdit: () => void; onRemove: () => void;
-  onTransition: (to: OrderStatus) => void; onPrint: () => void;
+  o: Order; showOwner: boolean; onEdit: () => Promise<void>; onRemove: () => Promise<void>;
+  onTransition: (to: OrderStatus) => Promise<void>; onPrint: () => Promise<void>;
 }): React.JSX.Element {
   const { can } = useAuth();
   const meta = STATUS_META[o.status];
@@ -297,7 +297,7 @@ function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
         <span className="tabnums text-xs font-bold text-ink-500">#{o.numero}</span>
       </td>
       <td className="px-3 py-2.5 align-middle">
-        <button onClick={onEdit} className="block max-w-[460px] text-left" title={editable ? 'Editar pedido' : 'Ver pedido'}>
+        <SafeButton onClick={onEdit} className="block max-w-[460px] text-left" title={editable ? 'Editar pedido' : 'Ver pedido'}>
           <span className="block truncate font-semibold text-ink-800">{o.company_nome}</span>
           <span className="block truncate text-xs text-ink-400">
             {o.represented_nome}
@@ -306,7 +306,7 @@ function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
             {o.status === 'cotacao' && o.validade ? ` · válida até ${fmtDate(o.validade)}` : ''}
             {` · ${fmtDate(o.created_at)}`}
           </span>
-        </button>
+        </SafeButton>
       </td>
       {showOwner && (
         <td className="max-w-[160px] truncate px-3 py-2.5 align-middle text-xs text-ink-500">{owner}</td>
@@ -317,19 +317,19 @@ function Row({ o, showOwner, onEdit, onRemove, onTransition, onPrint }: {
         {/* slots de largura fixa → ícones alinham em coluna entre as linhas */}
         <div className="grid w-max grid-cols-[2rem_7rem_2rem_2rem] items-center justify-items-center gap-1">
           {can('orders.print') ? (
-            <button onClick={onPrint} title="Imprimir / PDF"
-              className="grid h-8 w-8 place-items-center rounded-lg text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/15"><Icon name="download" size={16} /></button>
+            <SafeButton onClick={onPrint} title="Imprimir / PDF"
+              className="grid h-8 w-8 place-items-center rounded-lg text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-500/15"><Icon name="download" size={16} /></SafeButton>
           ) : <span />}
           {next && can('orders.transition') ? (
             <Btn variant="soft" title={next.label} className="w-full justify-center truncate px-1 text-xs" onClick={() => onTransition(next.to)}>{next.label}</Btn>
           ) : <span />}
           {cancellable && can('orders.delete') ? (
-            <button onClick={() => onTransition('cancelado')} title="Cancelar pedido"
-              className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/15"><Icon name="x" size={16} /></button>
+            <SafeButton onClick={() => onTransition('cancelado')} title="Cancelar pedido"
+              className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/15"><Icon name="x" size={16} /></SafeButton>
           ) : <span />}
           {editable && can('orders.delete') ? (
-            <button onClick={onRemove} aria-label={`Excluir pedido ${o.numero}`} title="Excluir pedido"
-              className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/15"><Icon name="trash" size={16} /></button>
+            <SafeButton onClick={onRemove} aria-label={`Excluir pedido ${o.numero}`} title="Excluir pedido"
+              className="grid h-8 w-8 place-items-center rounded-lg text-rose-500 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/15"><Icon name="trash" size={16} /></SafeButton>
           ) : <span />}
         </div>
       </td>

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { Activity, FinanceCategory, FinanceEntry, KanbanCard, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, fmtDate, numStr, todayStr, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
@@ -236,7 +236,7 @@ export function Finance(): React.JSX.Element {
           ))}
           {hasMore && (
             <div className="flex justify-center pt-1">
-              <Btn variant="soft" onClick={() => void loadMore()} disabled={loadingMore}>
+              <Btn variant="soft" onClick={() => loadMore()} disabled={loadingMore}>
                 {loadingMore ? 'Carregando…' : 'Carregar mais'}
               </Btn>
             </div>
@@ -270,13 +270,13 @@ function Row({ e, onEdit, onRemove, onLiquidar }: {
   const categoria = e.categoria_nome ?? e.categoria;
   return (
     <Card className={cn('flex items-center gap-3 p-3', vencido && 'border-l-4 border-l-rose-500')}>
-      <button onClick={onLiquidar} disabled={!canUpdate} title={e.status === 'liquidado' ? 'Reabrir' : 'Marcar liquidado'}
+      <SafeButton onClick={onLiquidar} disabled={!canUpdate} title={e.status === 'liquidado' ? 'Reabrir' : 'Marcar liquidado'}
         className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl transition disabled:cursor-default',
           e.status === 'liquidado' ? 'bg-emerald-500 text-white'
             : receber ? 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
               : 'bg-rose-50 text-rose-600 hover:bg-rose-100')}>
         <Icon name={e.status === 'liquidado' ? 'check' : receber ? 'arrowDown' : 'arrowUp'} size={17} />
-      </button>
+      </SafeButton>
 
       <button onClick={onEdit} disabled={!canUpdate} className="flex min-w-0 flex-1 items-center gap-3 text-left" title={canUpdate ? 'Editar' : undefined}>
         <div className="min-w-0 flex-1">
@@ -303,10 +303,10 @@ function Row({ e, onEdit, onRemove, onLiquidar }: {
       </div>
 
       {can('finance.delete') && (
-        <button onClick={onRemove} aria-label="Excluir"
+        <SafeButton onClick={onRemove} aria-label="Excluir"
           className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
           <Icon name="x" size={16} />
-        </button>
+        </SafeButton>
       )}
     </Card>
   );
@@ -500,10 +500,10 @@ function CategoriesModal({ categories, onClose, onChanged }: {
                   </p>
                 </div>
                 {can('finance_categories.delete') && (
-                <button onClick={() => void remove(c)} aria-label={`Excluir ${c.nome}`}
+                <SafeButton onClick={() => remove(c)} aria-label={`Excluir ${c.nome}`}
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
                   <Icon name="trash" size={16} />
-                </button>
+                </SafeButton>
                 )}
               </div>
             ))}

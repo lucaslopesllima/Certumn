@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api.ts';
-import { Badge, Btn, Spinner, cn, type Tone } from './ui.tsx';
+import { Badge, Btn, SafeButton, Spinner, cn, type Tone } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { toast } from './toast.tsx';
 import { dec, maskPhone } from './format.ts';
@@ -282,10 +282,10 @@ export function SampleListModal({ card, catalog, onClose, onChanged }: {
                   </div>
                   <Badge tone={STATUS_TONE[s.status]}>{STATUS_LABEL[s.status]}</Badge>
                 </button>
-                <button type="button" onClick={() => void remove(s.id)} title="Excluir"
+                <SafeButton type="button" onClick={() => remove(s.id)} title="Excluir"
                   className="shrink-0 rounded-lg p-1.5 text-ink-300 transition hover:bg-rose-50 hover:text-rose-500">
                   <Icon name="trash" size={15} />
-                </button>
+                </SafeButton>
               </div>
             ))}
           </div>

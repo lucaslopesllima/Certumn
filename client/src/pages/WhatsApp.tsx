@@ -3,7 +3,7 @@ import './whatsapp-theme.css';
 import { useSearchParams } from 'react-router-dom';
 import { api, getToken, ApiError } from '../lib/api.ts';
 import { toast } from '../lib/toast.tsx';
-import { Btn, Card, Spinner, cn } from '../lib/ui.tsx';
+import { Btn, Card, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { maskPhone } from '../lib/format.ts';
 import { CompanySearch } from '../lib/companySearch.tsx';
@@ -147,7 +147,7 @@ function ConnectPanel({ onConnected }: { onConnected: () => void }): React.JSX.E
         {qr ? (
           <img src={qrSrc(qr)} alt="QR Code" className="h-56 w-56 rounded-xl border border-ink-200" />
         ) : can('whatsapp.connect') ? (
-          <Btn onClick={() => void start()} disabled={busy} icon="phone">
+          <Btn onClick={() => start()} disabled={busy} icon="phone">
             {busy ? 'Gerando QR…' : 'Gerar QR Code'}
           </Btn>
         ) : (
@@ -180,9 +180,9 @@ const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage
     media = url ? <audio src={url} controls className="max-w-[240px]" /> : null;
   } else if (m.tipo !== 'texto') {
     media = (
-      <button type="button" onClick={() => void openMedia(m)} className="flex items-center gap-2 text-[var(--wa-ink)] underline-offset-2 hover:underline">
+      <SafeButton type="button" onClick={() => openMedia(m)} className="flex items-center gap-2 text-[var(--wa-ink)] underline-offset-2 hover:underline">
         <Icon name="mail" size={18} /> {m.file_name ?? 'arquivo'}
-      </button>
+      </SafeButton>
     );
   }
   return (
@@ -207,12 +207,12 @@ const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage
 function MediaThumb({ m, onImage }: { m: WaMessage; onImage: (url: string) => void }): React.JSX.Element {
   const url = useAuthedMedia(m);
   return (
-    <button onClick={() => { if (m.tipo === 'imagem') { if (url) onImage(url); } else { void openMedia(m); } }}
+    <SafeButton onClick={() => { if (m.tipo === 'imagem') { if (url) onImage(url); return undefined; } return openMedia(m); }}
       className="relative aspect-square overflow-hidden rounded-lg bg-ink-100">
       {m.tipo === 'imagem' && url
         ? <img src={url} alt="" className="h-full w-full object-cover" />
         : <span className="grid h-full w-full place-items-center text-ink-400"><Icon name="eye" size={20} /></span>}
-    </button>
+    </SafeButton>
   );
 }
 
@@ -274,7 +274,7 @@ function LinkModal({ chatId, current, onClose, onLinked }: { chatId: number; cur
       {current.company_id != null && (
         <div className="flex items-center justify-between gap-2 rounded-xl border border-ink-200 px-3 py-2">
           <span className="min-w-0 truncate text-sm text-ink-700">{current.company_fantasia || current.company_nome}</span>
-          <button onClick={() => void link(null)} className="shrink-0 text-xs font-semibold text-rose-600 hover:underline">Remover</button>
+          <SafeButton onClick={() => link(null)} className="shrink-0 text-xs font-semibold text-rose-600 hover:underline">Remover</SafeButton>
         </div>
       )}
     </Overlay>
@@ -308,7 +308,7 @@ function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void })
     <Overlay title="Agendar mensagem" onClose={onClose}>
       <textarea value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Mensagem…" className={inputCls} />
       <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
-      <Btn onClick={() => void create()} icon="clock">Agendar</Btn>
+      <Btn onClick={() => create()} icon="clock">Agendar</Btn>
       {list.length > 0 && (
         <div className="border-t border-ink-100 pt-3">
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-400">Agendadas</p>
@@ -329,7 +329,7 @@ function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void })
                   </p>
                 </div>
                 {ativa && (
-                  <button onClick={() => void cancel(s.id)} className="shrink-0 text-xs font-semibold text-rose-600 hover:underline">Cancelar</button>
+                  <SafeButton onClick={() => cancel(s.id)} className="shrink-0 text-xs font-semibold text-rose-600 hover:underline">Cancelar</SafeButton>
                 )}
               </div>
             );
@@ -371,14 +371,14 @@ function MergeModal({ current, chats, onClose, onMerged }: { current: WaChat; ch
         {opts.length === 0 ? (
           <p className="py-4 text-center text-sm text-ink-400">Nenhuma outra conversa.</p>
         ) : opts.map((c) => (
-          <button key={c.id} disabled={busy} onClick={() => void merge(c)}
+          <SafeButton key={c.id} disabled={busy} onClick={() => merge(c)}
             className="flex w-full items-center justify-between gap-2 rounded-lg border border-ink-100 px-3 py-2 text-left transition hover:bg-ink-50 disabled:opacity-50">
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium text-ink-800">{nomeChat(c)}</span>
               <span className="block truncate text-[11px] text-ink-400">{chatIdent(c)}</span>
             </span>
             <Icon name="arrowRight" size={15} className="shrink-0 text-ink-400" />
-          </button>
+          </SafeButton>
         ))}
       </div>
     </Overlay>
@@ -436,7 +436,7 @@ function NumberModal({ chatId, onClose, onSet }: { chatId: number; onClose: () =
       </p>
       <input value={numero} onChange={(e) => setNumero(maskPhone(e.target.value))} inputMode="numeric"
         placeholder="(11) 98765-4321" className={inputCls} autoFocus />
-      <Btn onClick={() => void confirm()} disabled={busy} icon="check">{busy ? 'Confirmando…' : 'Confirmar número'}</Btn>
+      <Btn onClick={() => confirm()} disabled={busy} icon="check">{busy ? 'Confirmando…' : 'Confirmar número'}</Btn>
     </Overlay>
   );
 }
@@ -494,9 +494,9 @@ function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, 
       <input value={email} maxLength={160} onChange={(e) => setEmail(e.target.value)} type="email" placeholder="E-mail" className={inputCls} />
       <div className="flex items-center justify-between gap-2">
         {contact ? (
-          <button onClick={() => void remove()} disabled={busy} className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50">Excluir</button>
+          <SafeButton onClick={() => remove()} disabled={busy} className="text-xs font-semibold text-rose-600 hover:underline disabled:opacity-50">Excluir</SafeButton>
         ) : <span />}
-        <Btn onClick={() => void save()} disabled={busy} icon="check">{busy ? 'Salvando…' : 'Salvar'}</Btn>
+        <Btn onClick={() => save()} disabled={busy} icon="check">{busy ? 'Salvando…' : 'Salvar'}</Btn>
       </div>
     </Overlay>
   );
@@ -626,11 +626,11 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
                       <Icon name="pencil" size={14} className="shrink-0 text-ink-400" />
                     </button>
                     {ct.telefone && (
-                      <button type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
-                        onClick={() => void startContactChat(ct)}
+                      <SafeButton type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
+                        onClick={() => startContactChat(ct)}
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-emerald-600 transition hover:bg-emerald-50">
                         <Icon name="whatsapp" size={15} />
-                      </button>
+                      </SafeButton>
                     )}
                   </div>
                 ))}
@@ -1028,10 +1028,10 @@ export function WhatsApp(): React.JSX.Element {
                       <Icon name="users" size={18} />
                     </button>
                   )}
-                  <button title="Apagar conversa" onClick={() => void delChat(active)}
+                  <SafeButton title="Apagar conversa" onClick={() => delChat(active)}
                     className="grid h-9 w-9 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10">
                     <Icon name="trash" size={18} />
-                  </button>
+                  </SafeButton>
                 </div>
               </div>
 
@@ -1057,10 +1057,10 @@ export function WhatsApp(): React.JSX.Element {
                   placeholder="Digite uma mensagem…"
                   className="max-h-32 min-h-[40px] min-w-0 flex-1 resize-none rounded-lg bg-[var(--wa-in)] px-3 py-2 text-sm text-[var(--wa-ink)] outline-none placeholder:text-[var(--wa-muted)]" />
                 {can('whatsapp.send') && (
-                  <button onClick={() => void send()} aria-label="Enviar"
+                  <SafeButton onClick={() => send()} aria-label="Enviar"
                     className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--wa-green)] hover:bg-[var(--wa-hover)]">
                     <Icon name="send" size={20} />
-                  </button>
+                  </SafeButton>
                 )}
               </div>
             </>

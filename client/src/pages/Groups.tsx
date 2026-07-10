@@ -203,13 +203,13 @@ function GroupEditor({ group, catalog, onClose, onSaved }: {
           <div className="flex items-center justify-between gap-2 border-t border-ink-100 p-4">
             <div>
               {group && !readOnly && (
-                <Btn variant="danger" size="sm" icon="trash" onClick={() => void remove()}>Excluir grupo</Btn>
+                <Btn variant="danger" size="sm" icon="trash" onClick={() => remove()}>Excluir grupo</Btn>
               )}
             </div>
             <div className="flex items-center gap-2">
               {err && <span className="text-xs text-rose-600">{err}</span>}
               <Btn variant="ghost" onClick={onClose}>Fechar</Btn>
-              {!readOnly && <Btn icon="check" disabled={busy} onClick={() => void save()}>{busy ? '…' : 'Salvar'}</Btn>}
+              {!readOnly && <Btn icon="check" disabled={busy} onClick={() => save()}>{busy ? '…' : 'Salvar'}</Btn>}
             </div>
           </div>
         </div>

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { GoalProgress, OrgUser, PermissionGroup, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, dec, maskMoney, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
@@ -222,7 +222,7 @@ function Usuarios(): React.JSX.Element {
                         )}
                         {!self && can('users.update') && (
                           <Btn size="sm" variant={u.ativo ? 'danger' : 'soft'}
-                            onClick={() => void patch(u.id, { ativo: !u.ativo })}>
+                            onClick={() => patch(u.id, { ativo: !u.ativo })}>
                             {u.ativo ? 'Desativar' : 'Reativar'}
                           </Btn>
                         )}
@@ -242,7 +242,7 @@ function Usuarios(): React.JSX.Element {
       )}
       {resetting && (
         <ResetPwdModal user={resetting} onClose={() => setResetting(null)}
-          onConfirm={(senha2) => void resetPwd(resetting, senha2)} />
+          onConfirm={(senha2) => resetPwd(resetting, senha2)} />
       )}
     </div>
   );
@@ -250,10 +250,16 @@ function Usuarios(): React.JSX.Element {
 
 // Redefinir senha provisória — substitui o window.prompt nativo por modal com
 // regra visível e validação antes de enviar.
-function ResetPwdModal({ user, onClose, onConfirm }: { user: OrgUser; onClose: () => void; onConfirm: (senha: string) => void }): React.JSX.Element {
+function ResetPwdModal({ user, onClose, onConfirm }: { user: OrgUser; onClose: () => void; onConfirm: (senha: string) => void | Promise<void> }): React.JSX.Element {
   const [senha, setSenha] = useState('');
+  const [busy, setBusy] = useState(false);
   const ok = senha.length >= 6;
-  const submit = (e: React.FormEvent): void => { e.preventDefault(); if (ok) onConfirm(senha); };
+  const submit = async (e: React.FormEvent): Promise<void> => {
+    e.preventDefault();
+    if (!ok || busy) return;
+    setBusy(true);
+    try { await onConfirm(senha); } finally { setBusy(false); }
+  };
   return (
     <div className="fixed inset-0 z-[2000] grid place-items-center bg-black/45 p-4" onClick={onClose}>
       <Card className="w-full max-w-sm p-4 shadow-pop">
@@ -268,7 +274,7 @@ function ResetPwdModal({ user, onClose, onConfirm }: { user: OrgUser; onClose: (
             </span>
             <div className="flex justify-end gap-2">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
-              <Btn icon="check" type="submit" disabled={!ok}>Redefinir</Btn>
+              <Btn icon="check" type="submit" disabled={!ok || busy}>Redefinir</Btn>
             </div>
           </form>
         </div>
@@ -373,7 +379,7 @@ function TransferModal({ from, users, onClose, onDone }: {
               {err && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm text-rose-600">{err}</p>}
               <div className="flex justify-end gap-2">
                 <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>
-                <Btn icon="check" disabled={busy || toId === ''} onClick={() => void submit()}>{busy ? '…' : 'Transferir'}</Btn>
+                <Btn icon="check" disabled={busy || toId === ''} onClick={() => submit()}>{busy ? '…' : 'Transferir'}</Btn>
               </div>
             </div>
           )}
@@ -491,8 +497,8 @@ function Metas(): React.JSX.Element {
                       <p className="tabnums text-xs font-semibold text-ink-500">{g.pct ?? 0}%</p>
                     </div>
                     {can('goals.delete') && (
-                      <button onClick={() => void remove(g.id)} aria-label="Excluir meta"
-                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                      <SafeButton onClick={() => remove(g.id)} aria-label="Excluir meta"
+                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                     )}
                   </div>
                 </div>

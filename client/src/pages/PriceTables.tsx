@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { CatalogItem, PriceTable, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, Spinner, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, dec, fmtDate, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
@@ -66,12 +66,12 @@ export function PriceTables({ reps, catalog, adding, onCloseAdd }: {
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {can('price_tables.update') && (
-              <button onClick={() => void openEdit(t.id, setEditing)} aria-label="Editar tabela"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
+              <SafeButton onClick={() => openEdit(t.id, setEditing)} aria-label="Editar tabela"
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></SafeButton>
             )}
             {can('price_tables.delete') && (
-              <button onClick={() => void remove(t)} aria-label="Excluir tabela"
-                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+              <SafeButton onClick={() => remove(t)} aria-label="Excluir tabela"
+                className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
             )}
           </div>
         </div>

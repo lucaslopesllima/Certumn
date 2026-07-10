@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ApiError } from './api.ts';
 import type { CompanyDetail, Socio } from './types.ts';
-import { Spinner } from './ui.tsx';
+import { SafeButton, Spinner } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { Cnae, seedCnae } from './cnae.tsx';
 import { waLink } from './format.ts';
@@ -111,15 +111,15 @@ export function CompanyModal({ companyId, onClose }: { companyId: number; onClos
     if (!fmt) return null;
     if (!waLink(s)) return fmt;
     return (
-      <button type="button" title="Abrir conversa no WhatsApp"
-        onClick={() => {
-          void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: companyId, numero: s! })
+      <SafeButton type="button" title="Abrir conversa no WhatsApp"
+        onClick={() =>
+          api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: companyId, numero: s! })
             .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
-            .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
-        }}
+            .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'))
+        }
         className="inline-flex items-center gap-1 text-emerald-600 hover:underline">
         {fmt}<Icon name="whatsapp" size={13} />
-      </button>
+      </SafeButton>
     );
   };
 

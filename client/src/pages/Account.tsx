@@ -175,7 +175,7 @@ export function Account(): React.JSX.Element {
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <Btn icon="check" onClick={() => void saveInfo()} disabled={busyInfo}>{busyInfo ? '…' : 'Salvar dados'}</Btn>
+          <Btn icon="check" onClick={() => saveInfo()} disabled={busyInfo}>{busyInfo ? '…' : 'Salvar dados'}</Btn>
           {savedInfo && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
           {errInfo && <span className="text-sm text-rose-600">{errInfo}</span>}
         </div>
@@ -196,7 +196,7 @@ export function Account(): React.JSX.Element {
                     Ação permanente — habilita Equipe, Grupos e Carteiras. Não é possível voltar para individual.
                   </p>
                   <div className="mt-3 flex items-center gap-2">
-                    <Btn icon="check" onClick={() => void upgrade()} disabled={busyUpgrade}>
+                    <Btn icon="check" onClick={() => upgrade()} disabled={busyUpgrade}>
                       {busyUpgrade ? '…' : 'Confirmar migração'}
                     </Btn>
                     <Btn variant="soft" onClick={() => setConfirmUpgrade(false)} disabled={busyUpgrade}>Cancelar</Btn>
@@ -233,7 +233,7 @@ export function Account(): React.JSX.Element {
           </ul>
         )}
         <div className="mt-4 flex items-center gap-3">
-          <Btn icon="check" onClick={() => void savePwd()} disabled={busyPwd || !atual || !nova}>{busyPwd ? '…' : 'Atualizar senha'}</Btn>
+          <Btn icon="check" onClick={() => savePwd()} disabled={busyPwd || !atual || !nova}>{busyPwd ? '…' : 'Atualizar senha'}</Btn>
           {msgPwd && <span className={cn('text-sm', okPwd ? 'text-emerald-600' : 'text-rose-600')}>{msgPwd}</span>}
         </div>
       </Card>

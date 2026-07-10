@@ -6,7 +6,7 @@ import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { Recommendation, GeocodeResult } from '../lib/types.ts';
-import { Btn, Badge, Card, EmptyState, PageHeader, ScoreBar, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Btn, Badge, Card, EmptyState, PageHeader, SafeButton, ScoreBar, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
@@ -421,11 +421,11 @@ export function Recommend(): React.JSX.Element {
                         <button onClick={() => setViewing(Number(r.id))} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline dark:text-brand-300">Ver dados da empresa</button>
                         {added.has(r.id)
                           ? <span className="whitespace-nowrap text-xs text-emerald-600 dark:text-emerald-300">✓ no funil</span>
-                          : can('relationships.create') && <button onClick={() => addToFunnel(r)} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline dark:text-brand-300">+ Adicionar ao funil</button>}
-                        <button onClick={() => void traceRoute(r)} disabled={routingId === r.id}
+                          : can('relationships.create') && <SafeButton onClick={() => addToFunnel(r)} className="whitespace-nowrap text-xs font-semibold text-brand-700 underline dark:text-brand-300">+ Adicionar ao funil</SafeButton>}
+                        <SafeButton onClick={() => traceRoute(r)} disabled={routingId === r.id}
                           className="whitespace-nowrap text-xs font-semibold text-blue-700 underline disabled:opacity-50 dark:text-blue-300">
                           {routingId === r.id ? 'Traçando…' : 'Traçar rota'}
-                        </button>
+                        </SafeButton>
                       </div>
                     </div>
                   </Popup>
@@ -449,7 +449,7 @@ export function Recommend(): React.JSX.Element {
           {visibleRecs.map((r) => (
             <RecCard key={r.id} rec={r} added={added.has(r.id)} onAdd={() => addToFunnel(r)}
               onView={() => setViewing(Number(r.id))} onViewMap={() => verNoMapa(r)}
-              onRoute={() => void traceRoute(r)} routing={routingId === r.id} />
+              onRoute={() => traceRoute(r)} routing={routingId === r.id} />
           ))}
           {!loading && recs.length > 0 && visibleRecs.length === 0 && (
             <p className="py-6 text-center text-sm text-ink-400">Nenhuma recomendação bate com os filtros.</p>

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { CompanyHit, EmailSchedule, EmailScheduleStatus, EmailTemplate } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { useAuth } from '../lib/auth.tsx';
@@ -175,12 +175,12 @@ function SchedulesTab(): React.JSX.Element {
                       className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                   )}
                   {e.status === 'pendente' && can('email_schedules.delete') && (
-                    <button onClick={() => void cancelar(e)} title="Cancelar envio"
-                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="x" size={16} /></button>
+                    <SafeButton onClick={() => cancelar(e)} title="Cancelar envio"
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="x" size={16} /></SafeButton>
                   )}
                   {can('email_schedules.delete') && (
-                    <button onClick={() => void remove(e)} aria-label="Remover agendamento"
-                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                    <SafeButton onClick={() => remove(e)} aria-label="Remover agendamento"
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                   )}
                 </div>
               </div>
@@ -412,8 +412,8 @@ function TemplatesTab(): React.JSX.Element {
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
               )}
               {can('email_templates.delete') && (
-                <button onClick={() => void remove(t)} aria-label="Remover modelo"
-                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                <SafeButton onClick={() => remove(t)} aria-label="Remover modelo"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
               )}
             </div>
           </div>

@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, dec, maskPct, numStr } from '../lib/format.ts';
+import { brl, dec, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 import { UNIDADES_MEDIDA_GRUPOS } from '../lib/units.ts';
@@ -12,7 +12,8 @@ import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
-// Alíquotas por produto. Vazio = não definido → o pedido cai no default da org.
+// Alíquotas por produto. Campos ocultos na UI por ora (uso futuro) — o form
+// preserva valores existentes e envia 0 quando vazio.
 const TAX_FIELDS = [
   ['icms_pct', 'ICMS'], ['ipi_pct', 'IPI'], ['st_pct', 'ICMS-ST'],
   ['pis_pct', 'PIS'], ['cofins_pct', 'COFINS'], ['iss_pct', 'ISS'],
@@ -32,7 +33,7 @@ const toForm = (i: CatalogItem): Form => ({
 });
 function toBody(f: Form): Record<string, unknown> {
   const t = (s: string): string | null => (s.trim() === '' ? null : s.trim());
-  const taxNum = (s: string): number | null => (s.trim() === '' ? null : dec(s));
+  const taxNum = (s: string): number => (s.trim() === '' ? 0 : dec(s));
   return {
     nome: f.nome.trim(), codigo: t(f.codigo), descricao: t(f.descricao),
     preco: f.preco.trim() === '' ? null : Number(f.preco),
@@ -162,16 +163,16 @@ export function Catalog(): React.JSX.Element {
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   {can('catalog.update') && (
-                    <button onClick={() => void toggleAtivo(i)} title={i.ativo ? 'Desativar' : 'Ativar'}
-                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name={i.ativo ? 'check' : 'x'} size={16} /></button>
+                    <SafeButton onClick={() => toggleAtivo(i)} title={i.ativo ? 'Desativar' : 'Ativar'}
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name={i.ativo ? 'check' : 'x'} size={16} /></SafeButton>
                   )}
                   {can('catalog.update') && (
                     <button onClick={() => setEditing(i.id)} aria-label="Editar"
                       className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                   )}
                   {can('catalog.delete') && (
-                    <button onClick={() => void remove(i.id)} aria-label="Excluir"
-                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                    <SafeButton onClick={() => remove(i.id)} aria-label="Excluir"
+                      className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                   )}
                 </div>
               </div>
@@ -217,19 +218,6 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
         </select>
       </div>
       <textarea value={f.descricao} onChange={set('descricao')} maxLength={2000} placeholder="Descrição" rows={2} className={cn(inputCls, 'resize-y')} />
-      <div>
-        <p className="mb-1.5 text-xs font-medium text-ink-500">Impostos (%) — vazio usa o default da org</p>
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-6">
-          {TAX_FIELDS.map(([k, label]) => (
-            <label key={k} className="block">
-              <span className="mb-0.5 block truncate text-[10px] font-semibold text-ink-500">{label}</span>
-              <input type="text" inputMode="decimal" value={f[k]} placeholder="—"
-                onChange={(e) => setF((p) => ({ ...p, [k]: maskPct(e.target.value) }))}
-                className={cn(inputCls, 'px-2 py-1.5 text-sm')} />
-            </label>
-          ))}
-        </div>
-      </div>
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
         <Btn icon="check" type="submit" disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>

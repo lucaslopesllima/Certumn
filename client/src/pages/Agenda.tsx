@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import type { Activity, KanbanCard, OptimizeResult } from '../lib/types.ts';
-import { Btn, Card, EmptyState, PageHeader, Segmented, Spinner, cn } from '../lib/ui.tsx';
+import { Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { ActivityCreateModal, VisitModal, type RepresentedOption } from '../lib/activityModal.tsx';
 import { toast } from '../lib/toast.tsx';
@@ -264,7 +264,7 @@ export function Agenda(): React.JSX.Element {
           onToggle={toggle} onRemove={remove}
           onEdit={(a) => { setDayOpen(null); setEditing(a); }}
           onVisit={(a) => { setDayOpen(null); setVisiting(a); }}
-          rotaBusy={rotaBusy} onGerarRota={(d, evs) => void gerarRota(d, evs)}
+          rotaBusy={rotaBusy} onGerarRota={(d, evs) => gerarRota(d, evs)}
           onAdd={() => { const d = new Date(dayOpen); d.setHours(9, 0, 0, 0); setDayOpen(null); setAddAt(d); }} />
       )}
       {visiting && (
@@ -442,11 +442,11 @@ function Row({ a, onToggle, onRemove, onEdit, onVisit }: {
   const visitada = !!a.checkin_at || !!a.relatorio;
   return (
     <Card className="flex items-center gap-3 p-3">
-      <button onClick={() => onToggle(a)} aria-label="Concluir" disabled={!can('activities.update')}
+      <SafeButton onClick={() => onToggle(a)} aria-label="Concluir" disabled={!can('activities.update')}
         className={cn('grid h-6 w-6 shrink-0 place-items-center rounded-lg border transition disabled:cursor-not-allowed disabled:opacity-50',
           done ? 'border-emerald-500 bg-emerald-500 text-white' : 'border-ink-300 text-transparent hover:border-brand-400')}>
         <Icon name="check" size={14} />
-      </button>
+      </SafeButton>
       <button onClick={() => onEdit(a)} className="flex min-w-0 flex-1 items-center gap-3 text-left" title="Editar">
         <span className={cn('grid h-9 w-9 shrink-0 place-items-center rounded-xl', TIPO[a.tipo]?.chip ?? 'bg-ink-100 text-ink-500', done && 'opacity-50')}>
           <Icon name={TIPO[a.tipo]?.icon ?? 'check'} size={17} />
@@ -470,10 +470,10 @@ function Row({ a, onToggle, onRemove, onEdit, onVisit }: {
         </button>
       )}
       {can('activities.delete') && (
-        <button onClick={() => onRemove(a)} aria-label="Excluir"
+        <SafeButton onClick={() => onRemove(a)} aria-label="Excluir"
           className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500">
           <Icon name="trash" size={16} />
-        </button>
+        </SafeButton>
       )}
     </Card>
   );

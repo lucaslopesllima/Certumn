@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { Cliente, CompanyHit } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, StatCard, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Spinner, StatCard, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
@@ -193,8 +193,8 @@ export function Clientes(): React.JSX.Element {
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {can('relationships.delete') && (
-                      <button onClick={() => void toggleAtivo(c)} title={c.ativo ? 'Inativar cliente' : 'Reativar cliente'}
-                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name={c.ativo ? 'check' : 'x'} size={16} /></button>
+                      <SafeButton onClick={() => toggleAtivo(c)} title={c.ativo ? 'Inativar cliente' : 'Reativar cliente'}
+                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name={c.ativo ? 'check' : 'x'} size={16} /></SafeButton>
                     )}
                     <button onClick={() => setVerEmpresa(c.company_id)} title="Ver dados da empresa"
                       className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="eye" size={16} /></button>
@@ -203,8 +203,8 @@ export function Clientes(): React.JSX.Element {
                         className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                     )}
                     {can('relationships.delete') && (
-                      <button onClick={() => void remove(c)} aria-label="Remover cliente"
-                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                      <SafeButton onClick={() => remove(c)} aria-label="Remover cliente"
+                        className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                     )}
                   </div>
                 </div>

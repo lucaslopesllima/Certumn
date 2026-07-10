@@ -1,9 +1,39 @@
 // Shared UI primitives — the visual vocabulary of the design system.
 // Pages compose these so spacing, radius, color and motion stay consistent.
-import type { ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import { Icon, type IconName } from './icons.tsx';
 
 export const cn = (...xs: (string | false | null | undefined)[]): string => xs.filter(Boolean).join(' ');
+
+/* ── Click guard (anti double-click) ──────────────────────
+   Wraps an onClick handler: while a returned promise is pending the
+   button reports busy and further clicks are ignored, so async actions
+   (save, delete, API calls) can't fire twice. Sync handlers pass through. */
+type ClickHandler = (e: React.MouseEvent<HTMLButtonElement>) => unknown;
+function useClickGuard(onClick?: ClickHandler): { busy: boolean; handleClick?: ClickHandler } {
+  const [busy, setBusy] = useState(false);
+  const lock = useRef(false);
+  const handleClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    if (!onClick || lock.current) return;
+    const r = onClick(e);
+    if (r instanceof Promise) {
+      lock.current = true;
+      setBusy(true);
+      void r.finally(() => { lock.current = false; setBusy(false); });
+    }
+  }, [onClick]);
+  return { busy, handleClick: onClick ? handleClick : undefined };
+}
+
+/* Bare <button> with the same click guard as Btn but zero styling of its
+   own — drop-in replacement for raw <button> elements that fire async
+   actions. Disabled (and inert) while the handler's promise is pending. */
+export function SafeButton(
+  { onClick, disabled, ...rest }: Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'> & { onClick?: ClickHandler },
+): React.JSX.Element {
+  const { busy, handleClick } = useClickGuard(onClick);
+  return <button {...rest} disabled={disabled || busy} onClick={handleClick} />;
+}
 
 /* ── Card ─────────────────────────────────────────────── */
 export function Card({ className, children }: { className?: string; children: ReactNode }): React.JSX.Element {
@@ -19,18 +49,21 @@ const BTN: Record<BtnVariant, string> = {
   danger: 'bg-rose-50 text-rose-600 hover:bg-rose-100',
 };
 export function Btn(
-  { variant = 'primary', size = 'md', icon, className, children, ...rest }:
-  { variant?: BtnVariant; size?: 'sm' | 'md'; icon?: IconName; className?: string; children?: ReactNode }
-  & React.ButtonHTMLAttributes<HTMLButtonElement>,
+  { variant = 'primary', size = 'md', icon, className, children, onClick, disabled, ...rest }:
+  { variant?: BtnVariant; size?: 'sm' | 'md'; icon?: IconName; className?: string; children?: ReactNode; onClick?: ClickHandler }
+  & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick'>,
 ): React.JSX.Element {
+  const { busy, handleClick } = useClickGuard(onClick);
   return (
-    <button {...rest}
+    <button {...rest} disabled={disabled || busy} onClick={handleClick}
       className={cn(
         'inline-flex items-center justify-center gap-2 rounded-xl font-semibold transition-colors',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 disabled:opacity-50',
         size === 'sm' ? 'px-3 py-1.5 text-xs' : 'px-4 py-2.5 text-sm',
         BTN[variant], className)}>
-      {icon && <Icon name={icon} size={size === 'sm' ? 15 : 17} />}
+      {busy
+        ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-current/30 border-t-current" aria-hidden />
+        : icon && <Icon name={icon} size={size === 'sm' ? 15 : 17} />}
       {children}
     </button>
   );

@@ -16,7 +16,8 @@ const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5
 
 type Opt = { id: number; label: string };
 
-// Campos de imposto por item (mesma ordem da config e do back). Rótulo p/ a grade.
+// Campos de imposto por item (mesma ordem da config e do back). Ocultos na
+// grade por ora (uso futuro) — seguem no estado, no total e no submit (0 se vazio).
 const TAX_FIELDS = [
   ['icms_pct', 'ICMS %'], ['ipi_pct', 'IPI %'], ['st_pct', 'ST %'],
   ['pis_pct', 'PIS %'], ['cofins_pct', 'COFINS %'], ['iss_pct', 'ISS %'],
@@ -275,8 +276,8 @@ export function OrderModal({ order = null, prefill = null, onClose, onSaved }: {
                         className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="x" size={15} /></button>
                     )}
                   </div>
-                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-5">
-                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %'], ...TAX_FIELDS] as const).map(([k, ph]) => {
+                  <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-4">
+                    {([['qtd', 'Qtd *'], ['preco_unit', 'Preço *'], ['desconto_pct', 'Desc %']] as const).map(([k, ph]) => {
                       const bad = (k === 'qtd' && err.qtd) || (k === 'preco_unit' && err.preco);
                       // qtd herda a unidade do produto (snapshot) — rótulo "Qtd (KG)".
                       const lbl = k === 'qtd' && i.unidade_medida ? `Qtd * (${i.unidade_medida})` : ph;

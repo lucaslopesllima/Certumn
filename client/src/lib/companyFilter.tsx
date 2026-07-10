@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from './api.ts';
 import type { Municipio } from './types.ts';
 import { maskSearchCNPJ, maskCEP } from './format.ts';
-import { Btn, cn } from './ui.tsx';
+import { Btn, SafeButton, cn } from './ui.tsx';
 import { Icon } from './icons.tsx';
 import { Cnae, seedCnae } from './cnae.tsx';
 
@@ -297,7 +297,7 @@ function PartidaInput({ value, onChange }: { value: Partida | null; onChange: (p
           <input value={q} onChange={(e) => { setQ(e.target.value); setErro(''); }}
             onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void buscar(); } }}
             maxLength={120} placeholder="Ex.: Rua XV de Novembro 100, Blumenau SC" className={cn(inputCls, 'flex-1')} />
-          <Btn size="sm" type="button" variant="soft" onClick={() => void buscar()} disabled={busy} className="shrink-0">
+          <Btn size="sm" type="button" variant="soft" onClick={() => buscar()} disabled={busy} className="shrink-0">
             {busy ? '…' : 'Definir'}
           </Btn>
         </div>
@@ -442,13 +442,13 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
             const full = isFull(u.uf, u.total);
             const partial = !full && (countByUf[u.uf] ?? 0) > 0;
             return (
-              <button key={u.uf} onClick={() => void toggleUf(u.uf, full)} title={`${u.total} municípios`}
+              <SafeButton key={u.uf} onClick={() => toggleUf(u.uf, full)} title={`${u.total} municípios`}
                 className={cn('rounded-lg px-2 py-1 text-xs font-bold transition-colors',
                   full ? 'bg-brand-600 text-white hover:bg-brand-700'
                     : partial ? 'bg-brand-50 text-brand-700 ring-1 ring-inset ring-brand-200'
                     : 'bg-ink-100 text-ink-500 hover:bg-ink-200')}>
                 {u.uf}{partial && <span className="ml-1 font-medium opacity-70">{countByUf[u.uf]}</span>}
-              </button>
+              </SafeButton>
             );
           })}
         </div>

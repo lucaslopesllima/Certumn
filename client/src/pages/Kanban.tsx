@@ -2,7 +2,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import { useAuth } from '../lib/auth.tsx';
 import type { Brand, CatalogItem, Contact, KanbanCard, NamedItem, RepresentedCompany, Stage } from '../lib/types.ts';
-import { Badge, Btn, PageHeader, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
+import { Badge, Btn, PageHeader, SafeButton, Spinner, StatCard, cn, type Tone } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { CompanyFilterBar, useCompanyFilter } from '../lib/companyFilter.tsx';
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
@@ -105,7 +105,7 @@ export function Kanban(): React.JSX.Element {
   // Handlers estáveis passados ao CardItem (React.memo).
   const onDragStartCard = useCallback((id: number) => setDragId(id), []);
   const onDragEndCard = useCallback(() => { setDragId(null); setOver(null); }, []);
-  const onMoveCard = useCallback((id: number, stageId: number | null) => { void move(id, stageId); setMoveFor(null); }, [move]);
+  const onMoveCard = useCallback((id: number, stageId: number | null) => { const p = move(id, stageId); setMoveFor(null); return p; }, [move]);
   const onEditCard = useCallback((c: BoardCard) => setEditing(c), []);
   const onToggleMenu = useCallback((id: number) => setMoveFor((m) => (m === id ? null : id)), []);
   const onCloseMenu = useCallback(() => setMoveFor(null), []);
@@ -320,12 +320,12 @@ const CardItem = memo(function CardItem({ c, stages, dragging, menuOpen, onDragS
           <div role="menu" className="absolute right-2 top-9 z-[50] w-44 overflow-hidden rounded-xl border border-ink-200 bg-surface py-1 shadow-pop">
             <p className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-ink-400">Mover para</p>
             {stages.map((s) => (
-              <button key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
+              <SafeButton key={s.id} type="button" role="menuitem" disabled={c.stage_id === s.id}
                 onClick={() => onMove(c.id, s.id)}
                 className={cn('flex w-full items-center gap-2 px-3 py-1.5 text-left text-sm transition-colors',
                   c.stage_id === s.id ? 'font-semibold text-brand-600' : 'text-ink-700 hover:bg-ink-50')}>
                 {c.stage_id === s.id && <Icon name="check" size={13} />}{s.nome}
-              </button>
+              </SafeButton>
             ))}
           </div>
         </>
@@ -383,15 +383,13 @@ const CardItem = memo(function CardItem({ c, stages, dragging, menuOpen, onDragS
           </button>
         )}
         {c.telefone1 && (
-          <button type="button" title="Abrir conversa no WhatsApp"
-            onClick={() => {
-              void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: c.company_id, numero: c.telefone1 })
-                .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
-                .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
-            }}
+          <SafeButton type="button" title="Abrir conversa no WhatsApp"
+            onClick={() => api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: c.company_id, numero: c.telefone1 })
+              .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+              .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'))}
             className="inline-flex items-center gap-1 rounded-lg bg-ink-100 px-2 py-1 text-xs font-semibold text-ink-600 transition hover:bg-emerald-50 hover:text-emerald-700">
             <Icon name="phone" size={13} /> WhatsApp
-          </button>
+          </SafeButton>
         )}
       </div>
     </div>
@@ -557,15 +555,13 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
                       <span key={c.id} className="inline-flex items-center gap-1 rounded-full bg-ink-100 px-2.5 py-1 text-xs font-medium text-ink-700">
                         {c.nome}{c.cargo ? ` · ${c.cargo}` : ''}
                         {c.telefone && (
-                          <button type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
-                            onClick={() => {
-                              void api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: card.company_id, numero: c.telefone, nome: c.nome })
-                                .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
-                                .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'));
-                            }}
+                          <SafeButton type="button" title="Iniciar conversa no WhatsApp" aria-label="Iniciar conversa"
+                            onClick={() => api.post<{ chat: { id: number } }>('/api/whatsapp/chats/from-company', { company_id: card.company_id, numero: c.telefone, nome: c.nome })
+                              .then((r) => { window.location.href = `/whatsapp?chat=${r.chat.id}`; })
+                              .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao abrir WhatsApp'))}
                             className="text-emerald-600 hover:text-emerald-700">
                             <Icon name="whatsapp" size={13} />
-                          </button>
+                          </SafeButton>
                         )}
                         <button type="button" onClick={() => setContatoIds((ids) => ids.filter((x) => x !== c.id))}
                           className="text-ink-400 hover:text-rose-500" aria-label="Remover">
@@ -639,7 +635,7 @@ function EditModal({ card, stages, reps, brands, scenarios, actions, catalog, on
           <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 p-4">
             {can('relationships.delete') && (
               <Btn variant="danger" type="button" icon="x"
-                onClick={() => void confirmDialog('Remover esta empresa do funil?').then((ok) => { if (ok) void onRemove(card.id); })}>
+                onClick={() => confirmDialog('Remover esta empresa do funil?').then((ok) => { if (ok) return onRemove(card.id); })}>
                 Remover do funil
               </Btn>
             )}
@@ -727,7 +723,7 @@ function NovoContato({ companyId, onCreated, onCancel }: {
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 p-4">
           <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
-          <Btn icon="check" type="button" onClick={() => void save()} disabled={busy || !nome.trim()}>{busy ? '…' : 'Criar'}</Btn>
+          <Btn icon="check" type="button" onClick={() => save()} disabled={busy || !nome.trim()}>{busy ? '…' : 'Criar'}</Btn>
         </div>
       </div>
     </div>
@@ -782,7 +778,7 @@ function NovoProduto({ reps, onCreated, onCancel }: {
         </div>
         <div className="flex justify-end gap-2 border-t border-ink-100 p-4">
           <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
-          <Btn icon="check" type="button" onClick={() => void save()} disabled={busy || !nome.trim()}>{busy ? '…' : 'Criar'}</Btn>
+          <Btn icon="check" type="button" onClick={() => save()} disabled={busy || !nome.trim()}>{busy ? '…' : 'Criar'}</Btn>
         </div>
       </div>
     </div>

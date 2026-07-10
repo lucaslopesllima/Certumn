@@ -4,7 +4,7 @@ import { useAuth } from './lib/auth.tsx';
 import { api } from './lib/api.ts';
 import type { Notification } from './lib/types.ts';
 import { Icon, type IconName } from './lib/icons.tsx';
-import { cn } from './lib/ui.tsx';
+import { SafeButton, cn } from './lib/ui.tsx';
 import { ThemeToggle } from './lib/theme.tsx';
 import { onQueueChange, queued } from './lib/offline.ts';
 
@@ -297,21 +297,21 @@ export function NotificationBell({ variant }: { variant: 'light' | 'dark' }): Re
             <div className="flex items-center justify-between border-b border-ink-100 px-3 py-2">
               <span className="text-sm font-bold text-ink-800">Notificações</span>
               {unread > 0 && (
-                <button onClick={() => void markAll()} className="text-xs font-semibold text-brand-600 hover:underline">
+                <SafeButton onClick={() => markAll()} className="text-xs font-semibold text-brand-600 hover:underline">
                   Marcar todas
-                </button>
+                </SafeButton>
               )}
             </div>
             <div className="max-h-96 overflow-auto">
               {items.length === 0 ? (
                 <p className="px-3 py-6 text-center text-sm text-ink-400">Nada por aqui.</p>
               ) : items.map((n) => (
-                <button key={n.id} onClick={() => void onClick(n)}
+                <SafeButton key={n.id} onClick={() => onClick(n)}
                   className={cn('flex w-full items-start gap-2.5 border-b border-ink-50 px-3 py-2.5 text-left transition hover:bg-ink-50',
                     !n.lida && 'bg-brand-50/40')}>
                   <span className={cn('mt-1.5 h-2 w-2 shrink-0 rounded-full', n.lida ? 'bg-ink-200' : 'bg-brand-500')} />
                   <span className="min-w-0 flex-1 text-xs text-ink-700">{n.titulo}</span>
-                </button>
+                </SafeButton>
               ))}
             </div>
           </div>

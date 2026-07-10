@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, Tooltip, useMap
 import type { LatLngBoundsExpression } from 'leaflet';
 import { api, ApiError } from '../lib/api.ts';
 import type { FunnelCompany, Vehicle, OptimizeResult, RouteStop, SavedRoute } from '../lib/types.ts';
-import { Btn, Badge, Card, EmptyState, PageHeader, Segmented, Spinner, StatCard, cn } from '../lib/ui.tsx';
+import { Btn, Badge, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, StatCard, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
 import { brl, maskPlaca, maskMoney, clampNum } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
@@ -342,7 +342,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             )}
           </div>
           {can('routes.optimize') && (
-            <Btn icon="route" onClick={() => void optimize()} disabled={busy || sel.size < 1} className="w-full">
+            <Btn icon="route" onClick={() => optimize()} disabled={busy || sel.size < 1} className="w-full">
               {busy ? 'Calculando…' : 'Otimizar rota'}
             </Btn>
           )}
@@ -439,7 +439,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
             <ul className="divide-y divide-ink-100">
               {saved.map((r) => (
                 <li key={r.id} className={cn('flex items-center gap-2 px-4 py-2.5', openedId === r.id && 'bg-brand-50 dark:bg-brand-500/15')}>
-                  <button onClick={() => void openSaved(r)} title="Abrir no mapa" className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                  <SafeButton onClick={() => openSaved(r)} title="Abrir no mapa" className="flex min-w-0 flex-1 items-center gap-2 text-left">
                     <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-50 text-brand-600 dark:bg-brand-500/15 dark:text-brand-400"><Icon name="route" size={16} /></span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
@@ -452,7 +452,7 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                         {r.veiculo && ` · ${r.veiculo}`}
                       </span>
                     </span>
-                  </button>
+                  </SafeButton>
                   {can('routes.agenda') && (
                     <button onClick={() => void agendar(r)} aria-label="Criar compromissos" title="Criar compromissos na Agenda"
                       className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100 hover:text-brand-600">
@@ -472,17 +472,17 @@ function Planner({ vehicles }: { vehicles: Vehicle[] }): React.JSX.Element {
                     </button>
                   )}
                   {can('routes.update') && (
-                    <button onClick={() => void toggleTemplate(r)} aria-label="Marcar como template" title={r.template ? 'Desmarcar template' : 'Marcar como template'}
+                    <SafeButton onClick={() => toggleTemplate(r)} aria-label="Marcar como template" title={r.template ? 'Desmarcar template' : 'Marcar como template'}
                       className={cn('grid h-8 w-8 shrink-0 place-items-center rounded-lg hover:bg-ink-100',
                         r.template ? 'text-brand-600' : 'text-ink-400 hover:text-brand-600')}>
                       <Icon name="layers" size={15} />
-                    </button>
+                    </SafeButton>
                   )}
                   {can('routes.delete') && (
-                    <button onClick={() => void delSaved(r.id)} aria-label="Excluir"
+                    <SafeButton onClick={() => delSaved(r.id)} aria-label="Excluir"
                       className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-rose-50 hover:text-rose-600">
                       <Icon name="trash" size={16} />
-                    </button>
+                    </SafeButton>
                   )}
                 </li>
               ))}
@@ -570,8 +570,8 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
                     className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
                 )}
                 {can('vehicles.delete') && (
-                  <button onClick={() => void remove(v.id)} aria-label="Excluir"
-                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                  <SafeButton onClick={() => remove(v.id)} aria-label="Excluir"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
                 )}
               </li>
             ))}
@@ -620,7 +620,7 @@ function Vehicles({ vehicles, reload }: { vehicles: Vehicle[]; reload: () => voi
         {err && <p className="text-xs text-rose-600">{err}</p>}
         <div className="flex gap-2">
           {can(editId != null ? 'vehicles.update' : 'vehicles.create') && (
-            <Btn icon="check" onClick={() => void submit()} disabled={busy} className="flex-1">{busy ? '…' : 'Salvar'}</Btn>
+            <Btn icon="check" onClick={() => submit()} disabled={busy} className="flex-1">{busy ? '…' : 'Salvar'}</Btn>
           )}
           {editId != null && <Btn variant="ghost" onClick={cancel}>Cancelar</Btn>}
         </div>

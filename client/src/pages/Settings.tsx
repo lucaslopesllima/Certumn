@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api.ts';
 import type { Brand, CompanyHit, Contact, NamedItem, RepresentedCompany, Stage, TaxDefaults } from '../lib/types.ts';
-import { Badge, Btn, Card, EmptyState, PageHeader, Spinner, cn } from '../lib/ui.tsx';
+import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser, useAuth } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
@@ -16,7 +16,8 @@ const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; adm
   { key: 'cenarios', label: 'Cenários', icon: 'list', desc: 'Opções de "cenário atual"' },
   { key: 'acoes', label: 'Ações próximo nível', icon: 'target', desc: 'Opções de ação para avançar' },
   { key: 'funil', label: 'Funil', icon: 'columns', desc: 'Fases do seu pipeline de vendas' },
-  { key: 'aliquotas', label: 'Alíquotas', icon: 'percent', desc: 'Impostos default dos pedidos', admin: true },
+  // Aba de alíquotas oculta por ora — impostos reservados para uso futuro (AliquotasEditor mantido).
+  // { key: 'aliquotas', label: 'Alíquotas', icon: 'percent', desc: 'Impostos default dos pedidos', admin: true },
   { key: 'alertas', label: 'Alertas', icon: 'bell', desc: 'Inatividade no dashboard', admin: true },
   { key: 'smtp', label: 'E-mail (SMTP)', icon: 'mail', desc: 'Servidor de envio dos e-mails agendados', admin: true },
 ];
@@ -105,7 +106,7 @@ function AlertasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
           className={cn(inputCls, 'w-32')} />
       </label>
       <div className="mt-4 flex items-center gap-3">
-        <Btn icon="check" onClick={() => void save()}>Salvar</Btn>
+        <Btn icon="check" onClick={() => save()}>Salvar</Btn>
         {saved && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
       </div>
     </Card>
@@ -229,8 +230,8 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
       </div>
 
       <div className="mt-4 flex items-center gap-2">
-        {can('settings.smtp.update') && <Btn icon="check" onClick={() => void save()} disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>}
-        {can('settings.smtp.test') && <Btn variant="soft" icon="mail" onClick={() => void testar()} disabled={testing}>{testing ? 'Enviando…' : 'Enviar teste'}</Btn>}
+        {can('settings.smtp.update') && <Btn icon="check" onClick={() => save()} disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>}
+        {can('settings.smtp.test') && <Btn variant="soft" icon="mail" onClick={() => testar()} disabled={testing}>{testing ? 'Enviando…' : 'Enviar teste'}</Btn>}
       </div>
     </Card>
   );
@@ -291,7 +292,7 @@ function AliquotasEditor({ inputCls }: { inputCls: string }): React.JSX.Element 
         ))}
       </div>
       <div className="mt-4 flex items-center gap-3">
-        {can('tax_defaults.update') && <Btn icon="check" onClick={() => void save()}>Salvar</Btn>}
+        {can('tax_defaults.update') && <Btn icon="check" onClick={() => save()}>Salvar</Btn>}
         {saved && <span className="inline-flex items-center gap-1 text-sm font-semibold text-emerald-600"><Icon name="check" size={16} /> Salvo</span>}
       </div>
     </Card>
@@ -304,6 +305,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [novo, setNovo] = useState('');
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   const flash = (): void => { setSaved(true); setTimeout(() => setSaved(false), 1500); };
 
@@ -318,12 +320,14 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
     e.preventDefault();
     const nome = novo.trim();
     if (!nome) return;
+    setBusy(true);
     try {
       const r = await api.post<{ stage: Stage }>('/api/stages', { nome });
       setStages((s) => [...s, r.stage]);
       setNovo('');
       flash(); toast.success(`Fase "${nome}" adicionada.`);
     } catch (e2) { toast.error(e2 instanceof Error ? e2.message : 'Não foi possível adicionar a fase.'); }
+    finally { setBusy(false); }
   };
 
   const rename = async (id: number, nome: string): Promise<void> => {
@@ -379,19 +383,19 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               className="min-w-0 flex-1 rounded-lg border border-transparent bg-surface px-2 py-1.5 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
             <div className="flex shrink-0 items-center gap-1">
-              <button onClick={() => move(i, -1)} disabled={i === 0 || !can('stages.update')}
+              <SafeButton onClick={() => move(i, -1)} disabled={i === 0 || !can('stages.update')}
                 className="grid h-7 w-7 place-items-center rounded-lg text-ink-500 hover:bg-surface disabled:opacity-30" aria-label="Subir">
                 <Icon name="arrowUp" size={15} />
-              </button>
-              <button onClick={() => move(i, 1)} disabled={i === stages.length - 1 || !can('stages.update')}
+              </SafeButton>
+              <SafeButton onClick={() => move(i, 1)} disabled={i === stages.length - 1 || !can('stages.update')}
                 className="grid h-7 w-7 place-items-center rounded-lg text-ink-500 hover:bg-surface disabled:opacity-30" aria-label="Descer">
                 <Icon name="arrowDown" size={15} />
-              </button>
+              </SafeButton>
               {can('stages.delete') && (
-                <button onClick={() => remove(st.id)}
+                <SafeButton onClick={() => remove(st.id)}
                   className="grid h-7 w-7 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500" aria-label="Excluir">
                   <Icon name="x" size={15} />
-                </button>
+                </SafeButton>
               )}
             </div>
           </li>
@@ -402,7 +406,7 @@ function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
       {can('stages.create') && (
         <form onSubmit={add} className="mt-3 flex gap-2">
           <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={120} placeholder="Nova fase (ex.: Pós-venda)" className={cn(inputCls, 'flex-1')} />
-          <Btn icon="plus" type="submit">Adicionar</Btn>
+          <Btn icon="plus" type="submit" disabled={busy}>Adicionar</Btn>
         </form>
       )}
     </Card>
@@ -503,18 +507,18 @@ function RepresentadasEditor({ inputCls }: { inputCls: string }): React.JSX.Elem
             </div>
             <div className="flex shrink-0 items-center gap-1">
               {can('represented.update') && (
-                <button onClick={() => void toggleAtivo(e)} title={e.ativo ? 'Desativar' : 'Ativar'}
+                <SafeButton onClick={() => toggleAtivo(e)} title={e.ativo ? 'Desativar' : 'Ativar'}
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100">
                   <Icon name={e.ativo ? 'check' : 'x'} size={16} />
-                </button>
+                </SafeButton>
               )}
               {can('represented.update') && (
                 <button onClick={() => setEditing(e.id)} aria-label="Editar"
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
               )}
               {can('represented.delete') && (
-                <button onClick={() => void remove(e.id)} aria-label="Excluir"
-                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                <SafeButton onClick={() => remove(e.id)} aria-label="Excluir"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
               )}
             </div>
           </div>
@@ -575,6 +579,7 @@ function BrandsEditor({ representedId, inputCls }: { representedId: number; inpu
   const { can } = useAuth();
   const [brands, setBrands] = useState<Brand[]>([]);
   const [novo, setNovo] = useState('');
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     void api.get<{ brands: Brand[] }>(`/api/brands?represented_id=${representedId}`)
@@ -585,9 +590,12 @@ function BrandsEditor({ representedId, inputCls }: { representedId: number; inpu
     e.preventDefault();
     const nome = novo.trim();
     if (!nome) return;
-    const r = await api.post<{ brand: Brand }>('/api/brands', { represented_id: representedId, nome });
-    setBrands((xs) => [...xs, r.brand]);
-    setNovo('');
+    setBusy(true);
+    try {
+      const r = await api.post<{ brand: Brand }>('/api/brands', { represented_id: representedId, nome });
+      setBrands((xs) => [...xs, r.brand]);
+      setNovo('');
+    } finally { setBusy(false); }
   };
   const remove = async (id: number): Promise<void> => {
     setBrands((xs) => xs.filter((x) => x.id !== id));
@@ -603,9 +611,9 @@ function BrandsEditor({ representedId, inputCls }: { representedId: number; inpu
           <span key={b.id} className="inline-flex items-center gap-1 rounded-full bg-surface px-2.5 py-1 text-xs font-medium text-ink-700 shadow-card">
             {b.nome}
             {can('brands.delete') && (
-              <button type="button" onClick={() => void remove(b.id)} className="text-ink-300 hover:text-rose-500" aria-label="Remover">
+              <SafeButton type="button" onClick={() => remove(b.id)} className="text-ink-300 hover:text-rose-500" aria-label="Remover">
                 <Icon name="x" size={13} />
-              </button>
+              </SafeButton>
             )}
           </span>
         ))}
@@ -614,7 +622,7 @@ function BrandsEditor({ representedId, inputCls }: { representedId: number; inpu
       {can('brands.create') && (
         <form onSubmit={add} className="mt-2 flex gap-2">
           <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={200} placeholder="Nova marca" className={cn(inputCls, 'flex-1')} />
-          <Btn size="sm" icon="plus" type="submit">Add</Btn>
+          <Btn size="sm" icon="plus" type="submit" disabled={busy}>Add</Btn>
         </form>
       )}
     </div>
@@ -629,6 +637,7 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
   const [items, setItems] = useState<NamedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [novo, setNovo] = useState('');
+  const [busy, setBusy] = useState(false);
 
   const load = async (): Promise<void> => {
     const r = await api.get<{ items: NamedItem[] }>(`/api/${path}`);
@@ -641,12 +650,14 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
     e.preventDefault();
     const nome = novo.trim();
     if (!nome) return;
+    setBusy(true);
     try {
       const r = await api.post<{ item: NamedItem }>(`/api/${path}`, { nome });
       setItems((xs) => [...xs, r.item]);
       setNovo('');
       toast.success('Item adicionado.');
     } catch (e2) { toast.error(e2 instanceof Error ? e2.message : 'Não foi possível adicionar.'); }
+    finally { setBusy(false); }
   };
   const rename = async (id: number, nome: string): Promise<void> => {
     const t = nome.trim();
@@ -678,10 +689,10 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
               onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
               className="min-w-0 flex-1 rounded-lg border border-transparent bg-surface px-2 py-1.5 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200" />
             {can(`${path}.delete`) && (
-              <button onClick={() => void remove(it.id)}
+              <SafeButton onClick={() => remove(it.id)}
                 className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500" aria-label="Excluir">
                 <Icon name="x" size={15} />
-              </button>
+              </SafeButton>
             )}
           </li>
         ))}
@@ -691,7 +702,7 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
       {can(`${path}.create`) && (
         <form onSubmit={add} className="mt-3 flex gap-2">
           <input value={novo} onChange={(e) => setNovo(e.target.value)} maxLength={120} placeholder={placeholder} className={cn(inputCls, 'flex-1')} />
-          <Btn icon="plus" type="submit">Adicionar</Btn>
+          <Btn icon="plus" type="submit" disabled={busy}>Adicionar</Btn>
         </form>
       )}
     </Card>
@@ -798,8 +809,8 @@ function ContatosEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
                   className="grid h-8 w-8 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="pencil" size={16} /></button>
               )}
               {can('contacts.delete') && (
-                <button onClick={() => void remove(c.id)} aria-label="Excluir"
-                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></button>
+                <SafeButton onClick={() => remove(c.id)} aria-label="Excluir"
+                  className="grid h-8 w-8 place-items-center rounded-lg text-ink-300 hover:bg-rose-50 hover:text-rose-500"><Icon name="trash" size={16} /></SafeButton>
               )}
             </div>
           </div>
