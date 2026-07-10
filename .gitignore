@@ -10,6 +10,9 @@ dist/
 # Base de dados CNPJ (dados de atualização — não versionar, vão pra VPS via rsync/scp)
 dados_cnpj/
 
+# Base CNEFE/IBGE (geocodificação — só downloads, regeneráveis)
+dados_cnefe/
+
 # cobertura de testes
 coverage/
 
