@@ -591,7 +591,7 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
           </div>
         )}
 
-        {/* Empresa (domínio Prospecta) */}
+        {/* Empresa (domínio Certumn) */}
         {!isGroup && (
           <div className="bg-surface px-6 py-4">
             <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-ink-400">Empresa</p>

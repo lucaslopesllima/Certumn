@@ -47,7 +47,7 @@ test.describe('e-mail — agendamento', () => {
     const api = new ApiClient(request, session);
     await request.put('/api/settings/smtp', {
       headers: { authorization: `Bearer ${session.token}` },
-      data: { host: 'mailpit', port: 1025, secure: false, from_email: `e2e-${Date.now()}@prospecta.local`, enabled: true },
+      data: { host: 'mailpit', port: 1025, secure: false, from_email: `e2e-${Date.now()}@certumn.local`, enabled: true },
     });
 
     const passado = new Date(Date.now() - 60_000).toISOString();

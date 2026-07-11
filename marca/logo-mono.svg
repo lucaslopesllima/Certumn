@@ -1,0 +1,13 @@
+<svg width="920" height="240" viewBox="0 0 920 240" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Rovva">
+  <!-- versao monocromatica: usa currentColor; default ink -->
+  <g fill="#0D1220">
+    <g transform="translate(40 40)">
+      <rect width="160" height="160" rx="42" fill="#0D1220"/>
+      <path d="M52 116 C 104 116 80 66 124 62" stroke="#ffffff" stroke-width="16" fill="none" stroke-linecap="round"/>
+      <circle cx="52" cy="116" r="14" fill="#ffffff"/>
+      <circle cx="52" cy="116" r="6" fill="#0D1220"/>
+      <path d="M104 52 L126 62 L114 82" stroke="#ffffff" stroke-width="16" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <text x="250" y="153" font-family="Inter, 'Segoe UI', Helvetica, Arial, sans-serif" font-size="120" font-weight="800" letter-spacing="-5" fill="#0D1220">Rovva</text>
+  </g>
+</svg>

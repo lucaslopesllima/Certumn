@@ -1,4 +1,4 @@
-# Plano: Cobertura E2E 100% com Playwright — Prospecta
+# Plano: Cobertura E2E 100% com Playwright — Certumn
 
 ## Contexto
 

@@ -46,7 +46,7 @@ export function Login(): React.JSX.Element {
           <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 shadow-sm shadow-brand-600/30">
             <Icon name="target" size={20} />
           </span>
-          <span className="text-lg font-bold tracking-tight">Prospecta</span>
+          <span className="text-lg font-bold tracking-tight">Certumn</span>
         </div>
         <div className="relative space-y-6">
           <h2 className="max-w-sm text-2xl font-bold leading-snug tracking-tight">
@@ -76,7 +76,7 @@ export function Login(): React.JSX.Element {
             <span className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-brand-400 to-brand-600 text-white shadow-sm shadow-brand-600/30">
               <Icon name="target" size={20} />
             </span>
-            <span className="text-lg font-bold tracking-tight text-ink-900">Prospecta</span>
+            <span className="text-lg font-bold tracking-tight text-ink-900">Certumn</span>
           </div>
 
           <h1 className="text-xl font-bold tracking-tight text-ink-900">

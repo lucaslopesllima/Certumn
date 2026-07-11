@@ -11,7 +11,7 @@ test.describe('configurações — SMTP', () => {
     await page.getByRole('button', { name: 'E-mail (SMTP)' }).click();
     await page.getByLabel('Host').fill('mailpit');
     await page.getByLabel('Porta', { exact: true }).fill('1025');
-    await page.getByLabel('E-mail de origem').fill('e2e-config@prospecta.local');
+    await page.getByLabel('E-mail de origem').fill('e2e-config@certumn.local');
     await page.getByRole('button', { name: 'Salvar' }).click();
     await page.waitForLoadState('networkidle');
     await page.reload();
@@ -23,7 +23,7 @@ test.describe('configurações — SMTP', () => {
     const session = await loginAs('config-smtp-teste', { tipoConta: 'escritorio' });
     await request.put('/api/settings/smtp', {
       headers: { authorization: `Bearer ${session.token}` },
-      data: { host: 'mailpit', port: 1025, secure: false, from_email: 'e2e-teste@prospecta.local', enabled: true },
+      data: { host: 'mailpit', port: 1025, secure: false, from_email: 'e2e-teste@certumn.local', enabled: true },
     });
 
     await page.goto('/config');

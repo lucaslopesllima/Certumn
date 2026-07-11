@@ -29,7 +29,7 @@ async function nominatim(a: Addr): Promise<GeoResult | null> {
   try {
     await throttleNominatim();
     const resp = await fetch(`${config.nominatimUrl}/search?${params.toString()}`, {
-      headers: { 'User-Agent': 'RepresentativeSeller/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
+      headers: { 'User-Agent': 'Certumn/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
       signal: AbortSignal.timeout(5000), // serviço externo lento não pode travar a request
     });
     if (!resp.ok) return null;
@@ -72,7 +72,7 @@ export async function geocodeText(q: string): Promise<(GeoResult & { label: stri
   try {
     await throttleNominatim();
     const resp = await fetch(`${config.nominatimUrl}/search?${params.toString()}`, {
-      headers: { 'User-Agent': 'RepresentativeSeller/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
+      headers: { 'User-Agent': 'Certumn/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
       signal: AbortSignal.timeout(5000), // serviço externo lento não pode travar a request
     });
     if (!resp.ok) return null;

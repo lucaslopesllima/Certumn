@@ -47,7 +47,7 @@
   páginas `/termos` e `/privacidade`, banner de cookies, canal DPO.
 
 ### 4. Marca — 3 nomes diferentes
-- App chama **"Prospecta"** (`client/index.html:7`), landing chama **"Certum"**
+- App chama **"Certumn"** (`client/index.html:7`), landing chama **"Certum"**
   (`Marketing/landing/index.html`), docs de marketing chamam **"Vértice"**
   (`Marketing/MARCA.md`, `PLANOS.md`, `IDENTIDADE.md`).
 - Logo, favicon, manifest e domínio todos divergem.
@@ -148,7 +148,7 @@
 
 ## Ordem sugerida de ataque
 
-1. Marca única (Prospecta vs Certum vs Vértice)
+1. Marca única (Certumn vs Certum vs Vértice)
 2. TLS/proxy reverso + domínio
 3. E-mail transacional de plataforma (verificação, reset, convite)
 4. Páginas legais + exclusão de conta (LGPD)

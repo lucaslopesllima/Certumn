@@ -109,14 +109,14 @@ describe('rotas /api/settings/smtp', () => {
 
     const put = await inj(a, 'PUT', '/api/settings/smtp', {
       host: 'smtp.org.com', port: 465, secure: true, username: 'user@org.com',
-      password: 'segredo', from_email: 'no-reply@org.com', from_name: 'Prospecta', enabled: true,
+      password: 'segredo', from_email: 'no-reply@org.com', from_name: 'Certumn', enabled: true,
     });
     expect(put.statusCode).toBe(200);
 
     const got = (await inj(a, 'GET', '/api/settings/smtp')).json() as { smtp: { has_password: boolean; enabled: boolean; from_name: string } };
     expect(got.smtp.has_password).toBe(true);
     expect(got.smtp.enabled).toBe(true);
-    expect(got.smtp.from_name).toBe('Prospecta');
+    expect(got.smtp.from_name).toBe('Certumn');
 
     // PUT sem password mantém a senha cifrada existente (COALESCE).
     expect((await inj(a, 'PUT', '/api/settings/smtp', { host: 'smtp.org.com', from_email: 'no-reply@org.com', enabled: true })).statusCode).toBe(200);

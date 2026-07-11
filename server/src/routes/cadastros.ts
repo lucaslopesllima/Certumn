@@ -68,13 +68,16 @@ export function cadastroRoutes(app: FastifyInstance): void {
   }, async (req) => {
     const orgId = req.auth!.orgId;
     const { company_id, represented_id } = req.query as { company_id?: number; represented_id?: number };
-    const where = ['org_id = $1'];
+    const where = ['ct.org_id = $1'];
     const params: unknown[] = [orgId];
-    if (company_id !== undefined) { params.push(company_id); where.push(`company_id = $${params.length}`); }
-    if (represented_id !== undefined) { params.push(represented_id); where.push(`represented_id = $${params.length}`); }
+    if (company_id !== undefined) { params.push(company_id); where.push(`ct.company_id = $${params.length}`); }
+    if (represented_id !== undefined) { params.push(represented_id); where.push(`ct.represented_id = $${params.length}`); }
     const contacts = await query(
-      `SELECT id, nome, cargo, email, telefone, company_id, represented_id
-       FROM contacts WHERE ${where.join(' AND ')} ORDER BY nome`,
+      `SELECT ct.id, ct.nome, ct.cargo, ct.email, ct.telefone, ct.company_id, ct.represented_id,
+              COALESCE(co.nome_fantasia, co.razao_social) AS company_name
+       FROM contacts ct
+       LEFT JOIN companies co ON co.id = ct.company_id
+       WHERE ${where.join(' AND ')} ORDER BY ct.nome`,
       params,
     );
     return { contacts };
@@ -88,7 +91,8 @@ export function cadastroRoutes(app: FastifyInstance): void {
     company_id: { type: ['integer', 'null'] },
     represented_id: { type: ['integer', 'null'] },
   } as const;
-  const CONTACT_COLS = 'id, nome, cargo, email, telefone, company_id, represented_id';
+  const CONTACT_COLS = 'id, nome, cargo, email, telefone, company_id, represented_id, '
+    + '(SELECT COALESCE(co.nome_fantasia, co.razao_social) FROM companies co WHERE co.id = contacts.company_id) AS company_name';
 
   app.post('/api/contacts', {
     preHandler: [requireAuth, requirePermission('contacts.create')],

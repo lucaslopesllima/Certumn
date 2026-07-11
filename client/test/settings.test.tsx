@@ -547,6 +547,46 @@ describe('Settings — ContatosEditor', () => {
     expect(toastMock.success).toHaveBeenCalledWith('Contato criado.');
   });
 
+  it('vincula, troca e remove a empresa-prospect do contato', async () => {
+    m.post.mockResolvedValueOnce({ contact: contact({ id: 21, nome: 'Com Empresa', company_id: 99, company_name: 'RS Marca' }) });
+    render(<Settings />);
+    await go(/Contatos/);
+    await screen.findByText('Nenhum contato');
+    await userEvent.click(screen.getByRole('button', { name: 'Novo' }));
+    await userEvent.type(screen.getByPlaceholderText('Nome *'), 'Com Empresa');
+
+    // escolhe empresa via CompanySearch -> vira chip com nome fantasia
+    await userEvent.click(screen.getByRole('button', { name: 'mock-pick' }));
+    expect(await screen.findByText('RS Marca')).toBeInTheDocument();
+
+    // remove -> volta o buscador
+    await userEvent.click(screen.getByLabelText('Remover empresa'));
+    expect(screen.getByRole('button', { name: 'mock-pick' })).toBeInTheDocument();
+
+    // escolhe de novo e salva -> company_id vai no body
+    await userEvent.click(screen.getByRole('button', { name: 'mock-pick' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Com Empresa', company_id: 99 })));
+
+    // badge da empresa aparece na lista
+    expect(await screen.findByText('RS Marca')).toBeInTheDocument();
+  });
+
+  it('edição de contato pré-carrega a empresa vinculada', async () => {
+    contacts = [contact({ company_id: 99, company_name: 'RS Marca' })];
+    m.patch.mockResolvedValueOnce({ contact: contact({ company_id: null, company_name: null }) });
+    render(<Settings />);
+    await go(/Contatos/);
+    // badge na linha
+    expect(await screen.findByText('RS Marca')).toBeInTheDocument();
+
+    // abre edição: chip preenchido; remove e salva -> company_id null no body
+    await userEvent.click(screen.getAllByLabelText('Editar')[0]!);
+    await userEvent.click(screen.getByLabelText('Remover empresa'));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/contacts/10', expect.objectContaining({ company_id: null })));
+  });
+
   it('erro ao criar contato', async () => {
     m.post.mockRejectedValueOnce(new Error('c-fail'));
     render(<Settings />);

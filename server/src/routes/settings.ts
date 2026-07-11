@@ -79,7 +79,7 @@ export function settingsRoutes(app: FastifyInstance): void {
     try {
       await sendViaSmtp(s, {
         from: u.email, to: u.email,
-        subject: 'Teste de SMTP — Prospecta',
+        subject: 'Teste de SMTP — Certumn',
         body: 'Este é um e-mail de teste. Se você recebeu, o envio SMTP está funcionando.',
       });
       return { ok: true, to: u.email };

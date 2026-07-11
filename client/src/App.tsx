@@ -130,7 +130,7 @@ function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
       </span>
       {!compact && (
         <span className="text-[15px] font-bold tracking-tight text-white">
-          Prospecta
+          Certumn
         </span>
       )}
     </div>
@@ -380,7 +380,7 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
   const loc = useLocation();
   const nav = useNav();
   const [moreOpen, setMoreOpen] = useState(false);
-  const title = nav.find((n) => n.to === loc.pathname)?.label ?? 'Prospecta';
+  const title = nav.find((n) => n.to === loc.pathname)?.label ?? 'Certumn';
   const primary = nav.filter((n) => MOBILE_PRIMARY.includes(n.to));
   const secondary = nav.filter((n) => !MOBILE_PRIMARY.includes(n.to));
   // fecha a folha ao trocar de rota

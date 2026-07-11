@@ -1,0 +1,70 @@
+{
+  "moeda": "BRL",
+  "trial_dias": 14,
+  "ancora_anual": "2 meses grátis",
+  "planos": [
+    {
+      "id": "solo",
+      "nome": "Solo",
+      "publico": "Representante autônomo",
+      "destaque": false,
+      "preco_mensal": 150,
+      "preco_anual_mensal": 125,
+      "usuarios_min": 1,
+      "territorios": 1,
+      "empresas_funil": 500,
+      "recursos": [
+        "Lista de empresas pra abordar (com mapa)",
+        "Funil de vendas",
+        "Agenda, clientes e carteiras",
+        "Pedidos e tabelas de preço",
+        "Catálogo de produtos",
+        "WhatsApp integrado",
+        "E-mail agendado"
+      ]
+    },
+    {
+      "id": "equipe",
+      "nome": "Equipe",
+      "publico": "Escritório pequeno",
+      "destaque": true,
+      "preco_mensal": 140,
+      "preco_anual_mensal": 117,
+      "por_usuario": true,
+      "usuarios_min": 2,
+      "territorios": 3,
+      "empresas_funil": 5000,
+      "recursos": [
+        "Tudo do Solo para todos os usuários",
+        "Funil compartilhado",
+        "Vários vendedores com metas",
+        "Comissões (com divisão entre vendedores)",
+        "Amostras e transportadoras",
+        "Rotas de visita com check-in",
+        "Permissões por perfil de usuário"
+      ]
+    },
+    {
+      "id": "escritorio",
+      "nome": "Escritório",
+      "publico": "Operação completa, multi-território",
+      "destaque": false,
+      "preco_mensal": null,
+      "preco_anual_mensal": null,
+      "preco_label": "Sob consulta",
+      "por_usuario": true,
+      "usuarios_min": 5,
+      "territorios": "ilimitado",
+      "empresas_funil": "ilimitado",
+      "recursos": [
+        "Tudo do Equipe",
+        "Territórios e funil ilimitados",
+        "Conferência de comissões",
+        "Financeiro (contas, categorias, recorrência)",
+        "Painel e relatórios avançados",
+        "Histórico de alterações",
+        "Suporte prioritário e ajuda na configuração"
+      ]
+    }
+  ]
+}

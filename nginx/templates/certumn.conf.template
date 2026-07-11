@@ -1,4 +1,4 @@
-# Reverse proxy TLS do Prospecta. A imagem oficial do nginx roda envsubst neste
+# Reverse proxy TLS do Certumn. A imagem oficial do nginx roda envsubst neste
 # template no boot (só ${DOMAIN} é trocado — ver NGINX_ENVSUBST_FILTER no compose);
 # as variáveis de runtime do nginx ($host, $remote_addr, ...) ficam intactas.
 #

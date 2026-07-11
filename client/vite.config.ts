@@ -20,8 +20,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Prospecta — Representação Comercial',
-        short_name: 'Prospecta',
+        name: 'Certumn — Representação Comercial',
+        short_name: 'Certumn',
         description: 'Prospecção, pedidos e rotas em campo.',
         theme_color: '#0f172a',
         background_color: '#0f172a',

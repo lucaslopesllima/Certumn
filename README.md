@@ -1,4 +1,4 @@
-# Prospecta
+# Certumn
 
 SaaS multi-tenant de prospecção e gestão comercial para representantes. A partir de uma **base compartilhada da Receita Federal**, recomenda quais empresas abordar (por CNAE-alvo + proximidade + porte) e leva o lead do primeiro contato até o pedido pago.
 

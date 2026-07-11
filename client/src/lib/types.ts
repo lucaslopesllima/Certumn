@@ -106,7 +106,7 @@ export interface SampleRequest {
 export interface Brand { id: number; represented_id: number; nome: string }
 export interface Contact {
   id: number; nome: string; cargo: string | null; email: string | null; telefone: string | null;
-  company_id: number | null; represented_id: number | null;
+  company_id: number | null; represented_id: number | null; company_name?: string | null;
 }
 export interface NamedItem { id: number; nome: string }
 

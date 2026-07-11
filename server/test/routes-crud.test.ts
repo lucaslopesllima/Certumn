@@ -3,7 +3,7 @@
 // atualizar", 404 cross-org e validação de FK por org.
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import type { FastifyInstance } from 'fastify';
-import { makeApp, register, bearer, closeAll, type Session } from './helpers.ts';
+import { makeApp, register, bearer, closeAll, makeCompany, type Session } from './helpers.ts';
 
 let app: FastifyInstance;
 let a: Session;       // org A (dona dos dados)
@@ -147,6 +147,17 @@ describe('cadastros: contacts', () => {
 
     expect((await del(b, `/api/contacts/${ct.id}`)).statusCode).toBe(404);
     expect((await del(a, `/api/contacts/${ct.id}`)).statusCode).toBe(200);
+  });
+
+  it('contato vinculado a empresa retorna company_name (fantasia > razão)', async () => {
+    const companyId = await makeCompany({ fantasia: 'Loja do Zé', razao: 'Zé Comércio LTDA' });
+    const created = await post(a, '/api/contacts', { nome: 'Ana', company_id: companyId });
+    expect((created.json() as { contact: { company_name: string } }).contact.company_name).toBe('Loja do Zé');
+
+    const list = await get(a, `/api/contacts?company_id=${companyId}`);
+    const rows = (list.json() as { contacts: { company_name: string }[] }).contacts;
+    expect(rows).toHaveLength(1);
+    expect(rows[0].company_name).toBe('Loja do Zé');
   });
 });
 

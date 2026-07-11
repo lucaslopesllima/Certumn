@@ -47,7 +47,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    image: prospecta-app:latest
+    image: certumn-app:latest
     depends_on:
       db:
         condition: service_healthy

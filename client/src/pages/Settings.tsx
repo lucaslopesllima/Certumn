@@ -30,7 +30,7 @@ export function Settings(): React.JSX.Element {
   const [section, setSection] = useState<Section>('empresas');
   return (
     <div className="space-y-4 p-4 sm:p-6">
-      <PageHeader title="Configurações" subtitle="Ajuste como o Prospecta funciona para a sua operação." />
+      <PageHeader title="Configurações" subtitle="Ajuste como o Certumn funciona para a sua operação." />
       <div className="flex flex-col gap-4 sm:flex-row">
         {/* sub-nav */}
         <nav className="flex gap-2 overflow-x-auto sm:w-56 sm:flex-col sm:gap-1 sm:overflow-x-visible">
@@ -714,17 +714,22 @@ function NamedListEditor({ inputCls, path, titulo, desc, icon, placeholder }: {
 }
 
 /* ── Contatos ──────────────────────────────────────────────── */
-type ContactForm = { nome: string; cargo: string; email: string; telefone: string; represented_id: string };
-const EMPTY_CONTACT: ContactForm = { nome: '', cargo: '', email: '', telefone: '', represented_id: '' };
+type ContactForm = {
+  nome: string; cargo: string; email: string; telefone: string; represented_id: string;
+  company_id: number | null; company_name: string | null;
+};
+const EMPTY_CONTACT: ContactForm = { nome: '', cargo: '', email: '', telefone: '', represented_id: '', company_id: null, company_name: null };
 const toContactForm = (c: Contact): ContactForm => ({
   nome: c.nome, cargo: c.cargo ?? '', email: c.email ?? '', telefone: c.telefone ?? '',
   represented_id: c.represented_id != null ? String(c.represented_id) : '',
+  company_id: c.company_id ?? null, company_name: c.company_name ?? null,
 });
 function contactBody(f: ContactForm): Record<string, unknown> {
   const t = (s: string): string | null => (s.trim() === '' ? null : s.trim());
   return {
     nome: f.nome.trim(), cargo: t(f.cargo), email: t(f.email), telefone: t(f.telefone),
     represented_id: f.represented_id === '' ? null : Number(f.represented_id),
+    company_id: f.company_id,
   };
 }
 
@@ -803,6 +808,7 @@ function ContatosEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
               <div className="flex flex-wrap items-center gap-1.5">
                 <p className="truncate text-sm font-semibold text-ink-800">{c.nome}</p>
                 {c.cargo && <Badge tone="neutral">{c.cargo}</Badge>}
+                {c.company_name && <Badge tone="neutral"><Icon name="building" size={12} />{c.company_name}</Badge>}
                 {repName(c.represented_id) && <Badge tone="brand">{repName(c.represented_id)}</Badge>}
               </div>
               <p className="mt-0.5 truncate text-xs text-ink-400">{[c.email, c.telefone].filter(Boolean).join(' · ') || 'sem contato'}</p>
@@ -840,6 +846,10 @@ function ContatoForm({ inputCls, reps, initial, onSave, onCancel }: {
     try { await onSave(f); } finally { setBusy(false); }
   };
 
+  const pickCompany = (c: CompanyHit): void =>
+    setF((p) => ({ ...p, company_id: c.id, company_name: c.nome_fantasia || c.razao_social }));
+  const clearCompany = (): void => setF((p) => ({ ...p, company_id: null, company_name: null }));
+
   return (
     <form onSubmit={submit} className="space-y-2.5">
       <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome *" className={inputCls} />
@@ -851,6 +861,18 @@ function ContatoForm({ inputCls, reps, initial, onSave, onCancel }: {
         </select>
         <input type="email" value={f.email} onChange={set('email')} maxLength={160} placeholder="E-mail" className={inputCls} />
         <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
+      </div>
+      <div>
+        {f.company_id != null ? (
+          <div className="flex items-center gap-2 rounded-xl border border-ink-200 bg-ink-50/50 px-3 py-2">
+            <Icon name="building" size={16} className="shrink-0 text-ink-400" />
+            <span className="min-w-0 flex-1 truncate text-sm text-ink-800">{f.company_name ?? `Empresa #${f.company_id}`}</span>
+            <button type="button" onClick={clearCompany} aria-label="Remover empresa"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-lg text-ink-400 hover:bg-ink-100"><Icon name="x" size={15} /></button>
+          </div>
+        ) : (
+          <CompanySearch onPick={pickCompany} placeholder="Empresa-prospect (opcional) — buscar por CNPJ ou nome…" />
+        )}
       </div>
       <div className="flex justify-end gap-2">
         <Btn variant="ghost" type="button" onClick={onCancel}>Cancelar</Btn>
