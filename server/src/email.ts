@@ -37,10 +37,10 @@ export async function processDueEmails(now = new Date()): Promise<number> {
   const due = await query<{
     id: string; org_id: string; template_id: string | null; company_id: string | null;
     remetente: string | null; destinatario: string; assunto: string; corpo: string;
-    agendado_para: string; recorrencia: string | null; owner_user_id: string | null;
+    agendado_para: string; recorrencia: string | null; owner_user_id: string | null; activity_id: string | null;
   }>(
     `SELECT id, org_id, template_id, company_id, remetente, destinatario, assunto, corpo,
-            agendado_para, recorrencia, owner_user_id
+            agendado_para, recorrencia, owner_user_id, activity_id
        FROM email_schedules
       WHERE status = 'pendente' AND agendado_para <= $1
       ORDER BY agendado_para
@@ -73,6 +73,10 @@ export async function processDueEmails(now = new Date()): Promise<number> {
           [e.id],
         );
         if (rows.length === 0) return; // já processado por outra varredura
+        // Compromisso espelho na Agenda vira 'feito' quando o e-mail sai.
+        if (e.activity_id != null) {
+          await query("UPDATE activities SET status = 'feito' WHERE id = $1 AND org_id = $2", [e.activity_id, e.org_id]);
+        }
         sent++;
 
         // Recorrência: agenda a próxima ocorrência como nova linha pendente.

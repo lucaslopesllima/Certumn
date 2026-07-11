@@ -178,6 +178,19 @@ describe('email: processDueEmails', () => {
     expect((await statusOf(id)).status).toBe('pendente');
   });
 
+  it('e-mail enviado marca o compromisso espelho da Agenda como feito', async () => {
+    const past = new Date(Date.now() - 1000).toISOString();
+    const created = await inj(a, 'POST', '/api/email-schedules', { destinatario: 'flip@y.com', assunto: 'Flip', corpo: 'C', agendado_para: past });
+    const id = Number((created.json() as { schedule: { id: number } }).schedule.id);
+    const row = await one<{ activity_id: string }>('SELECT activity_id FROM email_schedules WHERE id = $1', [id]);
+    expect(row!.activity_id).toBeTruthy();
+    sendMail.mockResolvedValue({ messageId: 'flip' });
+    await processDueEmails(new Date());
+    expect((await statusOf(id)).status).toBe('enviado');
+    const act = await one<{ status: string }>('SELECT status FROM activities WHERE id = $1', [row!.activity_id]);
+    expect(act!.status).toBe('feito');
+  });
+
   it('falha de envio marca o agendamento como erro com a mensagem', async () => {
     const id = await insertSchedule({ orgId: a.user.org_id, ownerId: Number(a.user.id), agendado: new Date(Date.now() - 1000), recorrencia: null });
     sendMail.mockRejectedValueOnce(new Error('host fora'));
@@ -268,6 +281,37 @@ describe('rotas /api/email-schedules', () => {
     // marca como enviado direto no banco → PATCH responde 409 (já processado)
     await query("UPDATE email_schedules SET status = 'enviado' WHERE id = $1", [id]);
     expect((await inj(a, 'PATCH', `/api/email-schedules/${id}`, { assunto: 'z' })).statusCode).toBe(409);
+  });
+
+  it('espelha na Agenda: cria activity email, sincroniza título/data ao editar e remove ao cancelar', async () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const created = await inj(a, 'POST', '/api/email-schedules', { destinatario: 'espelho@y.com', assunto: 'Espelho', corpo: 'C', agendado_para: future });
+    const id = Number((created.json() as { schedule: { id: number } }).schedule.id);
+    const row = await one<{ activity_id: string }>('SELECT activity_id FROM email_schedules WHERE id = $1', [id]);
+    expect(row!.activity_id).toBeTruthy();
+    const act = await one<{ tipo: string; status: string; titulo: string }>('SELECT tipo, status, titulo FROM activities WHERE id = $1', [row!.activity_id]);
+    expect(act).toMatchObject({ tipo: 'email', status: 'pendente' });
+    expect(act!.titulo).toContain('espelho@y.com');
+
+    // PATCH assunto/data (sem cancelar) → atualiza título e horário do compromisso
+    const novaData = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    expect((await inj(a, 'PATCH', `/api/email-schedules/${id}`, { assunto: 'Novo Assunto', agendado_para: novaData })).statusCode).toBe(200);
+    const act2 = await one<{ titulo: string; start_at: string }>('SELECT titulo, start_at FROM activities WHERE id = $1', [row!.activity_id]);
+    expect(act2!.titulo).toContain('Novo Assunto');
+    expect(new Date(act2!.start_at).toISOString()).toBe(novaData);
+
+    // cancelar → remove o compromisso espelho da Agenda
+    expect((await inj(a, 'PATCH', `/api/email-schedules/${id}`, { status: 'cancelado' })).statusCode).toBe(200);
+    expect(await one('SELECT id FROM activities WHERE id = $1', [row!.activity_id])).toBeNull();
+  });
+
+  it('DELETE do agendamento remove também o compromisso espelho da Agenda', async () => {
+    const future = new Date(Date.now() + 86_400_000).toISOString();
+    const created = await inj(a, 'POST', '/api/email-schedules', { destinatario: 'delact@y.com', assunto: 'DelAct', corpo: 'C', agendado_para: future });
+    const id = Number((created.json() as { schedule: { id: number } }).schedule.id);
+    const row = await one<{ activity_id: string }>('SELECT activity_id FROM email_schedules WHERE id = $1', [id]);
+    expect((await inj(a, 'DELETE', `/api/email-schedules/${id}`)).statusCode).toBe(200);
+    expect(await one('SELECT id FROM activities WHERE id = $1', [row!.activity_id])).toBeNull();
   });
 
   it('DELETE remove; 404 inexistente; 403 de outro vendedor', async () => {

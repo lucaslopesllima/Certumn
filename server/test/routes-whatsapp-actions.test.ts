@@ -209,3 +209,58 @@ describe('whatsapp — from-company (fallback razão social)', () => {
     expect(r.json().chat.nome).toBe('So Razao SA');
   });
 });
+
+// Agendamento direto pela Agenda: número livre + vínculos opcionais de empresa/contato.
+describe('whatsapp — schedule-direct (agenda)', () => {
+  it('400 contato inválido, 400 número inválido e 400 data inválida', async () => {
+    // contato de outra org (validação de ref) vem antes do resto
+    expect((await inj('POST', '/api/whatsapp/chats/schedule-direct',
+      { numero: '11988887777', text: 'x', agendado_para: '2030-01-01T10:00:00Z', contact_id: 999999 })).statusCode).toBe(400);
+    // número curto (<12 dígitos após DDI) → inválido
+    expect((await inj('POST', '/api/whatsapp/chats/schedule-direct',
+      { numero: '12345678', text: 'x', agendado_para: '2030-01-01T10:00:00Z' })).statusCode).toBe(400);
+    // data ruim
+    expect((await inj('POST', '/api/whatsapp/chats/schedule-direct',
+      { numero: '11988887777', text: 'x', agendado_para: 'data-ruim!' })).statusCode).toBe(400);
+  });
+
+  it('número livre (sem empresa/contato): cria conversa + compromisso espelho sem contato', async () => {
+    const r = await inj('POST', '/api/whatsapp/chats/schedule-direct',
+      { numero: '11955554444', text: 'Oi livre', agendado_para: '2030-04-01T10:00:00Z' });
+    expect(r.statusCode).toBe(201);
+    expect(r.json().schedule.status).toBe('pendente');
+    const act = await one<{ contact_id: string | null }>(
+      "SELECT contact_id FROM activities WHERE org_id = $1 AND tipo = 'whatsapp' AND titulo LIKE '%Oi livre%'", [org]);
+    expect(act).not.toBeNull();
+    expect(act!.contact_id).toBeNull();
+  });
+
+  it('empresa + contato: rotula pelo contato, vincula a empresa e espelha o contato', async () => {
+    const companyId = await makeCompany({ fantasia: 'Direct SA' });
+    await query('INSERT INTO company_relationships (org_id, company_id) VALUES ($1, $2)', [org, companyId]);
+    const contact = await one<{ id: string }>(
+      'INSERT INTO contacts (org_id, nome, company_id) VALUES ($1, $2, $3) RETURNING id', [org, 'Fulano', companyId]);
+    const r = await inj('POST', '/api/whatsapp/chats/schedule-direct', {
+      numero: '11944443333', text: 'Oi contato', agendado_para: '2030-05-01T10:00:00Z',
+      company_id: companyId, contact_id: Number(contact!.id),
+    });
+    expect(r.statusCode).toBe(201);
+    const chat = await one<{ nome: string; company_id: string }>(
+      'SELECT nome, company_id FROM whatsapp_chats WHERE org_id = $1 AND numero = $2', [org, '5511944443333']);
+    expect(chat!.nome).toBe('Fulano');
+    expect(String(chat!.company_id)).toBe(String(companyId));
+    const act = await one<{ contact_id: string | null; company_id: string | null }>(
+      "SELECT contact_id, company_id FROM activities WHERE org_id = $1 AND tipo = 'whatsapp' AND titulo LIKE '%Oi contato%'", [org]);
+    expect(String(act!.contact_id)).toBe(String(contact!.id));
+    expect(String(act!.company_id)).toBe(String(companyId));
+  });
+
+  it('empresa sem contato: rótulo vem do nome da empresa', async () => {
+    const companyId = await makeCompany({ razao: 'Empresa Rotulo SA' });
+    const r = await inj('POST', '/api/whatsapp/chats/schedule-direct',
+      { numero: '11933332222', text: 'Oi empresa', agendado_para: '2030-06-01T10:00:00Z', company_id: companyId });
+    expect(r.statusCode).toBe(201);
+    const chat = await one<{ nome: string }>('SELECT nome FROM whatsapp_chats WHERE org_id = $1 AND numero = $2', [org, '5511933332222']);
+    expect(chat!.nome).toBe('Empresa Rotulo SA');
+  });
+});

@@ -2,6 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
 import { one, query, withClient } from '../db.ts';
 import { requireAuth, requirePermission, authorizeToken, AuthError } from '../auth.ts';
+import { invalidOrgRef } from '../orgRefs.ts';
 import { audit } from '../audit.ts';
 import * as evo from '../evolution.ts';
 import { mediaEnabled, saveMedia, mediaStream } from '../mediaStore.ts';
@@ -29,6 +30,32 @@ function safeMediaType(mime: string | null): { type: string; inline: boolean } {
   const m = ((mime ?? '').split(';')[0] ?? '').trim().toLowerCase();
   if (INLINE_MEDIA_MIME.has(m)) return { type: m, inline: true };
   return { type: 'application/octet-stream', inline: false };
+}
+
+// Compromisso espelho na Agenda + agendamento de WhatsApp, numa transação só.
+// Reusado pelo agendamento de dentro da conversa e pelo agendamento direto (Agenda).
+async function scheduleWhatsappTx(orgId: number, opts: {
+  chatId: string | number; remoteJid: string; companyId: string | number | null;
+  contactId: number | null; ownerUserId: number; text: string; when: Date; titulo: string;
+}): Promise<Record<string, unknown>> {
+  return withClient(async (c) => {
+    await c.query('BEGIN');
+    try {
+      const act = (await c.query(
+        `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, contact_id, status)
+         VALUES ($1, 'whatsapp', $2, $3, $4, $5, $6, 'pendente') RETURNING id`,
+        [orgId, opts.titulo, opts.when.toISOString(), opts.ownerUserId, opts.companyId, opts.contactId],
+      )).rows[0] as { id: string };
+      const s = (await c.query(
+        `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         RETURNING id, chat_id, corpo, agendado_para, status`,
+        [orgId, opts.chatId, opts.remoteJid, opts.text, opts.when.toISOString(), opts.ownerUserId, act.id],
+      )).rows[0];
+      await c.query('COMMIT');
+      return s;
+    } catch (e) { await c.query('ROLLBACK'); throw e; }
+  });
 }
 
 // 'open' (Evolution) -> 'conectado' etc. Normaliza p/ o vocabulário do front.
@@ -543,23 +570,63 @@ export function whatsappRoutes(app: FastifyInstance): void {
     // Espelha na Agenda: compromisso 'whatsapp' + agendamento, numa transação só.
     const alvo = chat.nome || chat.numero || chat.remote_jid.split('@')[0];
     const titulo = `WhatsApp p/ ${alvo}: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
-    const row = await withClient(async (c) => {
-      await c.query('BEGIN');
-      try {
-        const act = (await c.query(
-          `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, status)
-           VALUES ($1, 'whatsapp', $2, $3, $4, $5, 'pendente') RETURNING id`,
-          [orgId, titulo, when.toISOString(), req.auth!.userId, chat.company_id],
-        )).rows[0] as { id: string };
-        const s = (await c.query(
-          `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           RETURNING id, chat_id, corpo, agendado_para, status`,
-          [orgId, chatId, chat.remote_jid, text, when.toISOString(), req.auth!.userId, act.id],
-        )).rows[0];
-        await c.query('COMMIT');
-        return s;
-      } catch (e) { await c.query('ROLLBACK'); throw e; }
+    const row = await scheduleWhatsappTx(orgId, {
+      chatId, remoteJid: chat.remote_jid, companyId: chat.company_id, contactId: null,
+      ownerUserId: req.auth!.userId, text, when, titulo,
+    });
+    return reply.code(201).send({ schedule: row });
+  });
+
+  // Agenda uma mensagem de WhatsApp direto pela Agenda (sem conversa aberta): o
+  // destino vem de um número livre; empresa/contato são vínculos opcionais que
+  // rotulam a conversa e o compromisso espelho. Cria/retoma a conversa e agenda.
+  app.post('/api/whatsapp/chats/schedule-direct', {
+    preHandler: [requireAuth, requirePermission('whatsapp.schedule')],
+    schema: {
+      body: {
+        type: 'object', required: ['numero', 'text', 'agendado_para'],
+        properties: {
+          numero: { type: 'string', minLength: 8 },
+          text: { type: 'string', minLength: 1 },
+          agendado_para: { type: 'string', minLength: 10 },
+          company_id: { type: ['integer', 'null'] },
+          contact_id: { type: ['integer', 'null'] },
+        },
+      },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const b = req.body as { numero: string; text: string; agendado_para: string; company_id?: number | null; contact_id?: number | null };
+    const badRef = await invalidOrgRef(orgId, b, ['contact_id']);
+    if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
+    const jid = numeroToJid(b.numero);
+    if (jid.replace(/[^0-9]/g, '').length < 12) return reply.code(400).send({ error: 'número inválido' });
+    const when = new Date(b.agendado_para);
+    if (Number.isNaN(when.getTime())) return reply.code(400).send({ error: 'data inválida' });
+
+    // Nome da conversa: contato vinculado > empresa > (fica sem nome, usa o número).
+    let nome: string | null = null;
+    if (b.contact_id != null) {
+      const ct = await one<{ nome: string }>('SELECT nome FROM contacts WHERE id = $1 AND org_id = $2', [b.contact_id, orgId]);
+      nome = ct?.nome ?? null;
+    }
+    if (!nome && b.company_id != null) {
+      const co = await one<{ razao_social: string; nome_fantasia: string | null }>(
+        'SELECT razao_social, nome_fantasia FROM companies WHERE id = $1', [b.company_id]);
+      nome = co ? (co.nome_fantasia || co.razao_social) : null;
+    }
+    const chat = await upsertChat(orgId, jid, { nome, incNaoLidas: false });
+    // Vincula empresa + relationship (igual ao from-company) quando houver empresa.
+    if (b.company_id != null) {
+      const rel = await relationshipForCompany(orgId, b.company_id);
+      await query('UPDATE whatsapp_chats SET company_id = $3, relationship_id = COALESCE($4, relationship_id) WHERE id = $1 AND org_id = $2',
+        [chat.id, orgId, b.company_id, rel?.id ?? null]);
+    }
+    const alvo = nome || chat.numero || jid.split('@')[0];
+    const titulo = `WhatsApp p/ ${alvo}: ${b.text.length > 60 ? `${b.text.slice(0, 60)}…` : b.text}`;
+    const row = await scheduleWhatsappTx(orgId, {
+      chatId: chat.id, remoteJid: chat.remote_jid, companyId: b.company_id ?? chat.company_id,
+      contactId: b.contact_id ?? null, ownerUserId: req.auth!.userId, text: b.text, when, titulo,
     });
     return reply.code(201).send({ schedule: row });
   });

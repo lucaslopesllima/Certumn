@@ -1,5 +1,5 @@
 import type { FastifyInstance } from 'fastify';
-import { one, query } from '../db.ts';
+import { one, query, withClient } from '../db.ts';
 import { requireAuth, requirePermission } from '../auth.ts';
 import { scopeOwner, canWriteOwned } from '../scope.ts';
 import { audit, pick } from '../audit.ts';
@@ -195,16 +195,31 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
       const u = await one<{ email: string }>('SELECT email FROM users WHERE id = $1', [req.auth!.userId]);
       remetente = u?.email ?? '';
     }
-    const row = await one<{ id: number }>(
-      `INSERT INTO email_schedules
-         (org_id, template_id, company_id, remetente, destinatario, assunto, corpo, agendado_para, recorrencia, owner_user_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING id`,
-      [orgId, b.template_id ?? null, b.company_id ?? null, remetente, b.destinatario.trim(),
-        b.assunto, b.corpo, b.agendado_para, normRec(b.recorrencia), req.auth!.userId],
-    );
-    await audit(req, 'email_schedule', row!.id, 'create',
+    // Espelha na Agenda: compromisso 'email' + agendamento, numa transação só.
+    const dest = b.destinatario.trim();
+    const titulo = `E-mail p/ ${dest}: ${b.assunto.length > 60 ? `${b.assunto.slice(0, 60)}…` : b.assunto}`;
+    const row = await withClient(async (c) => {
+      await c.query('BEGIN');
+      try {
+        const act = (await c.query(
+          `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, status)
+           VALUES ($1, 'email', $2, $3, $4, $5, 'pendente') RETURNING id`,
+          [orgId, titulo, b.agendado_para, req.auth!.userId, b.company_id ?? null],
+        )).rows[0] as { id: number };
+        const s = (await c.query(
+          `INSERT INTO email_schedules
+             (org_id, template_id, company_id, remetente, destinatario, assunto, corpo, agendado_para, recorrencia, owner_user_id, activity_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
+          [orgId, b.template_id ?? null, b.company_id ?? null, remetente, dest,
+            b.assunto, b.corpo, b.agendado_para, normRec(b.recorrencia), req.auth!.userId, act.id],
+        )).rows[0] as { id: number };
+        await c.query('COMMIT');
+        return s;
+      } catch (e) { await c.query('ROLLBACK'); throw e; }
+    });
+    await audit(req, 'email_schedule', row.id, 'create',
       { company_id: b.company_id ?? null, agendado_para: b.agendado_para });
-    return reply.code(201).send({ schedule: await fullSched(row!.id, orgId) });
+    return reply.code(201).send({ schedule: await fullSched(row.id, orgId) });
   });
 
   app.patch('/api/email-schedules/:id', {
@@ -228,8 +243,8 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
     const b = req.body as Record<string, unknown>;
-    const current = await one<{ owner_user_id: string | null; status: string }>(
-      'SELECT owner_user_id, status FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
+    const current = await one<{ owner_user_id: string | null; status: string; activity_id: string | null }>(
+      'SELECT owner_user_id, status, activity_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
     );
     if (!current) return reply.code(404).send({ error: 'não encontrado' });
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id), { nullWritable: true })) {
@@ -253,6 +268,21 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
         WHERE id = $${params.length - 1} AND org_id = $${params.length}`,
       params,
     );
+    // Mantém o compromisso espelho da Agenda em sincronia: cancelar remove-o; mudar
+    // a data/assunto/destinatário atualiza o horário e o título.
+    if (current.activity_id != null) {
+      if (b.status === 'cancelado') {
+        await query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [current.activity_id, orgId]);
+      } else if ('agendado_para' in b || 'assunto' in b || 'destinatario' in b) {
+        const s = await one<{ destinatario: string; assunto: string; agendado_para: string }>(
+          'SELECT destinatario, assunto, agendado_para FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId]);
+        if (s) {
+          const titulo = `E-mail p/ ${s.destinatario}: ${s.assunto.length > 60 ? `${s.assunto.slice(0, 60)}…` : s.assunto}`;
+          await query('UPDATE activities SET titulo = $1, start_at = $2 WHERE id = $3 AND org_id = $4',
+            [titulo, s.agendado_para, current.activity_id, orgId]);
+        }
+      }
+    }
     await audit(req, 'email_schedule', id, 'update', b);
     return { schedule: await fullSched(id, orgId) };
   });
@@ -263,14 +293,18 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
-    const current = await one<{ owner_user_id: string | null }>(
-      'SELECT owner_user_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
+    const current = await one<{ owner_user_id: string | null; activity_id: string | null }>(
+      'SELECT owner_user_id, activity_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
     );
     if (!current) return reply.code(404).send({ error: 'não encontrado' });
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id), { nullWritable: true })) {
       return reply.code(403).send({ error: 'agendamento de outro vendedor' });
     }
     await query('DELETE FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId]);
+    // Remove o compromisso espelho da Agenda junto.
+    if (current.activity_id != null) {
+      await query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [current.activity_id, orgId]);
+    }
     await audit(req, 'email_schedule', id, 'delete');
     return { deleted: true };
   });
