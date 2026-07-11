@@ -1,32 +1,150 @@
 #!/usr/bin/env bash
-# Deploy de PRODUÇÃO — rode na VPS, dentro do diretório do projeto.
-# Builda a imagem multi-stage e (re)sobe a stack de produção (docker-compose.prod.yml).
-# As migrations rodam no boot do app (idempotentes).
+# Deploy de PRODUÇÃO — script único. Rode na VPS, dentro do diretório do projeto.
 #
-#   ./deploy.sh            # git pull (se for repo) + build + up -d + health + prune
-#   SKIP_GIT=1 ./deploy.sh # não faz git pull
+# Idempotente: na 1ª execução configura firewall/fail2ban e emite o certificado
+# TLS; nas execuções seguintes detecta que já estão prontos e PULA direto pro
+# build + up. Rode com sudo na 1ª vez (firewall precisa de root).
+#
+#   sudo ./deploy.sh          # 1ª vez: firewall + cert + build + up
+#   ./deploy.sh               # reexecução: só git pull + build + up + health
+#   SKIP_GIT=1 ./deploy.sh    # não faz git pull
+#   SKIP_HARDEN=1 ./deploy.sh # não mexe no firewall/fail2ban
+#   sudo ./deploy.sh --lock-ssh   # PASSO À PARTE: fecha SSH (só chave, sem root,
+#                                 #   porta SSH_PORT). Só depois de confirmar login
+#                                 #   por chave — senão te tranca pra fora.
 set -euo pipefail
 
 cd "$(dirname "$0")"
 COMPOSE=(docker compose -f docker-compose.prod.yml)
 
-# --- segurança: produção exige um .env real (NÃO o dev) ---
+# --- .env obrigatório (produção, NÃO o dev) ---
 if [ ! -f .env ]; then
-  echo "ERRO: .env ausente. Rode: cp .env.example .env  e configure JWT_SECRET/POSTGRES_PASSWORD." >&2
+  echo "ERRO: .env ausente. Rode: cp .env.example .env  e configure os segredos/DOMAIN." >&2
   exit 1
 fi
-# carrega .env para checagens e para descobrir APP_PORT
 set -a; . ./.env; set +a
+SSH_PORT="${SSH_PORT:-2222}"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# SSH hardening (opt-in, arriscado) — passo à parte, roda e sai.
+# ─────────────────────────────────────────────────────────────────────────────
+lock_ssh() {
+  [ "$(id -u)" = "0" ] || { echo "ERRO: --lock-ssh precisa de root (sudo)." >&2; exit 1; }
+
+  echo "==> --lock-ssh: verificando chaves autorizadas antes de fechar a senha"
+  local found_key=0 home ak
+  for home in /root /home/*; do
+    ak="$home/.ssh/authorized_keys"
+    [ -s "$ak" ] && { echo "    chave encontrada: $ak"; found_key=1; }
+  done
+  if [ "$found_key" != "1" ]; then
+    echo "ERRO: nenhuma ~/.ssh/authorized_keys com conteúdo. Instale sua chave" >&2
+    echo "      (ssh-copy-id) ANTES de fechar a senha — senão você se tranca." >&2
+    exit 1
+  fi
+
+  echo "==> escrevendo config SSH endurecida (só chave, sem root, porta ${SSH_PORT})"
+  cat >/etc/ssh/sshd_config.d/99-hardening.conf <<EOF
+Port ${SSH_PORT}
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+ChallengeResponseAuthentication no
+PubkeyAuthentication yes
+MaxAuthTries 3
+X11Forwarding no
+EOF
+
+  echo "==> validando (sshd -t)"
+  sshd -t
+
+  # systemd socket-activation (Ubuntu 22.10+): a porta pode vir do ssh.socket.
+  if systemctl list-unit-files 2>/dev/null | grep -q '^ssh.socket'; then
+    mkdir -p /etc/systemd/system/ssh.socket.d
+    printf '[Socket]\nListenStream=\nListenStream=%s\n' "${SSH_PORT}" \
+      >/etc/systemd/system/ssh.socket.d/override.conf
+    systemctl daemon-reload
+    systemctl restart ssh.socket || true
+  fi
+
+  # garante a porta nova liberada no firewall antes de derrubar a sessão
+  command -v ufw >/dev/null 2>&1 && ufw allow "${SSH_PORT}/tcp" comment 'ssh custom' || true
+
+  systemctl restart ssh 2>/dev/null || systemctl restart sshd
+  cat <<EOF
+
+==> SSH fechado ✓  (só chave, sem root, porta ${SSH_PORT})
+
+TESTE AGORA em OUTRO terminal (sem fechar este):
+  ssh -p ${SSH_PORT} <usuario>@<ip-da-vps>
+Funcionou? Feche a porta 22:   sudo ufw delete allow 22/tcp
+Não funcionou? Reverta aqui:   sudo rm /etc/ssh/sshd_config.d/99-hardening.conf && sudo systemctl restart ssh
+EOF
+}
+
+if [ "${1:-}" = "--lock-ssh" ]; then
+  lock_ssh
+  exit 0
+fi
+
+# --- validação dos segredos ---
 : "${JWT_SECRET:?ERRO: defina JWT_SECRET no .env}"
 : "${POSTGRES_PASSWORD:?ERRO: defina POSTGRES_PASSWORD no .env}"
+: "${DOMAIN:?ERRO: defina DOMAIN no .env}"
+: "${ACME_EMAIL:?ERRO: defina ACME_EMAIL no .env}"
 case "${JWT_SECRET}" in
   ""|"change-this-to-a-long-random-secret"|"dev"|"dev-secret"|"integration-test-secret-please-change")
     echo "ERRO: JWT_SECRET inseguro. Gere um segredo forte (ex.: openssl rand -hex 32)." >&2
     exit 1 ;;
 esac
 
-PORT="${APP_PORT:-8080}"
+# ─────────────────────────────────────────────────────────────────────────────
+# 1. Hardening: firewall + fail2ban + updates automáticos (idempotente)
+#    ufw/fail2ban/apt são idempotentes; detectamos "já feito" pela regra 443 no ufw.
+# ─────────────────────────────────────────────────────────────────────────────
+harden() {
+  echo "==> hardening: firewall (ufw) + fail2ban + updates automáticos"
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y ufw fail2ban unattended-upgrades
+
+  ufw --force reset
+  ufw default deny incoming
+  ufw default allow outgoing
+  ufw allow 22/tcp   comment 'ssh (padrão — remova após migrar p/ porta custom)'
+  ufw allow "${SSH_PORT}/tcp" comment 'ssh custom'
+  ufw allow 80/tcp   comment 'http (redirect + ACME)'
+  ufw allow 443/tcp  comment 'https'
+  ufw --force enable
+  ufw status verbose
+
+  cat >/etc/fail2ban/jail.d/sshd.local <<EOF
+[sshd]
+enabled = true
+port    = 22,${SSH_PORT}
+maxretry = 5
+bantime = 1h
+findtime = 10m
+EOF
+  systemctl enable --now fail2ban
+  systemctl restart fail2ban
+
+  cat >/etc/apt/apt.conf.d/20auto-upgrades <<'EOF'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+EOF
+  echo "    hardening ✓  (SSH ainda aceita senha — feche com: sudo ./deploy.sh --lock-ssh)"
+}
+
+if [ "${SKIP_HARDEN:-0}" = "1" ]; then
+  echo "==> hardening pulado (SKIP_HARDEN=1)"
+elif [ "$(id -u)" != "0" ]; then
+  echo "==> não-root: pulando firewall/fail2ban. Rode 'sudo ./deploy.sh' na 1ª vez p/ configurar. Seguindo."
+elif ufw status 2>/dev/null | grep -q '443/tcp'; then
+  echo "==> firewall/fail2ban já configurados — pulando"
+else
+  harden
+fi
 
 # --- atualizar código (se for um checkout git) ---
 if [ -d .git ] && [ "${SKIP_GIT:-0}" != "1" ]; then
@@ -37,21 +155,72 @@ fi
 echo "==> build da imagem de produção"
 "${COMPOSE[@]}" build
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2. Certificado TLS (idempotente): emite na 1ª vez, pula se já existe.
+#    Resolve o ovo-galinha do nginx: cria cert dummy p/ o nginx subir, troca pelo
+#    real via desafio webroot e recarrega. Depois o serviço certbot renova sozinho.
+# ─────────────────────────────────────────────────────────────────────────────
+cert_path="/etc/letsencrypt/live/${DOMAIN}"
+issue_cert() {
+  echo "==> emitindo certificado TLS p/ ${DOMAIN} (Let's Encrypt)"
+  echo "    (o A/AAAA record de ${DOMAIN} precisa apontar pra esta VPS e a porta 80 estar aberta)"
+  local staging_arg=""
+  [ "${STAGING:-0}" = "1" ] && staging_arg="--staging"
+
+  echo "==> cert dummy pro nginx conseguir subir"
+  "${COMPOSE[@]}" run --rm --entrypoint sh certbot -c "\
+    mkdir -p ${cert_path} && \
+    openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+      -keyout ${cert_path}/privkey.pem -out ${cert_path}/fullchain.pem -subj '/CN=localhost'"
+
+  echo "==> subindo nginx com o cert dummy"
+  "${COMPOSE[@]}" up -d nginx
+
+  echo "==> removendo dummy e pedindo o cert real"
+  "${COMPOSE[@]}" run --rm --entrypoint sh certbot -c "rm -rf ${cert_path}"
+  "${COMPOSE[@]}" run --rm --entrypoint certbot certbot \
+    certonly --webroot -w /var/www/certbot ${staging_arg} \
+    --email "${ACME_EMAIL}" -d "${DOMAIN}" --rsa-key-size 4096 \
+    --agree-tos --no-eff-email --non-interactive
+
+  echo "==> recarregando nginx com o cert real"
+  "${COMPOSE[@]}" exec nginx nginx -s reload
+}
+
+if "${COMPOSE[@]}" run --rm --entrypoint sh certbot \
+     -c "[ -s ${cert_path}/fullchain.pem ]" 2>/dev/null; then
+  echo "==> cert TLS de ${DOMAIN} já existe — pulando emissão (certbot renova sozinho)"
+else
+  issue_cert
+fi
+
 echo "==> subindo a stack (migrations rodam no boot)"
 "${COMPOSE[@]}" up -d
 
-echo "==> aguardando health em http://localhost:${PORT}/api/health"
+# app não é publicado no host (só o nginx expõe 80/443) — checa o healthcheck do container.
+echo "==> aguardando health do container app (healthcheck interno)"
 ok=0
+cid="$("${COMPOSE[@]}" ps -q app)"
 for _ in $(seq 1 45); do
-  if curl -fsS "http://localhost:${PORT}/api/health" >/dev/null 2>&1; then ok=1; break; fi
+  status="$(docker inspect -f '{{.State.Health.Status}}' "$cid" 2>/dev/null || echo starting)"
+  [ "$status" = "healthy" ] && { ok=1; break; }
   sleep 2
 done
 if [ "$ok" != "1" ]; then
-  echo "ERRO: app não respondeu health a tempo. Logs:" >&2
+  echo "ERRO: app não ficou healthy a tempo. Logs:" >&2
   "${COMPOSE[@]}" logs --tail=40 app >&2
   exit 1
 fi
-echo "    healthy ✓"
+echo "    app healthy ✓"
+
+# confirma que o edge HTTPS responde de fora (nginx -> app)
+echo "==> checando HTTPS público em https://${DOMAIN}/api/health"
+if curl -fsS --max-time 10 "https://${DOMAIN}/api/health" >/dev/null 2>&1; then
+  echo "    HTTPS ok ✓"
+else
+  echo "    AVISO: não respondeu via https://${DOMAIN} (DNS/cert/porta?). App está de pé; verifique o nginx:" >&2
+  "${COMPOSE[@]}" logs --tail=20 nginx >&2 || true
+fi
 
 echo "==> limpando imagens antigas"
 docker image prune -f >/dev/null || true

@@ -55,9 +55,19 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}@db:5432/${POSTGRES_DB:-rs}
       JWT_SECRET: ${JWT_SECRET:?defina JWT_SECRET no .env}
       PORT: 8080
+      # Nº de proxies reversos à frente do app. Com o nginx na frente = 1 salto.
+      # Fastify confia só nos últimos N hops do X-Forwarded-For (anti-spoof do XFF,
+      # que burlaria o rate-limit por IP). Ver server/src/config.ts.
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-1}
       RECOMMEND_WORK_MEM: ${RECOMMEND_WORK_MEM:-64MB}
       AUTH_RATE_LIMIT_MAX: ${AUTH_RATE_LIMIT_MAX:-10}
       AUTH_RATE_LIMIT_WINDOW: ${AUTH_RATE_LIMIT_WINDOW:-1 minute}
+      # Pool/timeout do Postgres (db.ts), TTL do JWT (config.ts) e nível de log
+      # (app.ts). Passthrough do .env — todos com default no próprio código.
+      PG_POOL_MAX: ${PG_POOL_MAX:-20}
+      PG_STATEMENT_TIMEOUT_MS: ${PG_STATEMENT_TIMEOUT_MS:-30000}
+      JWT_TTL_SECONDS: ${JWT_TTL_SECONDS:-604800}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
       # Mídia do WhatsApp em disco (volume wa_media). NÃO entra no pg_dump diário —
       # faça backup do volume à parte se a mídia for crítica.
       WHATSAPP_MEDIA_DIR: /data/wa-media
@@ -71,8 +81,56 @@ services:
       WHATSAPP_WEBHOOK_TOKEN: ${WHATSAPP_WEBHOOK_TOKEN:?defina WHATSAPP_WEBHOOK_TOKEN no .env}
     volumes:
       - wa_media:/data/wa-media
+    # NÃO publica porta no host: o app só é alcançável pela rede interna do compose
+    # (nginx -> app:8080). TLS/login trafegam só via HTTPS pelo nginx. Pra depurar
+    # localmente na VPS, exponha em loopback: `docker compose ... exec app ...` ou
+    # descomente e prenda em 127.0.0.1 (nunca 0.0.0.0):
+    #   ports: ["127.0.0.1:${APP_PORT:-8080}:8080"]
+    healthcheck:
+      # Node 24 tem fetch global — sem precisar de curl/wget na imagem alpine.
+      test: ["CMD-SHELL", "node -e \"fetch('http://localhost:8080/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    restart: unless-stopped
+
+  # ── Reverse proxy + TLS (nginx + Let's Encrypt) ──────────────────────────────
+  # Única porta publicada na internet: 80/443. 80 só serve o desafio ACME e
+  # redireciona pra 443. O cert vive no volume certbot_conf, renovado pelo serviço
+  # certbot. Reload a cada 6h pra pegar cert renovado sem downtime.
+  # Primeira emissão do cert é feita pelo ./deploy.sh (idempotente).
+  nginx:
+    image: nginx:1.27-alpine
+    depends_on:
+      - app
     ports:
-      - "${APP_PORT:-8080}:8080"
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMAIN: ${DOMAIN:?defina DOMAIN no .env}
+      # envsubst do entrypoint oficial só troca ${DOMAIN} no template — preserva
+      # $host/$remote_addr etc. da config do nginx.
+      NGINX_ENVSUBST_FILTER: DOMAIN
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      - ./nginx/options-ssl.conf:/etc/nginx/snippets/options-ssl.conf:ro
+      - certbot_conf:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+    # Como o command começa com `sh` (não `nginx`), o entrypoint oficial pula os
+    # scripts de init — então rodamos o envsubst do template à mão antes de subir.
+    # O loop recarrega o nginx a cada 6h pra pegar cert renovado sem downtime.
+    command: sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh && { while :; do sleep 6h & wait $${!}; nginx -s reload; done & } && exec nginx -g 'daemon off;'"
+    restart: unless-stopped
+
+  # Renova o cert a cada 12h (no-op se faltar >30 dias). A emissão inicial é feita
+  # pelo ./deploy.sh. Compartilha os volumes de cert/webroot com o nginx.
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    entrypoint: sh -c "trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done"
     restart: unless-stopped
 
   # ── WhatsApp (Evolution API) ─────────────────────────────────────────────
@@ -147,3 +205,6 @@ volumes:
   wa_media:
   evolution_instances:
   evolution_pgdata:
+  # Certificados Let's Encrypt (persistem entre deploys) e webroot do desafio ACME.
+  certbot_conf:
+  certbot_www:
