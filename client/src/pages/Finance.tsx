@@ -70,7 +70,7 @@ export function Finance(): React.JSX.Element {
   };
 
   const load = async (): Promise<void> => {
-    const r = await api.get<{ entries: FinanceEntry[]; totais?: Totais }>(`/api/finance?${buildQs(0)}&totais=1`);
+    const r = await api.get<{ entries: FinanceEntry[]; totais?: Totais }>(`/api/finance?${buildQs(0)}&totais=true`);
     setEntries(r.entries);
     setTotais(r.totais ?? null);
     setHasMore(r.entries.length === PAGE);

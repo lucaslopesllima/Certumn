@@ -2,6 +2,7 @@
 // 1) Nominatim (OSM) com busca estruturada (rua + número + cidade + UF + CEP) -> nível de rua.
 // 2) fallback BrasilAPI CEP v2 -> coordenada do CEP (nível de quadra), quando o CEP tem geo.
 // Nominatim exige User-Agent e no máx ~1 req/s: throttle global simples.
+import { config } from './config.ts';
 
 export interface GeoResult { lat: number; lon: number; precisao: string; fonte: string; }
 
@@ -27,7 +28,7 @@ async function nominatim(a: Addr): Promise<GeoResult | null> {
   if (a.cep) params.set('postalcode', a.cep);
   try {
     await throttleNominatim();
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    const resp = await fetch(`${config.nominatimUrl}/search?${params.toString()}`, {
       headers: { 'User-Agent': 'RepresentativeSeller/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
       signal: AbortSignal.timeout(5000), // serviço externo lento não pode travar a request
     });
@@ -46,7 +47,7 @@ async function brasilapiCep(cep?: string | null): Promise<GeoResult | null> {
   const c = (cep ?? '').replace(/\D/g, '');
   if (c.length !== 8) return null;
   try {
-    const resp = await fetch(`https://brasilapi.com.br/api/cep/v2/${c}`, { signal: AbortSignal.timeout(5000) });
+    const resp = await fetch(`${config.brasilApiUrl}/api/cep/v2/${c}`, { signal: AbortSignal.timeout(5000) });
     if (!resp.ok) return null;
     const j = await resp.json() as { location?: { coordinates?: { latitude?: string | number; longitude?: string | number } } };
     const co = j.location?.coordinates;
@@ -70,7 +71,7 @@ export async function geocodeText(q: string): Promise<(GeoResult & { label: stri
   const params = new URLSearchParams({ format: 'jsonv2', limit: '1', countrycodes: 'br', q: term });
   try {
     await throttleNominatim();
-    const resp = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    const resp = await fetch(`${config.nominatimUrl}/search?${params.toString()}`, {
       headers: { 'User-Agent': 'RepresentativeSeller/1.0 (geocode sob demanda)', 'Accept-Language': 'pt-BR' },
       signal: AbortSignal.timeout(5000), // serviço externo lento não pode travar a request
     });

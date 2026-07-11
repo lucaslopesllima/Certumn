@@ -1,0 +1,27 @@
+{
+  "name": "rs-e2e",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=24" },
+  "scripts": {
+    "stack:up": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --wait db && docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml exec -T db psql -U postgres -c \"SELECT 'CREATE DATABASE rs_e2e' WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'rs_e2e')\\gexec\" && docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --wait app web mailpit stub",
+    "stack:up:pwa": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml up -d --wait --build app-pwa",
+    "stack:down": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml down",
+    "stack:logs": "docker compose -f ../docker-compose.yml -f ../docker-compose.e2e.yml logs -f app",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
+    "test:core": "playwright test --grep @core",
+    "test:pwa": "npm run stack:up:pwa && playwright test --project=pwa",
+    "report": "playwright show-report",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.3"
+  },
+  "dependencies": {
+    "pg": "^8.13.1",
+    "dotenv": "^16.4.5"
+  }
+}

@@ -68,4 +68,9 @@ export const config = {
   // = grava em disco e guarda só o caminho no banco; vazio = mantém base64 no
   // Postgres (comportamento legado). Ver mediaStore.ts.
   whatsappMediaDir: process.env.WHATSAPP_MEDIA_DIR ?? '',
+  // Serviços externos de geocode/roteamento — hosts públicos por padrão; e2e
+  // aponta pra um stub local via env para não depender de rede/rate-limit externo.
+  nominatimUrl: process.env.NOMINATIM_URL ?? 'https://nominatim.openstreetmap.org',
+  brasilApiUrl: process.env.BRASILAPI_URL ?? 'https://brasilapi.com.br',
+  osrmUrl: process.env.OSRM_URL ?? 'https://router.project-osrm.org',
 };

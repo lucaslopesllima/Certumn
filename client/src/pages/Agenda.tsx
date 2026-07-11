@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api, ApiError } from '../lib/api.ts';
 import type { Activity, KanbanCard, OptimizeResult } from '../lib/types.ts';
 import { Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
@@ -51,7 +51,16 @@ export function Agenda(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [cursor, setCursor] = useState(() => startOfMonth(new Date()));
   const [weekAnchor, setWeekAnchor] = useState(() => new Date());
-  const [view, setView] = useState<'mes' | 'semana' | 'lista'>('mes');
+  // View persistida: sobrevive a reload (inclusive offline no PWA — o usuário que
+  // escolheu "Lista" continua na lista ao reabrir sem rede).
+  const [view, setView] = useState<'mes' | 'semana' | 'lista'>(() => {
+    const saved = localStorage.getItem('rs_agenda_view');
+    return saved === 'mes' || saved === 'semana' || saved === 'lista' ? saved : 'mes';
+  });
+  const changeView = useCallback((v: 'mes' | 'semana' | 'lista'): void => {
+    setView(v);
+    try { localStorage.setItem('rs_agenda_view', v); } catch { /* quota/priv mode */ }
+  }, []);
   const [tipoFilter, setTipoFilter] = useState<Set<string>>(new Set(TIPOS));
   const [status, setStatus] = useState<'todos' | 'pendente' | 'feito'>('todos');
   const [addAt, setAddAt] = useState<Date | null>(null);     // add-modal open + preset date
@@ -233,7 +242,7 @@ export function Agenda(): React.JSX.Element {
             <option value="pendente">Pendentes</option>
             <option value="feito">Concluídos</option>
           </select>
-          <Segmented value={view} onChange={setView} options={[
+          <Segmented value={view} onChange={changeView} options={[
             { value: 'mes', label: 'Mês', icon: 'calendar' },
             { value: 'semana', label: 'Semana', icon: 'columns' },
             { value: 'lista', label: 'Lista', icon: 'list' },

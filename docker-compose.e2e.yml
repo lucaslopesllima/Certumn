@@ -1,0 +1,78 @@
+# Override para e2e: `docker compose -f docker-compose.yml -f docker-compose.e2e.yml up -d --wait db app web mailpit stub`
+# (atalho: `npm run stack:up` dentro de e2e/). Banco dedicado rs_e2e (nunca rs
+# dev — ver e2e/global-setup.ts), URLs externas (Nominatim/BrasilAPI/OSRM/
+# Evolution) apontando pro stub local, e Mailpit no lugar de um SMTP real.
+services:
+  db:
+    ports: ["55432:5432"]   # host precisa alcançar p/ global-setup.ts e fixtures/db.ts
+
+  app:
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/rs_e2e
+      JWT_SECRET: e2e-secret
+      AUTH_RATE_LIMIT_MAX: "1000000"     # mesmo bypass do Vitest (server/vitest.config.ts)
+      NOMINATIM_URL: http://stub:8099
+      BRASILAPI_URL: http://stub:8099
+      OSRM_URL: http://stub:8099
+      EVOLUTION_API_URL: http://stub:8099/evolution
+      EVOLUTION_API_KEY: e2e-evolution-key
+      WHATSAPP_WEBHOOK_TOKEN: e2e-webhook-token
+      WHATSAPP_WEBHOOK_URL: http://app:8080/api/webhooks/whatsapp?token=e2e-webhook-token
+      SMTP_HOST_OVERRIDE_NOTE: "SMTP por org é configurado via UI/API (Settings), não env — aponte pro mailpit:1025 no teste"
+
+  web:
+    environment:
+      VITE_PROXY_TARGET: http://app:8080
+
+  # Serviços de WhatsApp real não sobem em e2e — o stub cobre o suficiente para
+  # testar a UI de conexão/envio, e o webhook é simulado direto pelos testes
+  # (POST /api/webhooks/whatsapp) sem precisar do Baileys de verdade.
+  evolution:
+    profiles: ["disabled"]
+  evolution_db:
+    profiles: ["disabled"]
+  pgadmin:
+    profiles: ["disabled"]
+
+  # Stub HTTP único: OSRM /trip, Nominatim /search, BrasilAPI /api/cep/v2/:cep,
+  # Evolution /evolution/* — respostas determinísticas (ver e2e/stub-server).
+  stub:
+    image: node:24-slim
+    working_dir: /app
+    volumes:
+      - ./e2e/stub-server:/app
+    command: node index.js
+    ports:
+      - "8099:8099"
+
+  # SMTP de teste: UI de Configurações aponta pro mailpit:1025; asserts via API
+  # REST em http://localhost:8025/api/v1/messages.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  # Build de produção (client buildado + Fastify servindo os estáticos via
+  # CLIENT_DIR — ver Dockerfile raiz) só para a suíte 20-pwa-offline: o service
+  # worker do PWA não roda em `vite dev` (devOptions.enabled:false), só no build
+  # real. Porta separada (8090) — não conflita com o `app` de dev em :8080.
+  app-pwa:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@db:5432/rs_e2e
+      JWT_SECRET: e2e-secret
+      AUTH_RATE_LIMIT_MAX: "1000000"
+      NOMINATIM_URL: http://stub:8099
+      BRASILAPI_URL: http://stub:8099
+      OSRM_URL: http://stub:8099
+      EVOLUTION_API_URL: http://stub:8099/evolution
+      EVOLUTION_API_KEY: e2e-evolution-key
+      WHATSAPP_WEBHOOK_TOKEN: e2e-webhook-token
+    ports:
+      - "8090:8080"

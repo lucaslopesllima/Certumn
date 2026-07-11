@@ -121,6 +121,8 @@ services:
     depends_on:
       evolution_db:
         condition: service_healthy
+      redis:
+        condition: service_started
     environment:
       SERVER_URL: http://evolution:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-dev-evolution-key}
@@ -138,8 +140,17 @@ services:
       DATABASE_SAVE_MESSAGE_UPDATE: "true"
       DATABASE_SAVE_DATA_CONTACTS: "true"
       DATABASE_SAVE_DATA_CHATS: "true"
-      CACHE_REDIS_ENABLED: "false"
-      CACHE_LOCAL_ENABLED: "true"
+      # Cache do Evolution no Redis, fora do heap V8. Com CACHE_LOCAL_ENABLED o
+      # cache (chats/contatos/mensagens) vive no heap do processo Node e cresce
+      # linear com nº de instâncias — GC do V8 trava/derruba o processo antes do
+      # limite físico de RAM. Redis tira esse cache do heap: processo fica leve e
+      # estável, teto de conexões simultâneas sobe. Sessão persiste no Postgres
+      # (DATABASE_SAVE_DATA_* true), então perder o Redis não perde sessão.
+      CACHE_REDIS_ENABLED: "true"
+      CACHE_REDIS_URI: redis://redis:6379/6
+      CACHE_REDIS_PREFIX_KEY: evolution
+      CACHE_REDIS_SAVE_INSTANCES: "false"
+      CACHE_LOCAL_ENABLED: "false"
       # entrega global de webhook (além do por-instância configurado no create)
       WEBHOOK_GLOBAL_ENABLED: "false"
     volumes:
@@ -160,6 +171,13 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  # Cache quente do Evolution (chats/contatos/mensagens), fora do heap Node.
+  # Sem volume — é só cache; a fonte de verdade é o Postgres do evolution
+  # (DATABASE_SAVE_DATA_* true). Perder o Redis não perde sessão.
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 512mb --maxmemory-policy allkeys-lru
 
 volumes:
   pgdata_dev:

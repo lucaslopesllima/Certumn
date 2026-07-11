@@ -76,8 +76,8 @@ export function Carteiras(): React.JSX.Element {
       arr.push(c); byOwner.set(k, arr);
     }
     const out = users
-      .filter((u) => u.ativo || byOwner.has(u.id))
-      .map((u) => ({ ownerId: u.id, nome: u.nome ?? u.email, ativo: u.ativo, clientes: byOwner.get(u.id) ?? [] }));
+      .filter((u) => u.ativo || byOwner.has(Number(u.id)))
+      .map((u) => ({ ownerId: Number(u.id), nome: u.nome ?? u.email, ativo: u.ativo, clientes: byOwner.get(Number(u.id)) ?? [] }));
     if (byOwner.has(SEM_DONO)) {
       out.unshift({ ownerId: SEM_DONO, nome: 'Sem vendedor', ativo: true, clientes: byOwner.get(SEM_DONO) ?? [] });
     }

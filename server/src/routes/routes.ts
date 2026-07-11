@@ -4,13 +4,13 @@ import { requireAuth, requirePermission } from '../auth.ts';
 import { geocodeAddr } from '../geocode.ts';
 import { fuelEstimate } from '../fuel.ts';
 import { scopeOwner, canWriteOwned } from '../scope.ts';
+import { config } from '../config.ts';
 
 // Planejador de rota. Empresas selecionadas (do funil) -> melhor ordem de visita
 // (TSP via OSRM /trip público) -> distância/duração ida-e-volta -> custo de combustível
 // a partir do veículo cadastrado. POST /optimize só calcula (preview); POST / persiste.
 
 const MAX_STOPS = 25;                 // limite do OSRM público (ida+volta = MAX_STOPS+1 pontos)
-const OSRM = 'https://router.project-osrm.org';
 
 type Geo = { lat: number; lon: number };
 
@@ -131,7 +131,7 @@ async function osrmTrip(pts: Geo[]): Promise<{
   legByPt: Record<number, { distKm: number; durMin: number }>; // métrica do trecho até cada ponto
 }> {
   const coordStr = pts.map((p) => `${p.lon},${p.lat}`).join(';');
-  const url = `${OSRM}/trip/v1/driving/${coordStr}?source=first&roundtrip=true&geometries=geojson&overview=full`;
+  const url = `${config.osrmUrl}/trip/v1/driving/${coordStr}?source=first&roundtrip=true&geometries=geojson&overview=full`;
   const resp = await fetch(url, { signal: AbortSignal.timeout(8000) }); // OSRM público lento não pode travar a request
   if (!resp.ok) throw new Error(`OSRM ${resp.status}`);
   const j = (await resp.json()) as OsrmResp;
