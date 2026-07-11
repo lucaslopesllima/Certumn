@@ -98,7 +98,7 @@ services:
   # Gateway WhatsApp não oficial (Baileys por baixo). Expõe REST + entrega
   # webhooks pro app. Painel/Swagger em http://localhost:8081 (apikey = key acima).
   evolution:
-    image: atendai/evolution-api:v2.1.1
+    image: evoapicloud/evolution-api:v2.3.7
     depends_on:
       evolution_db:
         condition: service_healthy
