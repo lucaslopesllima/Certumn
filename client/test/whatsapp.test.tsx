@@ -742,18 +742,18 @@ describe('WhatsApp — ContactDetails', () => {
     fireEvent.click(screen.getByRole('button', { name: /Novo/ }));
     const nome = await screen.findByPlaceholderText('Nome *');
     // nome vazio avisa
-    fireEvent.click(screen.getByRole('button', { name: /Salvar/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Informe o nome.'));
     // email inválido avisa
     fireEvent.change(nome, { target: { value: 'Zé' } });
     fireEvent.change(screen.getByPlaceholderText('E-mail'), { target: { value: 'invalido' } });
-    fireEvent.click(screen.getByRole('button', { name: /Salvar/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('E-mail inválido.'));
     // salva
     fireEvent.change(screen.getByPlaceholderText('E-mail'), { target: { value: 'ze@x.com' } });
     fireEvent.change(screen.getByPlaceholderText('Cargo'), { target: { value: 'Diretor' } });
     fireEvent.change(screen.getByPlaceholderText('Telefone'), { target: { value: '11988887777' } });
-    fireEvent.click(screen.getByRole('button', { name: /Salvar/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Zé', company_id: 100 })));
   });
 
@@ -763,7 +763,7 @@ describe('WhatsApp — ContactDetails', () => {
     fireEvent.click((await screen.findByText('Acme')).closest('button')!);
     fireEvent.click((await screen.findByText(/Bob/)).closest('button')!);
     // editar salva (PATCH)
-    fireEvent.click(await screen.findByRole('button', { name: /Salvar/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/contacts/11', expect.objectContaining({ nome: 'Bob' })));
   });
 
@@ -783,8 +783,47 @@ describe('WhatsApp — ContactDetails', () => {
     fireEvent.click((await screen.findByText('Acme')).closest('button')!);
     fireEvent.click(await screen.findByRole('button', { name: /Novo/ }));
     fireEvent.change(await screen.findByPlaceholderText('Nome *'), { target: { value: 'Zé' } });
-    fireEvent.click(screen.getByRole('button', { name: /Salvar/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('ct fail'));
+  });
+
+  it('"Salvar contato": empresa vinculada pré-preenche número e empresa', async () => {
+    await mountConnected();
+    await openChat('Alice');
+    fireEvent.click((await screen.findByText('Acme')).closest('button')!);
+    // número da conversa não é um contato salvo -> botão aparece
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar contato' }));
+    const tel = await screen.findByPlaceholderText('Telefone');
+    expect((tel as HTMLInputElement).value).not.toBe(''); // número pré-preenchido
+    fireEvent.change(await screen.findByPlaceholderText('Nome *'), { target: { value: 'Ciclano' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Ciclano', company_id: 100 })));
+  });
+
+  it('"Salvar contato": sem empresa vinculada usa só o número', async () => {
+    await mountConnected();
+    await openChat('(11) 3333-4444'); // chatD: sem empresa, com número
+    const hits = screen.getAllByText('(11) 3333-4444');
+    fireEvent.click(hits[1].closest('button')!); // abre o painel pelo cabeçalho
+    expect(await screen.findByText('Dados do contato')).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Salvar contato' }));
+    const tel = await screen.findByPlaceholderText('Telefone');
+    expect((tel as HTMLInputElement).value).toBe('(11) 3333-4444');
+    fireEvent.change(await screen.findByPlaceholderText('Nome *'), { target: { value: 'Fulano' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Fulano', company_id: null })));
+  });
+
+  it('"Salvar contato" não aparece quando o número já é um contato', async () => {
+    m.get.mockImplementation((p: string) => (p.startsWith('/api/contacts?')
+      ? Promise.resolve({ contacts: [{ id: 30, nome: 'Alice C', cargo: null, telefone: '5511988887777', email: null, company_id: 100, represented_id: null }] })
+      : defaultGet(p)) as Promise<never>);
+    await mountConnected();
+    await openChat('Alice');
+    fireEvent.click((await screen.findByText('Acme')).closest('button')!);
+    expect(await screen.findByText('Dados do contato')).toBeInTheDocument();
+    expect(await screen.findByText(/Alice C/)).toBeInTheDocument(); // contato já carregado
+    expect(screen.queryByRole('button', { name: 'Salvar contato' })).not.toBeInTheDocument();
   });
 
   it('erro ao excluir contato', async () => {

@@ -444,7 +444,7 @@ function NumberModal({ chatId, onClose, onSet }: { chatId: number; onClose: () =
 // Cria/edita um contato vinculado à empresa da conversa. Novo contato já vem com
 // o telefone do WhatsApp pré-preenchido (relaciona o contato ao número do chat).
 function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, onDeleted }: {
-  companyId: number; contact: Contact | null; defaultPhone?: string | null;
+  companyId: number | null; contact: Contact | null; defaultPhone?: string | null;
   onClose: () => void; onSaved: (c: Contact) => void; onDeleted: (id: number) => void;
 }): React.JSX.Element {
   const [nome, setNome] = useState(contact?.nome ?? '');
@@ -545,6 +545,22 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
   const media = useMemo(() => messages.filter((m) => m.tipo === 'imagem' || m.tipo === 'video'), [messages]);
   const needsNumber = !chat.numero && chat.remote_jid.endsWith('@lid');
 
+  // Este número já está salvo como contato (da empresa vinculada)? Compara só
+  // dígitos, ignorando código de país/máscara. Sem empresa, `contatos` fica
+  // vazio, então o botão "Salvar contato" aparece com o número já preenchido.
+  const savedContact = useMemo(() => {
+    const cd = (chat.numero ?? '').replace(/\D/g, '');
+    if (!cd) return undefined;
+    return contatos.find((c) => {
+      const td = (c.telefone ?? '').replace(/\D/g, '');
+      if (!td) return false;
+      const n = Math.min(td.length, cd.length, 11);
+      return td.slice(-n) === cd.slice(-n);
+    });
+  }, [contatos, chat.numero]);
+  const canSaveContact = !isGroup && !!chat.numero && !savedContact;
+  const saveContact = (): void => setContactModal({ contact: null });
+
   return (
    <>
     <aside className="absolute inset-y-0 right-0 z-30 flex w-full max-w-sm flex-col border-l border-ink-200 bg-surface shadow-pop animate-[toastIn_.18s_ease-out]">
@@ -585,13 +601,17 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
                   <Icon name="building" size={16} className="text-ink-400" />
                   <span className="truncate">{chat.company_fantasia || chat.company_nome}</span>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Btn size="sm" icon="plus" onClick={onOrder}>Criar pedido</Btn>
+                  {canSaveContact && <Btn size="sm" variant="soft" icon="users" onClick={saveContact}>Salvar contato</Btn>}
                   {can('whatsapp.link') && <Btn size="sm" variant="soft" icon="pencil" onClick={onLink}>Trocar</Btn>}
                 </div>
               </div>
             ) : (
-              can('whatsapp.link') && <Btn size="sm" variant="soft" icon="building" onClick={onLink}>Vincular empresa</Btn>
+              <div className="flex flex-wrap gap-2">
+                {can('whatsapp.link') && <Btn size="sm" variant="soft" icon="building" onClick={onLink}>Vincular empresa</Btn>}
+                {canSaveContact && <Btn size="sm" variant="soft" icon="users" onClick={saveContact}>Salvar contato</Btn>}
+              </div>
             )}
           </div>
         )}
@@ -675,7 +695,7 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
         )}
       </div>
     </aside>
-    {contactModal && chat.company_id != null && (
+    {contactModal && (
       <ContactFormModal companyId={chat.company_id} contact={contactModal.contact} defaultPhone={chat.numero}
         onClose={() => setContactModal(null)}
         onSaved={(c) => setContatos((xs) => (xs.some((x) => x.id === c.id) ? xs.map((x) => (x.id === c.id ? c : x)) : [...xs, c]))}
