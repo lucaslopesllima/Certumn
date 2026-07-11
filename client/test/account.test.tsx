@@ -1,6 +1,6 @@
 // Minha conta: carga, salvar dados, ViaCEP, troca de senha com rotação de token.
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Account } from '../src/pages/Account.tsx';
 import { api, getToken, setToken, ApiError } from '../src/lib/api.ts';
@@ -106,5 +106,48 @@ describe('Account', () => {
     expect(m.post).toHaveBeenCalledWith('/api/account/password',
       { senha_atual: 'atual123', nova_senha: 'novasenha1' });
     expect(getToken()).toBe('rotacionado');
+  });
+
+  it('erro do POST de senha exibe a mensagem', async () => {
+    m.post.mockRejectedValueOnce(new ApiError(400, 'senha atual incorreta'));
+    render(<Account />);
+    await screen.findByDisplayValue('Minha Rep');
+    const pwd = document.querySelectorAll('input[type="password"]');
+    await userEvent.type(pwd[0] as HTMLElement, 'atual123');
+    await userEvent.type(pwd[1] as HTMLElement, 'novasenha1');
+    await userEvent.type(pwd[2] as HTMLElement, 'novasenha1');
+    await userEvent.click(screen.getByRole('button', { name: /Atualizar senha/ }));
+    expect(await screen.findByText('senha atual incorreta')).toBeInTheDocument();
+  });
+
+  it('edita CNPJ, e-mail, telefone e dispara ViaCEP no blur', async () => {
+    fetchMock.mockResolvedValue({ json: async () => ({ logradouro: 'Rua X' }) });
+    render(<Account />);
+    await screen.findByDisplayValue('Minha Rep');
+    await userEvent.type(screen.getByPlaceholderText('00.000.000/0000-00'), '11222333000144');
+    await userEvent.type(screen.getByDisplayValue('eu@org.com'), 'x');
+    await userEvent.type(screen.getByPlaceholderText('(00) 00000-0000'), '11999990000');
+    const cep = screen.getByPlaceholderText('00000-000');
+    fireEvent.blur(cep, { target: { value: '01310100' } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+  });
+
+  it('conta individual: migra para escritório (cancelar, falhar e concluir)', async () => {
+    m.get.mockResolvedValue({ org: { ...ORG, tipo_conta: 'individual' }, user: USER });
+    m.post
+      .mockRejectedValueOnce(new ApiError(500, 'boom'))
+      .mockResolvedValueOnce({ org: { ...ORG, tipo_conta: 'escritorio' } });
+    render(<Account />);
+    await screen.findByDisplayValue('Minha Rep');
+    expect(screen.getByText(/sem equipe, grupos ou carteiras/)).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Migrar para escritório/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    // reabre e tenta migrar (primeira falha, segunda sucesso)
+    await userEvent.click(screen.getByRole('button', { name: /Migrar para escritório/ }));
+    await userEvent.click(screen.getByRole('button', { name: /Confirmar migração/ }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/account/upgrade'));
+    await userEvent.click(screen.getByRole('button', { name: /Confirmar migração/ }));
+    await waitFor(() => expect(screen.getByText(/Escritório de representação/)).toBeInTheDocument());
   });
 });

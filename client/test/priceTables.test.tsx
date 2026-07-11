@@ -110,4 +110,53 @@ describe('Catalog · Tabelas de preço', () => {
     await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/price-tables/3'));
     expect(screen.queryByText('Tabela 2026')).not.toBeInTheDocument();
   });
+
+  it('formulário: itens, datas, ativa, preço vazio bloqueia, remove item e cancela', async () => {
+    await openTab();
+    await screen.findByText('Tabela 2026');
+    await userEvent.click(screen.getByRole('button', { name: /Nova tabela/ }));
+    await userEvent.type(screen.getByPlaceholderText('Nome da tabela *'), 'Verão');
+    await userEvent.selectOptions(screen.getByDisplayValue('Representada *'), '5');
+    const dates = document.querySelectorAll('input[type="date"]');
+    fireEvent.change(dates[0]!, { target: { value: '2026-07-01' } });
+    fireEvent.change(dates[1]!, { target: { value: '2026-12-31' } });
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.selectOptions(screen.getByLabelText('Adicionar produto'), '9');
+
+    const preco = screen.getByLabelText('Preço Produto A');
+    await userEvent.clear(preco);
+    await userEvent.type(preco, '80');
+    await userEvent.type(screen.getByLabelText('Desconto máx Produto A'), '5');
+
+    await userEvent.clear(preco);
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar tabela' }));
+    expect(m.post).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByLabelText('Remover item'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByPlaceholderText('Nome da tabela *')).not.toBeInTheDocument();
+  });
+
+  it('erro ao salvar tabela exibe toast e mantém o formulário', async () => {
+    m.post.mockRejectedValueOnce(new Error('falhou'));
+    await openTab();
+    await screen.findByText('Tabela 2026');
+    await userEvent.click(screen.getByRole('button', { name: /Nova tabela/ }));
+    await userEvent.type(screen.getByPlaceholderText('Nome da tabela *'), 'Verão');
+    await userEvent.selectOptions(screen.getByDisplayValue('Representada *'), '5');
+    fireEvent.change(document.querySelector('input[type="date"]')!, { target: { value: '2026-07-01' } });
+    await userEvent.selectOptions(screen.getByLabelText('Adicionar produto'), '9');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar tabela' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+    expect(screen.getByPlaceholderText('Nome da tabela *')).toBeInTheDocument();
+  });
+
+  it('excluir tabela: falha reverte', async () => {
+    m.del.mockRejectedValueOnce(new Error('offline'));
+    await openTab();
+    await screen.findByText('Tabela 2026');
+    await userEvent.click(screen.getByLabelText('Excluir tabela'));
+    await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/price-tables/3'));
+    await waitFor(() => expect(screen.getByText('Tabela 2026')).toBeInTheDocument());
+  });
 });

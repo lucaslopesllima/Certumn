@@ -1,6 +1,6 @@
 // Funil kanban: board, colunas, KPIs, drag-drop otimista com revert.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Kanban } from '../src/pages/Kanban.tsx';
 import { api } from '../src/lib/api.ts';
@@ -14,8 +14,34 @@ vi.mock('../src/lib/auth.tsx', () => {
   const useAuth = vi.fn();
   return { useAuth, useOptionalUser: () => useAuth().user ?? null };
 });
+vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn(async () => true) }));
 const m = vi.mocked(api);
 const useAuthMock = vi.mocked(useAuth);
+
+// window.location.href é usado pelos atalhos de WhatsApp; substitui por um objeto simples.
+const stubLocation = (): { href: string } => {
+  const loc = { href: '' };
+  Object.defineProperty(window, 'location', { configurable: true, writable: true, value: loc });
+  return loc;
+};
+
+// GET com os endpoints do board; o caller passa overrides por rota.
+const kanbanGet = (over: Record<string, unknown> = {}) => async (p: string): Promise<unknown> => {
+  const routes: Record<string, unknown> = {
+    '/api/kanban': { stages: STAGES, cards: [card({ id: 1 })] },
+    '/api/represented': { empresas: [] },
+    '/api/brands': { brands: [] },
+    '/api/catalog': { items: [] },
+    '/api/scenarios': { items: [] },
+    '/api/actions': { items: [] },
+    ...over,
+  };
+  for (const [k, v] of Object.entries(routes)) if (p === k) return v;
+  if (p.startsWith('/api/contacts')) return (over['/api/contacts'] as unknown) ?? { contacts: [] };
+  if (p.startsWith('/api/companies/')) return over['/api/companies'] as unknown;
+  if (p.startsWith('/api/sample-requests')) return (over['/api/sample-requests'] as unknown) ?? { samples: [] };
+  return { items: [] };
+};
 
 const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
@@ -36,6 +62,10 @@ const card = (over: Record<string, unknown>): Record<string, unknown> => ({
 beforeEach(() => {
   vi.mocked(m.get).mockReset();
   vi.mocked(m.patch).mockReset();
+  vi.mocked(m.post).mockReset();
+  vi.mocked(m.del).mockReset();
+  m.del.mockResolvedValue({});
+  m.patch.mockResolvedValue({ relationship: { status: 'prospect' } });
   useAuthMock.mockReturnValue({
     user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
     can: () => true,
@@ -104,17 +134,260 @@ describe('Kanban', () => {
     expect(m.patch).not.toHaveBeenCalled();
   });
 
-  it('botão +Amostra abre o modal de solicitar amostra', async () => {
+  it('botão +Amostra: abre, fecha e solicita amostra', async () => {
+    m.get.mockImplementation(kanbanGet({ '/api/catalog': { items: [{ id: 1, nome: 'Prod', ativo: true }] } }));
     render(<Kanban />);
     await screen.findByText('Loja Um');
     await userEvent.click(screen.getAllByRole('button', { name: /\+Amostra/ })[0]!);
-    expect(await screen.findByText('Solicitar amostra')).toBeInTheDocument();
+    const sm = (await screen.findByText('Solicitar amostra')).closest('.fixed') as HTMLElement;
+    await userEvent.click(within(sm).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByText('Solicitar amostra')).not.toBeInTheDocument());
+    await userEvent.click(screen.getAllByRole('button', { name: /\+Amostra/ })[0]!);
+    const sm2 = (await screen.findByText('Solicitar amostra')).closest('.fixed') as HTMLElement;
+    await userEvent.selectOptions(within(sm2).getByLabelText('Produto do catálogo *'), '1');
+    m.post.mockResolvedValueOnce({ sample: { id: 1 } });
+    await userEvent.click(within(sm2).getByRole('button', { name: 'Solicitar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/sample-requests', expect.objectContaining({ catalog_item_id: 1 })));
   });
 
-  it('sinal de amostra no card abre a lista de amostras', async () => {
+  it('sinal de amostra abre a lista, exclui e fecha', async () => {
+    m.get.mockImplementation(kanbanGet({
+      '/api/kanban': { stages: STAGES, cards: [card({ id: 2, amostras_count: 1, stage_id: 11 })] },
+      '/api/sample-requests': { samples: [{ id: 5, produto_snapshot: 'Amostra Z', status: 'solicitada', quantidade: null, data_prevista: null, contato: null }] },
+    }));
     render(<Kanban />);
     await screen.findByText('Loja Um');
     await userEvent.click(screen.getByRole('button', { name: /1 amostra/ }));
     expect(await screen.findByRole('heading', { name: 'Amostras' })).toBeInTheDocument();
+    await screen.findByText('Amostra Z');
+    await userEvent.click(screen.getByTitle('Excluir')); // exclui → onChanged
+    await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/sample-requests/5'));
+    fireEvent.click(screen.getByText('Amostras').closest('.fixed')!); // backdrop → onClose
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Amostras' })).not.toBeInTheDocument());
+  });
+
+  it('alterna filtros e indicadores, persistindo no localStorage', async () => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getByTitle('Expandir filtros'));
+    expect(localStorage.getItem('funil:filtersOpen')).toBe('1');
+    await userEvent.click(screen.getByTitle('Recolher indicadores'));
+    expect(localStorage.getItem('funil:kpisOpen')).toBe('0');
+  });
+
+  it('dragLeave limpa o destaque da coluna sob o card', async () => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    const col = screen.getByText('Negociação').closest('div')!.parentElement!;
+    fireEvent.dragOver(col);
+    fireEvent.dragLeave(col);
+    expect(screen.getByText('Loja Um')).toBeInTheDocument();
+  });
+
+  it('card mostra marca/contato/catálogo e o atalho de WhatsApp navega', async () => {
+    const loc = stubLocation();
+    m.post.mockResolvedValueOnce({ chat: { id: 77 } });
+    m.get.mockImplementation(kanbanGet({
+      '/api/kanban': { stages: STAGES, cards: [card({ id: 1,
+        marca: 'ACME', contatos: [{ id: 1, nome: 'Fulano' }], catalogo: [{ id: 1, nome: 'Produto Z' }],
+        telefone1: '11999998888' })] },
+    }));
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    expect(screen.getByText(/ACME/)).toBeInTheDocument();
+    expect(screen.getByText(/Produto Z/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: /WhatsApp/ }));
+    expect(m.post).toHaveBeenCalledWith('/api/whatsapp/chats/from-company', { company_id: 100, numero: '11999998888' });
+    await waitFor(() => expect(loc.href).toBe('/whatsapp?chat=77'));
+  });
+
+  it('atalho de WhatsApp trata erro sem navegar', async () => {
+    stubLocation();
+    m.post.mockRejectedValueOnce(new Error('falhou'));
+    m.get.mockImplementation(kanbanGet({
+      '/api/kanban': { stages: STAGES, cards: [card({ id: 1, telefone1: '11999998888' })] },
+    }));
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getByRole('button', { name: /WhatsApp/ }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+  });
+
+  it('menu "mover para": abre, fecha pelo overlay e troca de etapa', async () => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getAllByRole('button', { name: /Mover para outra etapa/ })[0]!);
+    let menu = await screen.findByRole('menu');
+    // etapa atual fica desabilitada
+    expect(within(menu).getByRole('menuitem', { name: /Prospecção/ })).toBeDisabled();
+    // fecha pelo overlay (onCloseMenu)
+    fireEvent.click(menu.previousElementSibling!);
+    await waitFor(() => expect(screen.queryByRole('menu')).not.toBeInTheDocument());
+    // reabre e move
+    await userEvent.click(screen.getAllByRole('button', { name: /Mover para outra etapa/ })[0]!);
+    menu = await screen.findByRole('menu');
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /Negociação/ }));
+    expect(m.patch).toHaveBeenCalledWith('/api/relationships/1', { stage_id: 11 });
+  });
+
+  it('clicar no nome da empresa abre o modal de dados', async () => {
+    m.get.mockImplementation(kanbanGet({
+      '/api/companies': { company: {
+        id: 100, razao_social: 'Empresa Um LTDA', nome_fantasia: 'Loja Um', cnpj: '11222333000144',
+        cnae_principal: 4781400, capital_social: '1000', porte: 'pequeno', matriz_filial: 1,
+        geo_lat: -23, geo_lon: -46, geo_precisao: 'rua', raw_data: {},
+      }, socios: [] },
+    }));
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getAllByTitle('Ver dados da empresa')[0]!);
+    expect(await screen.findByText('Dados da empresa')).toBeInTheDocument();
+    fireEvent.click(screen.getByText('Dados da empresa').closest('.fixed')!);
+    await waitFor(() => expect(screen.queryByText('Dados da empresa')).not.toBeInTheDocument());
+  });
+
+  // fixtures ricas para o modal de edição
+  const editMock = (): void => {
+    m.get.mockImplementation(kanbanGet({
+      '/api/kanban': { stages: STAGES, cards: [card({ id: 1,
+        contatos: [{ id: 1, nome: 'Contato A', cargo: 'CEO', telefone: '11988887777' }],
+        catalogo: [{ id: 1, nome: 'Prod A', codigo: 'P1' }] })] },
+      '/api/represented': { empresas: [{ id: 7, nome: 'Rep X' }] },
+      '/api/brands': { brands: [{ id: 3, nome: 'Marca Y', represented_id: 7 }] },
+      '/api/catalog': { items: [{ id: 1, nome: 'Prod A', codigo: 'P1', ativo: true }, { id: 2, nome: 'Prod B', codigo: 'P2', ativo: true }] },
+      '/api/scenarios': { items: [{ id: 1, nome: 'Cenário 1' }] },
+      '/api/actions': { items: [{ id: 1, nome: 'Ação 1' }] },
+      '/api/contacts': { contacts: [
+        { id: 1, nome: 'Contato A', cargo: 'CEO', telefone: '11988887777' },
+        { id: 2, nome: 'Contato B', cargo: null, telefone: null },
+      ] },
+    }));
+  };
+  const openEdit = async (): Promise<HTMLElement> => {
+    render(<Kanban />);
+    await screen.findByText('Loja Um');
+    await userEvent.click(screen.getAllByRole('button', { name: /Editar prospecção/ })[0]!);
+    return (await screen.findByRole('heading', { name: 'Loja Um' })).closest('.fixed') as HTMLElement;
+  };
+
+  it('modal de edição: preenche campos, mexe em contatos/catálogo e salva', async () => {
+    stubLocation();
+    editMock();
+    m.post.mockResolvedValue({ chat: { id: 1 } });
+    m.patch.mockResolvedValue({ relationship: { status: 'descartado' } });
+    const d = await openEdit();
+
+    await userEvent.selectOptions(within(d).getByLabelText('Etapa do funil'), ''); // Sem etapa (numOrNull '')
+    await userEvent.selectOptions(within(d).getByLabelText('Status'), 'descartado');
+    await userEvent.type(within(d).getByLabelText('Motivo do descarte'), 'Preço alto');
+    await userEvent.selectOptions(within(d).getByLabelText('Representada'), '7');
+    await userEvent.selectOptions(within(d).getByLabelText('Marca'), '3');
+    await userEvent.selectOptions(within(d).getByLabelText('Cenário atual'), '1');
+    await userEvent.selectOptions(within(d).getByLabelText('Ação para próximo nível'), '1');
+    fireEvent.change(within(d).getByLabelText('Data do contato'), { target: { value: '2099-01-01' } });
+    fireEvent.change(within(d).getByLabelText('Previsão de faturamento (data)'), { target: { value: '2099-02-01' } });
+    await userEvent.type(within(d).getByLabelText('Valor estimado (R$)'), '1500');
+
+    // contato já selecionado tem atalho de WhatsApp
+    await userEvent.click(within(d).getByRole('button', { name: 'Iniciar conversa' }));
+    // adiciona o Contato B disponível e remove
+    await userEvent.selectOptions(within(d).getByRole('option', { name: /Adicionar contato/ }).closest('select')!, '2');
+    await userEvent.click(within(d).getAllByRole('button', { name: 'Remover' })[0]!);
+    // catálogo: adiciona Prod B e remove um item selecionado
+    await userEvent.selectOptions(within(d).getByRole('option', { name: /Adicionar item do catálogo/ }).closest('select')!, '2');
+    const remCat = within(d).getAllByRole('button', { name: 'Remover' });
+    await userEvent.click(remCat[remCat.length - 1]!); // remove item do catálogo (onClick catálogo)
+    await userEvent.type(within(d).getByLabelText('Notas'), 'observação livre');
+
+    m.patch.mockResolvedValueOnce({ relationship: { status: 'descartado' } });
+    await userEvent.click(within(d).getByRole('button', { name: /Salvar/ }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/relationships/1',
+      expect.objectContaining({ status: 'descartado', motivo_descarte: 'Preço alto', represented_id: 7, marca_id: 3 })));
+  });
+
+  it('modal de edição: falha ao salvar mantém o modal aberto', async () => {
+    editMock();
+    m.patch.mockRejectedValueOnce(new Error('offline'));
+    const d = await openEdit();
+    await userEvent.click(within(d).getByRole('button', { name: /Salvar/ }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalled());
+    expect(screen.getByRole('heading', { name: 'Loja Um' })).toBeInTheDocument();
+    // fecha o modal (onClose do EditModal)
+    await userEvent.click(within(d).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Loja Um' })).not.toBeInTheDocument());
+  });
+
+  it('modal de edição: cria novo contato (valida e-mail) e vincula', async () => {
+    editMock();
+    const d = await openEdit();
+    // abre e cancela (onCancel), depois reabre
+    await userEvent.click(within(d).getByTitle('Criar novo contato'));
+    await userEvent.click(within((await screen.findByText('Criar novo contato')).closest('.fixed') as HTMLElement).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByText('Criar novo contato')).not.toBeInTheDocument());
+    await userEvent.click(within(d).getByTitle('Criar novo contato'));
+    const nc = (await screen.findByText('Criar novo contato')).closest('.fixed') as HTMLElement;
+    await userEvent.type(within(nc).getByPlaceholderText('Nome *'), 'Novo Contato');
+    await userEvent.type(within(nc).getByPlaceholderText('E-mail'), 'invalido');
+    await userEvent.click(within(nc).getByRole('button', { name: /Criar/ }));
+    expect(m.post).not.toHaveBeenCalled();
+    await userEvent.clear(within(nc).getByPlaceholderText('E-mail'));
+    await userEvent.type(within(nc).getByPlaceholderText('E-mail'), 'a@b.c');
+    await userEvent.type(within(nc).getByPlaceholderText('Telefone'), '11988887777');
+    await userEvent.type(within(nc).getByPlaceholderText('Cargo'), 'Gerente');
+    m.post.mockResolvedValueOnce({ contact: { id: 9, nome: 'Novo Contato' } });
+    await userEvent.click(within(nc).getByRole('button', { name: /Criar/ }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Novo Contato', email: 'a@b.c' })));
+  });
+
+  it('modal de edição: cria novo produto no catálogo', async () => {
+    editMock();
+    const d = await openEdit();
+    await userEvent.click(within(d).getByTitle('Criar novo produto'));
+    await userEvent.click(within((await screen.findByText('Criar novo produto')).closest('.fixed') as HTMLElement).getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByText('Criar novo produto')).not.toBeInTheDocument());
+    await userEvent.click(within(d).getByTitle('Criar novo produto'));
+    const np = (await screen.findByText('Criar novo produto')).closest('.fixed') as HTMLElement;
+    await userEvent.type(within(np).getByPlaceholderText('Nome *'), 'Prod Novo');
+    await userEvent.type(within(np).getByPlaceholderText('Código / SKU'), 'SKU9');
+    await userEvent.type(within(np).getByPlaceholderText('Preço (R$)'), '99');
+    await userEvent.selectOptions(within(np).getByRole('combobox'), '7');
+    m.post.mockResolvedValueOnce({ item: { id: 9, nome: 'Prod Novo', ativo: true } });
+    await userEvent.click(within(np).getByRole('button', { name: /Criar/ }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/catalog', expect.objectContaining({ nome: 'Prod Novo', represented_id: 7 })));
+  });
+
+  it('modal de edição: abre e salva um novo compromisso', async () => {
+    editMock();
+    const d = await openEdit();
+    await userEvent.click(within(d).getByRole('button', { name: /Criar compromisso/ }));
+    // fecha (onClose)
+    expect(await screen.findByText('Nova atividade')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Fechar'));
+    await waitFor(() => expect(screen.queryByText('Nova atividade')).not.toBeInTheDocument());
+    // reabre e salva (onSaved)
+    await userEvent.click(within(d).getByRole('button', { name: /Criar compromisso/ }));
+    const am = (await screen.findByText('Nova atividade')).closest('.fixed') as HTMLElement;
+    await userEvent.type(within(am).getByPlaceholderText(/Ligar para cliente/), 'Ligar amanhã');
+    m.post.mockResolvedValueOnce({});
+    await userEvent.click(within(am).getByRole('button', { name: /Salvar/ }));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/activities', expect.objectContaining({ titulo: 'Ligar amanhã' })));
+  });
+
+  it('modal de edição: remover do funil (otimista)', async () => {
+    editMock();
+    const d = await openEdit();
+    await userEvent.click(within(d).getByRole('button', { name: /Remover do funil/ }));
+    await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/relationships/1'));
+    await waitFor(() => expect(screen.queryByText('Loja Um')).not.toBeInTheDocument());
+  });
+
+  it('modal de edição: remover do funil recarrega o board em falha', async () => {
+    editMock();
+    m.del.mockRejectedValueOnce(new Error('offline'));
+    const d = await openEdit();
+    const kanbanCalls = (): number => m.get.mock.calls.filter((c) => c[0] === '/api/kanban').length;
+    const antes = kanbanCalls();
+    await userEvent.click(within(d).getByRole('button', { name: /Remover do funil/ }));
+    await waitFor(() => expect(kanbanCalls()).toBeGreaterThan(antes));
   });
 });

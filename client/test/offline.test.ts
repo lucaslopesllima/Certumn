@@ -3,7 +3,7 @@
 import 'fake-indexeddb/auto';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { api, ApiError } from '../src/lib/api.ts';
-import { enqueue, queued, postField, flushQueue, onQueueChange, initOfflineSync } from '../src/lib/offline.ts';
+import { enqueue, queued, postField, flushQueue, onQueueChange, initOfflineSync, clearQueue } from '../src/lib/offline.ts';
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -128,5 +128,33 @@ describe('listeners e init', () => {
     const open = vi.spyOn(indexedDB, 'open').mockImplementation(() => { throw new Error('sem idb'); });
     expect(await queued()).toEqual([]);
     open.mockRestore();
+  });
+
+  it('clearQueue esvazia a fila (logout)', async () => {
+    setOnline(false);
+    await postField('/a', { n: 1 }, 'A');
+    await postField('/b', { n: 2 }, 'B');
+    expect(await queued()).toHaveLength(2);
+    await clearQueue();
+    expect(await queued()).toHaveLength(0);
+  });
+
+  it('erro de request (id duplicado) rejeita e aborta a transação', async () => {
+    const dup = { id: 1, path: '/a', body: {}, label: 'A', createdAt: 1 } as unknown as Parameters<typeof enqueue>[0];
+    await enqueue(dup);
+    // segundo add com a mesma chave → ConstraintError: dispara r.onerror + t.onabort
+    await expect(enqueue(dup)).rejects.toBeTruthy();
+  });
+
+  it('erro ao abrir o banco (versão maior aberta) rejeita no req.onerror', async () => {
+    // Mantém uma conexão em versão maior; o open(v1) do módulo falha com VersionError.
+    const v2 = await new Promise<IDBDatabase>((res) => {
+      const rq = indexedDB.open('rs_offline', 2);
+      rq.onsuccess = () => res(rq.result);
+    });
+    await expect(enqueue({ path: '/x', body: {}, label: 'X', createdAt: 1 })).rejects.toBeTruthy();
+    // clearQueue engole o erro do banco inacessível (catch) e ainda notifica.
+    await expect(clearQueue()).resolves.toBeUndefined();
+    v2.close();
   });
 });

@@ -2,7 +2,7 @@
 // fallback BrasilAPI. O throttle (~1.1s entre chamadas Nominatim) roda de
 // verdade na sequência de casos — sem fakes de timer.
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
-import { geocodeAddr } from '../src/geocode.ts';
+import { geocodeAddr, geocodeText } from '../src/geocode.ts';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
@@ -63,5 +63,35 @@ describe('geocodeAddr', () => {
     fetchMock.mockResolvedValueOnce(ok([]));
     expect(await geocodeAddr({ logradouro: 'Rua A', cep: '123' })).toBeNull();
     expect(fetchMock).toHaveBeenCalledTimes(1); // só o nominatim
+  });
+});
+
+describe('geocodeText', () => {
+  it('termo curto (<3) devolve null sem chamar a rede', async () => {
+    expect(await geocodeText('ab')).toBeNull();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+  it('sucesso devolve lat/lon + label', async () => {
+    fetchMock.mockResolvedValueOnce(ok([{ lat: '-23.5', lon: '-46.6', display_name: 'Av. Paulista, SP' }]));
+    expect(await geocodeText('Avenida Paulista')).toEqual({
+      lat: -23.5, lon: -46.6, precisao: 'texto', fonte: 'nominatim', label: 'Av. Paulista, SP',
+    });
+    expect(String(fetchMock.mock.calls[0]![0])).toContain('nominatim');
+  });
+  it('sem display_name usa o próprio termo como label', async () => {
+    fetchMock.mockResolvedValueOnce(ok([{ lat: '-1', lon: '-2' }]));
+    expect((await geocodeText('Centro'))?.label).toBe('Centro');
+  });
+  it('resposta não-ok -> null', async () => {
+    fetchMock.mockResolvedValueOnce(bad());
+    expect(await geocodeText('Rua X')).toBeNull();
+  });
+  it('resposta vazia -> null', async () => {
+    fetchMock.mockResolvedValueOnce(ok([]));
+    expect(await geocodeText('Rua Y')).toBeNull();
+  });
+  it('fetch lança -> null', async () => {
+    fetchMock.mockRejectedValueOnce(new Error('net'));
+    expect(await geocodeText('Rua Z')).toBeNull();
   });
 });

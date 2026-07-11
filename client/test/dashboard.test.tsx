@@ -1,6 +1,6 @@
 // Fase 4: Dashboard agrega KPIs, funil, agenda, alertas e ranking.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { Dashboard } from '../src/pages/Dashboard.tsx';
 import { useAuth, type User } from '../src/lib/auth.tsx';
@@ -55,5 +55,30 @@ describe('Dashboard', () => {
     mount();
     await waitFor(() => expect(m.get).toHaveBeenCalled());
     expect(vi.mocked(m.get).mock.calls.some(([p]) => String(p).startsWith('/api/dashboard?competencia='))).toBe(true);
+  });
+
+  it('estados vazios (funil/agenda/sem contato) e lista de parados', async () => {
+    const DATA2 = {
+      ...DATA, funil: [], agenda: [], vendas: { total: 0, qtd: 0, meta: 0 },
+      alertas: {
+        sem_contato: [],
+        parados: [{ id: 3, company_id: 8, razao_social: 'BETA SA', nome_fantasia: null, stage: 'Proposta', desde: '2020-01-01', dias: 45 }],
+      },
+      ranking: [],
+    };
+    m.get.mockImplementation(async (p: string) => p.startsWith('/api/dashboard') ? DATA2 : { users: [] });
+    mount();
+    expect(await screen.findByText('Funil vazio')).toBeInTheDocument();
+    expect(screen.getByText('Nada para hoje')).toBeInTheDocument();
+    expect(screen.getByText('Tudo em dia.')).toBeInTheDocument();
+    expect(screen.getByText('BETA SA')).toBeInTheDocument();
+    expect(screen.getByText('45 dias')).toBeInTheDocument();
+  });
+
+  it('troca a competência do mês', async () => {
+    mount();
+    await screen.findByText('Vendas do mês');
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-05' } });
+    await waitFor(() => expect(vi.mocked(m.get).mock.calls.some(([p]) => String(p).includes('competencia=2026-05'))).toBe(true));
   });
 });

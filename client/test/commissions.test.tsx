@@ -1,13 +1,15 @@
 // Comissões: extrato mensal agrupado por representada (KPIs, divergência),
 // baixa individual, conciliação CSV (admin) e aba de regras com precedência.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Commissions } from '../src/pages/Commissions.tsx';
 import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
 import { confirmDialog } from '../src/lib/confirm.ts';
+import { downloadCsv } from '../src/lib/export.ts';
 vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
+vi.mock('../src/lib/export.ts', () => ({ downloadCsv: vi.fn() }));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -156,5 +158,96 @@ describe('Commissions · regras', () => {
     await userEvent.click(await screen.findByLabelText('Excluir regra'));
     await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/commission-rules/3'));
     expect(screen.queryByText(/Produto · Produto A/)).not.toBeInTheDocument();
+  });
+
+  it('alvos variados, editar regra (campos + erro) e excluir com falha', async () => {
+    const rules = [
+      { ...RULE, id: 1, catalog_item_id: null, company_id: 100, company_nome: 'Cliente Um', catalog_nome: null },
+      { ...RULE, id: 2, catalog_item_id: null, company_id: null, user_id: 2, user_nome: 'Vend', catalog_nome: null },
+      { ...RULE, id: 3, catalog_item_id: null, company_id: null, user_id: null, catalog_nome: null },
+    ];
+    m.get.mockImplementation(async (p: string) => {
+      if (p === '/api/represented') return { empresas: [{ id: 5, nome: 'Indústria X', ativo: true }] };
+      if (p.startsWith('/api/commissions?')) return { entries: [] };
+      if (p === '/api/commission-rules') return { rules };
+      if (p === '/api/catalog') return { items: [] };
+      if (p === '/api/kanban') return { cards: [] };
+      if (p === '/api/users') return { users: [{ id: 2, nome: 'Vend', email: 'v@b.c', role: 'rep', ativo: true }] };
+      return {};
+    });
+    render(<Commissions />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Regras' }));
+    expect(await screen.findByText(/Cliente · Cliente Um/)).toBeInTheDocument();
+    expect(screen.getByText(/Vendedor · Vend/)).toBeInTheDocument();
+    expect(screen.getByText('Regra geral')).toBeInTheDocument();
+
+    m.patch.mockRejectedValueOnce(new Error('nope'));
+    await userEvent.click(screen.getAllByLabelText('Editar regra')[0]!);
+    await userEvent.type(screen.getByLabelText('Split vendedor %'), '5');
+    fireEvent.change(screen.getByLabelText('Vigência início *'), { target: { value: '2026-02-01' } });
+    fireEvent.change(screen.getByLabelText('Vigência fim'), { target: { value: '2026-12-31' } });
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar regra' }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    m.del.mockRejectedValueOnce(new Error('boom'));
+    await userEvent.click(screen.getAllByLabelText('Excluir regra')[0]!);
+    await waitFor(() => expect(m.del).toHaveBeenCalled());
+  });
+});
+
+describe('Commissions · extrato (extras)', () => {
+  it('filtros e exportação do extrato', async () => {
+    render(<Commissions />);
+    await screen.findByText('Indústria X', { selector: 'h3' });
+    await userEvent.selectOptions(screen.getByLabelText('Filtrar por representada'), '5');
+    await userEvent.selectOptions(screen.getByLabelText('Filtrar por status'), 'divergente');
+    fireEvent.change(screen.getByLabelText('Competência'), { target: { value: '2026-05' } });
+    await userEvent.click(screen.getByRole('button', { name: /Exportar/ }));
+    expect(vi.mocked(downloadCsv)).toHaveBeenCalled();
+  });
+
+  it('extrato vazio mostra empty state', async () => {
+    m.get.mockImplementation(async (p: string) => {
+      if (p === '/api/represented') return { empresas: [{ id: 5, nome: 'Indústria X', ativo: true }] };
+      if (p.startsWith('/api/commissions?')) return { entries: [] };
+      return {};
+    });
+    render(<Commissions />);
+    expect(await screen.findByText('Nenhuma comissão na competência')).toBeInTheDocument();
+  });
+
+  it('baixa: edita campos, erro exibe toast e Fechar cancela', async () => {
+    m.patch.mockRejectedValueOnce(new Error('falhou'));
+    render(<Commissions />);
+    await screen.findByText('Indústria X', { selector: 'h3' });
+    await userEvent.click(screen.getAllByRole('button', { name: 'Dar baixa' })[0]!);
+    const valor = screen.getByLabelText('Valor recebido *');
+    await userEvent.clear(valor);
+    await userEvent.type(valor, '90');
+    fireEvent.change(screen.getByLabelText('Recebida em *'), { target: { value: '2026-06-15' } });
+    await userEvent.type(screen.getByPlaceholderText('Observação'), 'obs');
+    await userEvent.click(screen.getByRole('button', { name: /Confirmar baixa/ }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalled());
+    await userEvent.click(screen.getByLabelText('Fechar'));
+    await waitFor(() => expect(screen.queryByLabelText('Valor recebido *')).not.toBeInTheDocument());
+  });
+
+  it('conciliação: erro exibe toast; cancelar e concluir fecham', async () => {
+    m.post.mockRejectedValueOnce(new Error('ruim'));
+    render(<Commissions />);
+    await screen.findByText('Indústria X', { selector: 'h3' });
+    await userEvent.click(screen.getByRole('button', { name: /Conciliar CSV/ }));
+    await userEvent.type(screen.getByPlaceholderText(/pedido;valor;data/), '12;100');
+    await userEvent.click(screen.getByRole('button', { name: 'Conciliar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+
+    m.post.mockResolvedValueOnce({ processadas: 1, baixadas: 1, divergentes: 0 });
+    await userEvent.click(screen.getByRole('button', { name: /Conciliar CSV/ }));
+    await userEvent.type(screen.getByPlaceholderText(/pedido;valor;data/), '12;100');
+    await userEvent.click(screen.getByRole('button', { name: 'Conciliar' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Concluir' }));
   });
 });

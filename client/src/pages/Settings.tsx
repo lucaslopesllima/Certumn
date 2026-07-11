@@ -248,6 +248,9 @@ const TAX_FIELDS: { key: keyof TaxDefaults; label: string }[] = [
   { key: 'iss_pct', label: 'ISS' },
 ];
 
+// Editor de alíquotas: feature desabilitada (entrada de nav comentada em SECTIONS,
+// nunca renderizada). Preservado p/ reativação futura — fora da cobertura.
+/* v8 ignore start */
 function AliquotasEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   const { can } = useAuth();
   const [tax, setTax] = useState<Record<keyof TaxDefaults, string>>();
@@ -298,6 +301,7 @@ function AliquotasEditor({ inputCls }: { inputCls: string }): React.JSX.Element 
     </Card>
   );
 }
+/* v8 ignore stop */
 
 function FunilEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
   const { can } = useAuth();

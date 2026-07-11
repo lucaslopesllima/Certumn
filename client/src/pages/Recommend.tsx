@@ -451,6 +451,8 @@ export function Recommend(): React.JSX.Element {
               onView={() => setViewing(Number(r.id))} onViewMap={() => verNoMapa(r)}
               onRoute={() => traceRoute(r)} routing={routingId === r.id} />
           ))}
+          {/* visibleRecs é alias de recs — condição sempre falsa (sem filtro client-side). Inalcançável. */}
+          {/* v8 ignore next 3 */}
           {!loading && recs.length > 0 && visibleRecs.length === 0 && (
             <p className="py-6 text-center text-sm text-ink-400">Nenhuma recomendação bate com os filtros.</p>
           )}

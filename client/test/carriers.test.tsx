@@ -7,6 +7,15 @@ import { api } from '../src/lib/api.ts';
 import { useAuth, type User } from '../src/lib/auth.tsx';
 import { confirmDialog } from '../src/lib/confirm.ts';
 vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
+// CompanySearch (busca RFB) stubada — expõe um botão que dispara onPick.
+vi.mock('../src/lib/companySearch.tsx', () => ({
+  CompanySearch: ({ onPick }: { onPick: (c: Record<string, unknown>) => void }) => (
+    <button type="button" onClick={() => onPick({
+      cnpj: '99888777000166', razao_social: 'RFB LTDA', nome_fantasia: 'RFB',
+      telefone1: '1140000000', telefone2: null, email: 'rfb@x.com',
+    })}>pick-company</button>
+  ),
+}));
 
 vi.mock('../src/lib/api.ts', async (orig) => {
   const real = await orig() as Record<string, unknown>;
@@ -101,5 +110,50 @@ describe('Carriers', () => {
     await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/carriers/4'));
     expect(screen.getByText('Transp X')).toBeInTheDocument(); // soft delete: linha continua
     expect(screen.getByText('inativa')).toBeInTheDocument();
+  });
+
+  it('empty state quando não há transportadoras', async () => {
+    m.get.mockResolvedValue({ carriers: [] });
+    render(<Carriers />);
+    expect(await screen.findByText('Nenhuma transportadora')).toBeInTheDocument();
+  });
+
+  it('cancelar fecha o formulário (novo e edição)', async () => {
+    render(<Carriers />);
+    await screen.findByText('Transp X');
+    await userEvent.click(screen.getByRole('button', { name: /Nova transportadora/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByPlaceholderText('Nome da transportadora *')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Editar transportadora'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByPlaceholderText('Nome da transportadora *')).not.toBeInTheDocument();
+  });
+
+  it('autopreenche da base RFB, aplica máscaras e bloqueia e-mail inválido', async () => {
+    render(<Carriers />);
+    await screen.findByText('Transp X');
+    await userEvent.click(screen.getByRole('button', { name: /Nova transportadora/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'pick-company' }));
+    expect(screen.getByDisplayValue('RFB')).toBeInTheDocument();
+
+    await userEvent.clear(screen.getByPlaceholderText('CNPJ'));
+    await userEvent.type(screen.getByPlaceholderText('CNPJ'), '11222333000144');
+    await userEvent.type(screen.getByPlaceholderText('Telefone'), '11999990000');
+
+    // 'a@b' passa na validação HTML5 (permite submit) mas falha no regex do app
+    const email = screen.getByPlaceholderText('E-mail');
+    await userEvent.clear(email);
+    await userEvent.type(email, 'a@b');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(m.post).not.toHaveBeenCalled();
+  });
+
+  it('remove: falha do DELETE reverte', async () => {
+    m.del.mockRejectedValueOnce(new Error('offline'));
+    render(<Carriers />);
+    await screen.findByText('Transp X');
+    await userEvent.click(screen.getByLabelText('Excluir transportadora'));
+    await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/carriers/4'));
+    await waitFor(() => expect(screen.queryByText('inativa')).not.toBeInTheDocument());
   });
 });

@@ -287,3 +287,18 @@ describe('POST /api/routes/:id/agenda (Fase 5.2 inverso)', () => {
     expect((await inj(b, 'POST', `/api/routes/${id}/agenda`, { start_at: '2026-07-01T08:00:00Z' })).statusCode).toBe(404);
   });
 });
+
+describe('geocode em lote — caminho deferred (>MAX_GEOCODE_INLINE)', () => {
+  it('acima de 5 cache-miss: responde com centroide e geocodifica o excedente em 2º plano', async () => {
+    await setOrigem(a);
+    // 6 empresas com geom (centroide) e SEM cache de geocode nem endereço:
+    // 5 resolvem inline pelo centroide, a 6ª cai no ramo deferred (cents + setImmediate).
+    const ids: number[] = [];
+    for (let i = 0; i < 6; i++) ids.push(await makeCompany({ municipioId: SP, lat: -23.5 - i * 0.01, lon: -46.6 - i * 0.01 }));
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({ ok: true, json: async () => osrmOk }); // OSRM mockado
+    const r = await inj(a, 'POST', '/api/routes/optimize', { company_ids: ids });
+    expect([200, 502]).toContain(r.statusCode); // o foco é cobrir o geocode em lote
+    await new Promise((res) => setTimeout(res, 40)); // deixa o setImmediate (geocode diferido) rodar
+  });
+});

@@ -65,7 +65,7 @@ const server = createServer(async (req, res) => {
   // ── Evolution API (prefixo /evolution) ─────────────────────────────────
   if (path.startsWith('/evolution/')) {
     const sub = path.slice('/evolution'.length);
-    await readBody(req);
+    const body = await readBody(req);
 
     if (sub === '/instance/create' && method === 'POST') return send(res, 200, { instance: { instanceName: 'stub' } });
     if (sub.startsWith('/instance/connect/') && method === 'GET') {
@@ -76,7 +76,14 @@ const server = createServer(async (req, res) => {
     if (sub.startsWith('/message/sendText/') && method === 'POST') return send(res, 200, { key: { id: `stub-msg-${Date.now()}` } });
     if (sub.startsWith('/message/sendMedia/') && method === 'POST') return send(res, 200, { key: { id: `stub-media-${Date.now()}` } });
     if (sub.startsWith('/message/sendWhatsAppAudio/') && method === 'POST') return send(res, 200, { key: { id: `stub-audio-${Date.now()}` } });
-    if (sub.startsWith('/chat/whatsappNumbers/') && method === 'POST') return send(res, 200, [{ exists: true, jid: '5511999999999@s.whatsapp.net', number: '5511999999999' }]);
+    if (sub.startsWith('/chat/whatsappNumbers/') && method === 'POST') {
+      // Ecoa o número pedido. Número contendo '000000' = não existe no WhatsApp
+      // (deixa o e2e cobrir o caminho 422 de confirmação de LID).
+      const nums = Array.isArray(body?.numbers) ? body.numbers : [];
+      return send(res, 200, nums.map((n) => (String(n).includes('000000')
+        ? { exists: false, jid: '', number: String(n) }
+        : { exists: true, jid: `${n}@s.whatsapp.net`, number: String(n) })));
+    }
     if (sub.startsWith('/chat/getBase64FromMediaMessage/') && method === 'POST') return send(res, 200, { base64: 'AAAA', mimetype: 'image/png', fileName: 'stub.png' });
     if (sub.startsWith('/chat/markMessageAsRead/') && method === 'POST') return send(res, 200, { ok: true });
     if (sub.startsWith('/chat/sendPresence/') && method === 'POST') return send(res, 200, { ok: true });

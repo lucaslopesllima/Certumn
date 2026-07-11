@@ -1,15 +1,33 @@
 // Guards de rota do App: anônimo -> /login, senha provisória -> /trocar-senha,
 // não-admin fora de /equipe. Páginas pesadas mockadas (Leaflet não roda em jsdom).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { App } from '../src/App.tsx';
 import { useAuth, type User } from '../src/lib/auth.tsx';
+import { api } from '../src/lib/api.ts';
+import { queued } from '../src/lib/offline.ts';
 
 vi.mock('../src/lib/auth.tsx', () => {
   const useAuth = vi.fn();
   return { useAuth, useOptionalUser: () => useAuth().user ?? null };
 });
+// NotificationBell/OfflineBanner do Shell tocam api/offline — controla ambos.
+vi.mock('../src/lib/api.ts', () => ({
+  api: {
+    get: vi.fn(() => Promise.resolve({ notifications: [], nao_lidas: 0 })),
+    patch: vi.fn(() => Promise.resolve({})),
+    post: vi.fn(() => Promise.resolve({})),
+  },
+}));
+vi.mock('../src/lib/offline.ts', () => ({
+  queued: vi.fn(() => Promise.resolve([])),
+  onQueueChange: vi.fn(() => () => undefined),
+  clearQueue: vi.fn(),
+}));
+const mApi = vi.mocked(api);
+const mQueued = vi.mocked(queued);
 // páginas lazy substituídas por marcadores — o alvo aqui é o roteamento
 vi.mock('../src/pages/Dashboard.tsx', () => ({ Dashboard: () => <div>PAGE-DASHBOARD</div> }));
 vi.mock('../src/pages/Reports.tsx', () => ({ Reports: () => <div>PAGE-RELATORIOS</div> }));
@@ -122,5 +140,101 @@ describe('App routing', () => {
     expect(screen.getAllByText('Equipe').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Grupos').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Carteiras').length).toBeGreaterThan(0);
+  });
+});
+
+describe('App shell: sino, offline, sidebar', () => {
+  beforeEach(() => {
+    useAuthMock.mockReturnValue(auth(admin));
+    mApi.get.mockReset();
+    mApi.patch.mockReset();
+    mApi.post.mockReset();
+    mQueued.mockReset();
+    mApi.get.mockResolvedValue({ notifications: [], nao_lidas: 0 });
+    mApi.patch.mockResolvedValue({});
+    mApi.post.mockResolvedValue({});
+    mQueued.mockResolvedValue([]);
+  });
+
+  it('sino de notificações: abre, marca todas e navega ao clicar', async () => {
+    const notifs = [{ id: 1, tipo: 'agenda', titulo: 'Compromisso amanhã', lida: false }];
+    mApi.get.mockImplementation((p: string) => p === '/api/notifications'
+      ? Promise.resolve({ notifications: notifs, nao_lidas: 1 })
+      : Promise.resolve({}));
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+
+    const bells = await screen.findAllByLabelText('Notificações');
+    await userEvent.click(bells[0]!);
+    expect(await screen.findByText('Compromisso amanhã')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByText('Marcar todas'));
+    expect(mApi.post).toHaveBeenCalledWith('/api/notifications/read-all');
+
+    await userEvent.click(screen.getByText('Compromisso amanhã'));
+    await waitFor(() => expect(mApi.patch).toHaveBeenCalledWith('/api/notifications/1/read'));
+  });
+
+  it('sino: overlay fecha o painel', async () => {
+    mApi.get.mockResolvedValue({ notifications: [], nao_lidas: 0 });
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    const bells = await screen.findAllByLabelText('Notificações');
+    await userEvent.click(bells[0]!);
+    expect(screen.getByText('Nada por aqui.')).toBeInTheDocument();
+    const overlay = [...document.querySelectorAll('div')].find((d) => d.className.includes('z-[1500]'));
+    fireEvent.click(overlay!);
+    await waitFor(() => expect(screen.queryByText('Nada por aqui.')).not.toBeInTheDocument());
+  });
+
+  it('banner offline aparece ao perder conexão e some ao voltar', async () => {
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    await act(async () => { window.dispatchEvent(new Event('offline')); });
+    expect(await screen.findByText(/Você está offline/)).toBeInTheDocument();
+    await act(async () => { window.dispatchEvent(new Event('online')); });
+    await waitFor(() => expect(screen.queryByText(/Você está offline/)).not.toBeInTheDocument());
+  });
+
+  it('banner de sincronização quando há ações na fila', async () => {
+    mQueued.mockResolvedValue([{ id: 'x' }]);
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    expect(await screen.findByText(/Sincronizando 1 ação/)).toBeInTheDocument();
+  });
+
+  it('banner offline com ações pendentes aguardando', async () => {
+    mQueued.mockResolvedValue([{ id: 'x' }]);
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    await act(async () => { window.dispatchEvent(new Event('offline')); });
+    expect(await screen.findByText(/Offline — 1 ação/)).toBeInTheDocument();
+  });
+
+  it('folha "Mais" no mobile abre e fecha ao navegar', async () => {
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    await userEvent.click(screen.getByText('Mais'));
+    const dialog = await screen.findByRole('dialog', { name: 'Mais opções' });
+    await userEvent.click(within(dialog).getByText('Config'));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Mais opções' })).not.toBeInTheDocument());
+  });
+
+  it('sidebar recolhida mostra avatar/logout compactos e expande', async () => {
+    localStorage.setItem('rs_sidebar_collapsed', '1');
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    expect(screen.getByLabelText('Sair')).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Expandir menu'));
+    await waitFor(() => expect(screen.getByLabelText('Recolher menu')).toBeInTheDocument());
+  });
+
+  it('acordeon: recolhe e reabre um grupo do menu', async () => {
+    mount('/');
+    await screen.findByText('PAGE-DASHBOARD');
+    const vendas = screen.getByRole('button', { name: 'Vendas' });
+    await userEvent.click(vendas);
+    await userEvent.click(vendas);
+    expect(vendas).toBeInTheDocument();
   });
 });

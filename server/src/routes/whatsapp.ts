@@ -395,8 +395,14 @@ export function whatsappRoutes(app: FastifyInstance): void {
   });
 
   // Informa o telefone de um contato que chegou só como LID (número oculto).
-  // Valida o número no WhatsApp, grava no contato e registra o jid de telefone
-  // como alias da conversa — assim o envio passa a funcionar (sai pelo número).
+  // Grava o número no contato e registra o jid de telefone como alias da conversa
+  // — assim o envio passa a funcionar (sai pelo número).
+  //
+  // A validação no WhatsApp (whatsappNumbers) é best-effort: confirma existência
+  // e traz o jid canônico quando dá. Só bloqueia (422) quando a Evolution
+  // responde e afirma que o número não existe. Se a Evolution estiver instável
+  // (ex.: socket sem `onWhatsApp` -> 400) NÃO trava a confirmação — o usuário
+  // informou o número explicitamente e o envio ainda vai tentar por ele.
   app.patch('/api/whatsapp/chats/:id/numero', {
     preHandler: [requireAuth, requirePermission('whatsapp.link')],
     schema: { body: { type: 'object', required: ['numero'], properties: { numero: { type: 'string', minLength: 8 } } } },
@@ -412,11 +418,14 @@ export function whatsappRoutes(app: FastifyInstance): void {
     try {
       const res = await evo.whatsappNumbers(instanceName(orgId), [digits]);
       const hit = res.find((r) => r.exists);
-      if (!hit) return reply.code(422).send({ error: 'número não encontrado no WhatsApp' });
-      jid = hit.jid || jid;
+      if (hit?.jid) jid = hit.jid;
+      // Só nega quando a Evolution devolveu resultado e nenhum existe. Resposta
+      // vazia = não confirmou nem negou; segue com o jid montado.
+      else if (res.length > 0) return reply.code(422).send({ error: 'número não encontrado no WhatsApp' });
     } catch (e) {
       if (e instanceof evo.EvolutionDisabledError) return reply.code(503).send({ error: e.message });
-      return reply.code(502).send({ error: e instanceof Error ? e.message : 'falha ao validar número' });
+      // Falha transiente da Evolution não bloqueia: salva com o jid montado.
+      app.log.warn({ err: e, orgId, chatId }, 'whatsappNumbers falhou; salvando número sem validação');
     }
     await query('UPDATE whatsapp_chats SET numero = $3 WHERE id = $1 AND org_id = $2', [chatId, orgId, jidToNumero(jid)]);
     await query(

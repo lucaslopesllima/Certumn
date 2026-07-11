@@ -81,4 +81,47 @@ describe('Catalog', () => {
     expect(await screen.findByText('Parafusadeira')).toBeInTheDocument();
     expect(m.post).toHaveBeenCalledWith('/api/catalog', expect.objectContaining({ nome: 'Parafusadeira' }));
   });
+
+  it('edita item existente (toForm + PATCH)', async () => {
+    m.patch.mockResolvedValueOnce({ item: { ...ITEM, nome: 'Furadeira X' } });
+    render(<Catalog />);
+    await screen.findByText('Furadeira');
+    await userEvent.click(screen.getByLabelText('Editar'));
+    const nome = screen.getByPlaceholderText('Nome do produto / serviço *');
+    expect(nome).toHaveValue('Furadeira');
+    await userEvent.clear(nome);
+    await userEvent.type(nome, 'Furadeira X');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    expect(await screen.findByText('Furadeira X')).toBeInTheDocument();
+    expect(m.patch).toHaveBeenCalledWith('/api/catalog/1', expect.objectContaining({ nome: 'Furadeira X' }));
+  });
+
+  it('cancelar fecha os formulários (novo e edição)', async () => {
+    render(<Catalog />);
+    await screen.findByText('Furadeira');
+    await userEvent.click(screen.getByRole('button', { name: /Novo item/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByPlaceholderText('Nome do produto / serviço *')).not.toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Editar'));
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    expect(screen.queryByPlaceholderText('Nome do produto / serviço *')).not.toBeInTheDocument();
+  });
+
+  it('busca filtra, mostra vazio e mantém o item em edição fora do filtro', async () => {
+    render(<Catalog />);
+    await screen.findByText('Furadeira');
+    const search = screen.getByPlaceholderText('Buscar por nome, código ou descrição…');
+    await userEvent.type(search, 'zzz');
+    expect(screen.getByText(/Nenhum item para/)).toBeInTheDocument();
+    await userEvent.clear(search);
+    await userEvent.click(screen.getByLabelText('Editar'));
+    await userEvent.type(search, 'zzz');
+    expect(screen.getByPlaceholderText('Nome do produto / serviço *')).toBeInTheDocument();
+  });
+
+  it('catálogo vazio mostra empty state', async () => {
+    m.get.mockImplementation(async (p: string) => p === '/api/catalog' ? { items: [] } : { empresas: [] });
+    render(<Catalog />);
+    expect(await screen.findByText('Catálogo vazio')).toBeInTheDocument();
+  });
 });

@@ -42,6 +42,8 @@ test.describe('agenda — atividades', () => {
 
     await page.goto('/agenda');
     await page.getByRole('button', { name: 'Semana' }).click();
-    await expect(page.getByText('Atividade da semana E2E')).toBeVisible();
+    // Timeout folgado: sob carga da suíte cheia (workers concorrentes) o render +
+    // fetch da semana passava dos 10s default e o teste ficava flaky.
+    await expect(page.getByText('Atividade da semana E2E')).toBeVisible({ timeout: 20_000 });
   });
 });

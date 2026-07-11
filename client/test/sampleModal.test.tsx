@@ -1,7 +1,7 @@
 // Amostras do funil: modal de solicitar/editar (produto, quantidade, contato
 // inline, follow-up na agenda) e o modal de lista (abrir editor, excluir).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor, within, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { SampleRequestModal, SampleListModal } from '../src/lib/sampleModal.tsx';
 import { api } from '../src/lib/api.ts';
@@ -97,6 +97,51 @@ describe('SampleRequestModal — criar', () => {
     await waitFor(() => expect(m.post).toHaveBeenNthCalledWith(1, '/api/contacts', expect.objectContaining({ nome: 'Maria', company_id: 100 })));
     expect(m.post).toHaveBeenNthCalledWith(2, '/api/sample-requests', expect.objectContaining({ contact_id: 77 }));
   });
+
+  it('preenche previsão, contato existente, agenda e notas', async () => {
+    m.post.mockResolvedValueOnce({ sample: sample({ id: 9 }) });
+    render(<SampleRequestModal card={CARD} catalog={CATALOG} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Produto do catálogo/ }), '9');
+    fireEvent.change(screen.getByLabelText('Previsão de envio'), { target: { value: '2026-07-01' } });
+    const combos = screen.getAllByRole('combobox');
+    await userEvent.selectOptions(combos[1]!, '50');
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.type(screen.getByPlaceholderText('Título do compromisso'), '!');
+    fireEvent.change(document.querySelector('input[type="datetime-local"]')!, { target: { value: '2026-07-15T10:00' } });
+    await userEvent.type(screen.getByPlaceholderText('Observações livres'), 'nota');
+    await userEvent.click(screen.getByRole('button', { name: 'Solicitar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+  });
+
+  it('novo contato inline com telefone', async () => {
+    m.post
+      .mockResolvedValueOnce({ contact: { id: 77, nome: 'Maria', company_id: 100 } })
+      .mockResolvedValueOnce({ sample: sample({ id: 9 }) });
+    render(<SampleRequestModal card={CARD} catalog={CATALOG} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Produto do catálogo/ }), '9');
+    await userEvent.click(screen.getByRole('button', { name: '+ Novo contato' }));
+    await userEvent.type(screen.getByPlaceholderText('Nome *'), 'Maria');
+    await userEvent.type(screen.getByPlaceholderText('Telefone'), '11999990000');
+    await userEvent.click(screen.getByRole('button', { name: 'Solicitar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+  });
+
+  it('erro ao salvar exibe toast', async () => {
+    m.post.mockRejectedValueOnce(new Error('falhou'));
+    render(<SampleRequestModal card={CARD} catalog={CATALOG} onClose={vi.fn()} onSaved={vi.fn()} />);
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Produto do catálogo/ }), '9');
+    await userEvent.click(screen.getByRole('button', { name: 'Solicitar' }));
+    await waitFor(() => expect(m.post).toHaveBeenCalled());
+  });
+});
+
+describe('SampleRequestModal — editar com follow-up', () => {
+  it('mostra o follow-up existente da amostra', () => {
+    render(<SampleRequestModal card={CARD} catalog={CATALOG}
+      sample={sample({ atividade_titulo: 'Ligar depois', atividade_start: '2026-07-01T09:00:00Z' })}
+      onClose={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByText(/Follow-up: Ligar depois/)).toBeInTheDocument();
+  });
 });
 
 describe('SampleRequestModal — editar', () => {
@@ -134,5 +179,25 @@ describe('SampleListModal', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Excluir' }));
     await waitFor(() => expect(m.del).toHaveBeenCalledWith('/api/sample-requests/1'));
     expect(onChanged).toHaveBeenCalled();
+  });
+
+  it('lista vazia mostra mensagem', async () => {
+    m.get.mockImplementation(async (p: string) => p.startsWith('/api/sample-requests') ? { samples: [] } : { contacts: [] });
+    render(<SampleListModal card={CARD} catalog={CATALOG} onClose={vi.fn()} onChanged={vi.fn()} />);
+    expect(await screen.findByText('Nenhuma amostra solicitada.')).toBeInTheDocument();
+  });
+
+  it('editor aberto pela lista fecha (cancelar) e salva (PATCH)', async () => {
+    render(<SampleListModal card={CARD} catalog={CATALOG} onClose={vi.fn()} onChanged={vi.fn()} />);
+    await userEvent.click(await screen.findByText('Produto A'));
+    await screen.findByText('Editar amostra');
+    await userEvent.click(screen.getByRole('button', { name: 'Cancelar' }));
+    await waitFor(() => expect(screen.queryByText('Editar amostra')).not.toBeInTheDocument());
+
+    m.patch.mockResolvedValueOnce({ sample: sample({ status: 'enviada' }) });
+    await userEvent.click(screen.getByText('Produto A'));
+    await screen.findByText('Editar amostra');
+    await userEvent.click(screen.getByRole('button', { name: 'Salvar' }));
+    await waitFor(() => expect(m.patch).toHaveBeenCalled());
   });
 });

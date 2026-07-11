@@ -29,7 +29,9 @@ test.describe('financeiro — fluxo de caixa e DRE', () => {
 
     await page.goto('/financeiro');
     await page.getByRole('button', { name: 'DRE' }).click();
-    await page.waitForLoadState('networkidle');
+    // Âncora determinística no conteúdo do DRE. `networkidle` é flaky: o app faz
+    // polling (notificações) e sob carga nunca fica ocioso → estourava o timeout.
+    await expect(page.getByText('Resultado por mês')).toBeVisible({ timeout: 20_000 });
 
     const ano = new Date().getFullYear();
     const dre = await api.get<{ meses: { mes: number; despesa: number }[] }>(`/api/finance/dre?ano=${ano}`);

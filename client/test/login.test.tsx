@@ -96,4 +96,14 @@ describe('Login', () => {
     mount();
     expect(screen.getByText('HOME')).toBeInTheDocument();
   });
+
+  it('alterna a visibilidade da senha', async () => {
+    mount();
+    const toggle = screen.getByRole('button', { name: 'Mostrar senha' });
+    const senha = document.querySelector('input[type="password"]')!;
+    expect(senha).toBeInTheDocument();
+    await userEvent.click(toggle);
+    expect(screen.getByRole('button', { name: 'Ocultar senha' })).toBeInTheDocument();
+    expect(document.querySelector('input[type="password"]')).toBeNull(); // virou text
+  });
 });

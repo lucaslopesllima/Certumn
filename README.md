@@ -8,11 +8,10 @@ SaaS multi-tenant de prospecção e gestão comercial para representantes. A par
 
 **Prospecção**
 - Recomendação explicável de empresas (CNAE + geolocalização + porte), com lista e mapa
-- Base RFB compartilhada e somente-leitura (empresas ativas, MEI excluído)
 - Funil kanban, agenda de atividades, clientes e carteiras
 
 **Comercial**
-- Catálogo de produtos, tabelas de preço e impostos
+- Catálogo de produtos, tabelas de preço
 - Pedidos, transportadoras, comissões e pedidos de amostra
 - Multi-vendedor com metas
 
@@ -22,7 +21,7 @@ SaaS multi-tenant de prospecção e gestão comercial para representantes. A par
 - Veículos e rotas de campo
 
 **Comunicação**
-- WhatsApp integrado (Evolution API): chat espelhado em tempo real, mídia, agendamentos
+- WhatsApp integrado: chat espelhado em tempo real, mídia, agendamentos
 - E-mail agendado (SMTP por org, recorrência)
 
 **Plataforma**
