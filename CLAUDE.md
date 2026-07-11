@@ -1,0 +1,1 @@
+- Apos qualquer alteração no projeto, rode todos os testes, unitarios e e2e

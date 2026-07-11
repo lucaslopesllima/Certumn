@@ -171,7 +171,7 @@ beforeEach(() => {
   vi.mocked(toast.error).mockReset();
   vi.mocked(toast.success).mockReset();
   statusResp = { enabled: true, status: 'conectado' };
-  connectionStatus = 'conectando';
+  connectionStatus = 'conectado';
   pickHit = { id: 500, telefone1: '5511977776666' };
   m.get.mockImplementation(defaultGet);
   m.post.mockImplementation(defaultPost);
@@ -479,6 +479,75 @@ describe('WhatsApp — apagar conversa', () => {
     await openChat('Alice');
     fireEvent.click(await screen.findByTitle('Apagar conversa'));
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith('del fail'));
+  });
+});
+
+describe('WhatsApp — verificação de conexão', () => {
+  it('status em cache "conectado" é revalidado na Evolution ao carregar', async () => {
+    await mountConnected();
+    // /status devolveu conectado (cache) → confirma com /connection.
+    expect(m.get).toHaveBeenCalledWith('/api/whatsapp/connection');
+  });
+
+  it('sessão derrubada (cache conectado, Evolution desconectado) cai no painel de QR', async () => {
+    connectionStatus = 'desconectado'; // /status diz conectado, mas a sessão morreu
+    mount();
+    expect(await screen.findByText('Conectar WhatsApp')).toBeInTheDocument();
+  });
+
+  it('falha na revalidação mantém o status em cache (não derruba à toa)', async () => {
+    m.get.mockImplementation((p: string) =>
+      (p === '/api/whatsapp/connection' ? Promise.reject(new Error('timeout')) : defaultGet(p)) as Promise<never>);
+    await mountConnected(); // ainda abre as conversas usando o cache
+    expect(screen.getByText('Conversas')).toBeInTheDocument();
+  });
+
+  it('polling detecta queda enquanto conectado e volta pro QR', async () => {
+    vi.useFakeTimers();
+    mount();
+    // resolve o loadStatus inicial (status + connection) sob fake timers
+    for (let i = 0; i < 12; i++) await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Conversas')).toBeInTheDocument();
+    connectionStatus = 'desconectado';
+    await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
+    for (let i = 0; i < 4; i++) await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText('Conectar WhatsApp')).toBeInTheDocument();
+    vi.useRealTimers();
+  });
+});
+
+describe('WhatsApp — desconectar', () => {
+  it('desconecta, limpa a lista e volta pro painel de QR', async () => {
+    await mountConnected();
+    fireEvent.click(await screen.findByLabelText('Desconectar WhatsApp'));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/whatsapp/disconnect'));
+    expect(await screen.findByText('Conectar WhatsApp')).toBeInTheDocument();
+    expect(toast.success).toHaveBeenCalledWith('WhatsApp desconectado.');
+  });
+
+  it('cancelar no confirm não desconecta', async () => {
+    vi.mocked(confirmDialog).mockResolvedValue(false);
+    await mountConnected();
+    fireEvent.click(await screen.findByLabelText('Desconectar WhatsApp'));
+    await waitFor(() => expect(confirmDialog).toHaveBeenCalled());
+    expect(m.post).not.toHaveBeenCalledWith('/api/whatsapp/disconnect');
+  });
+
+  it('erro ao desconectar dispara toast', async () => {
+    m.post.mockImplementation((p: string) =>
+      (p === '/api/whatsapp/disconnect' ? Promise.reject(new ApiError(500, 'off fail')) : defaultPost(p)) as Promise<never>);
+    await mountConnected();
+    fireEvent.click(await screen.findByLabelText('Desconectar WhatsApp'));
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('off fail'));
+  });
+
+  it('sem permissão whatsapp.connect não mostra o botão desconectar', async () => {
+    useAuthMock.mockReturnValue({
+      user: admin, loading: false, login: vi.fn(), register: vi.fn(), refresh: vi.fn(), logout: vi.fn(),
+      can: (p: string) => p !== 'whatsapp.connect', isOffice: true,
+    });
+    await mountConnected();
+    expect(screen.queryByLabelText('Desconectar WhatsApp')).not.toBeInTheDocument();
   });
 });
 

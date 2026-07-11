@@ -717,7 +717,19 @@ export function WhatsApp(): React.JSX.Element {
 
   const loadStatus = (): Promise<void> =>
     api.get<{ enabled: boolean; status: WaStatus }>('/api/whatsapp/status')
-      .then((r) => { setEnabled(r.enabled); setStatus(r.status); })
+      .then(async (r) => {
+        setEnabled(r.enabled);
+        // O status do /status vem do cache no banco. Se ele diz 'conectado',
+        // confirma o estado real na Evolution (/connection) — a sessão pode ter
+        // sido derrubada no aparelho sem o webhook chegar, e não queremos abrir o
+        // painel de conversas com a conexão já morta.
+        if (r.enabled && r.status === 'conectado') {
+          const live = await api.get<{ status: WaStatus }>('/api/whatsapp/connection').catch(() => ({ status: r.status }));
+          setStatus(live.status);
+        } else {
+          setStatus(r.status);
+        }
+      })
       .catch(() => { setStatus('desconectado'); });
 
   const loadChats = (): Promise<void> =>
@@ -753,6 +765,30 @@ export function WhatsApp(): React.JSX.Element {
       toast.success('Conversa apagada.');
     } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao apagar'); }
   };
+
+  // Desconecta/remove a sessão do WhatsApp (logout na Evolution) e volta pro QR.
+  const disconnect = async (): Promise<void> => {
+    if (!(await confirmDialog('Desconectar o WhatsApp desta conta? Será preciso ler o QR Code de novo para reconectar.'))) return;
+    try {
+      await api.post('/api/whatsapp/disconnect');
+      setStatus('desconectado');
+      setChats([]); setActiveId(null); setMessages([]);
+      toast.success('WhatsApp desconectado.');
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao desconectar'); }
+  };
+
+  // Rede de segurança: revalida a conexão real na Evolution enquanto conectado.
+  // O webhook 'status' já reflete quedas em tempo real, mas se ele não chegar
+  // (Evolution reiniciou, socket caiu) o polling detecta e cai pro painel de QR.
+  useEffect(() => {
+    if (status !== 'conectado') return;
+    const t = setInterval(() => {
+      void api.get<{ status: WaStatus }>('/api/whatsapp/connection')
+        .then((r) => { if (r.status !== 'conectado') setStatus(r.status); })
+        .catch(() => undefined);
+    }, 30000);
+    return () => clearInterval(t);
+  }, [status]);
 
   // some o "digitando…" sozinho se parar de chegar presença.
   useEffect(() => {
@@ -934,10 +970,18 @@ export function WhatsApp(): React.JSX.Element {
           active ? 'hidden md:flex' : 'flex')}>
           <div className="flex items-center justify-between gap-2 bg-[var(--wa-panel)] px-4 py-2.5">
             <span className="text-base font-semibold text-[var(--wa-ink)]">Conversas</span>
-            <button title="Nova conversa" onClick={() => setNewChatOpen(true)}
-              className="grid h-9 w-9 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-[var(--wa-hover)]">
-              <Icon name="pencil" size={18} />
-            </button>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button title="Nova conversa" onClick={() => setNewChatOpen(true)}
+                className="grid h-9 w-9 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-[var(--wa-hover)]">
+                <Icon name="pencil" size={18} />
+              </button>
+              {can('whatsapp.connect') && (
+                <button title="Desconectar WhatsApp" aria-label="Desconectar WhatsApp" onClick={() => void disconnect()}
+                  className="grid h-9 w-9 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10">
+                  <Icon name="logout" size={18} />
+                </button>
+              )}
+            </div>
           </div>
           <div className="px-3 py-2">
             <div className="flex items-center gap-2 rounded-lg bg-[var(--wa-panel)] px-3 py-1.5">
