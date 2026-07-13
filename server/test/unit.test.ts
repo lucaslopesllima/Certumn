@@ -39,37 +39,45 @@ describe('buildRecommendQuery', () => {
     profile: { cnaes_alvo: [4781400], territorio_municipios: [3550308], pesos: {} },
     limit: 20, offset: 0,
     divisoesAlvo: [47], secoesAlvo: ['G'], pruneDivisoes: [45, 46, 47],
+    regioesUf: ['SP'], regioesRegiao: ['SE'],
+    muniProx: [{ id: 3550308, pc: 0.12 }],
+    origin: { lat: -23.55, lon: -46.63 },
   };
 
-  it('modo município usa = ANY e pesos default', () => {
+  it('modo município usa = ANY($1) e pesos default (wCnae $3, wPorte $4)', () => {
     const { text, params } = buildRecommendQuery(base);
-    expect(text).toContain('c.municipio_id = ANY($2::int[])');
-    expect(params[4]).toBe(0.5);  // wCnae default
-    expect(params[3]).toBe(150_000); // norm default
+    expect(text).toContain('c.municipio_id = ANY($1::int[])');
+    expect(params[0]).toEqual([3550308]); // municipios
+    expect(params[2]).toBe(0.5);          // wCnae default
+    expect(params[3]).toBe(0.2);          // wPorte default
   });
 
-  it('a poda por divisões dos CNAEs-alvo entra como parâmetro (e não deixa $ órfão)', () => {
+  it('regiões habilitadas entram como arrays escalares ($9/$10)', () => {
     const { text, params } = buildRecommendQuery(base);
-    expect(text).toContain('c.cnae_divisao = ANY($15::smallint[])'); // $13/$14 = partida lat/lon
-    expect(params[14]).toEqual(base.pruneDivisoes);
+    expect(text).toContain('c.uf = ANY($9::bpchar[]) OR c.regiao = ANY($10::regiao_br[])');
+    expect(params[8]).toEqual(['SP']);
+    expect(params[9]).toEqual(['SE']);
+  });
+
+  it('proximidade vira CASE por município (sem JOIN) e origem em $13/$14', () => {
+    const { text, params } = buildRecommendQuery(base);
+    expect(text).toContain('CASE c.municipio_id WHEN 3550308 THEN');
+    expect(params[12]).toBe(-23.55); // origin lat
+    expect(params[13]).toBe(-46.63); // origin lon
+  });
+
+  it('poda por divisões entra como parâmetro (e não deixa $ órfão)', () => {
+    const { text, params } = buildRecommendQuery(base);
+    expect(text).toContain('c.cnae_divisao = ANY($8::smallint[])');
+    expect(params[7]).toEqual(base.pruneDivisoes);
     // todo parâmetro precisa estar referenciado no SQL (42P18 se sobrar)
     for (let i = 1; i <= params.length; i++) expect(text).toContain(`$${i}`);
   });
 
-  it('sem partida -> $13/$14 nulos e proximidade pelo centro do território', () => {
-    const { params } = buildRecommendQuery(base);
-    expect(params[12]).toBeNull();
-    expect(params[13]).toBeNull();
-  });
-
-  it('partida define a origem da proximidade (lat/lon em $13/$14)', () => {
-    const { text, params } = buildRecommendQuery({
-      ...base,
-      profile: { ...base.profile, partida: { lat: -26.9, lon: -49.1 } },
-    });
-    expect(params[12]).toBe(-26.9);
-    expect(params[13]).toBe(-49.1);
-    expect(text).toContain('ST_Distance(pt.g, origem.g, false)');
+  it('território amplo (> limite do CASE) colapsa proximidade em constante', () => {
+    const many = Array.from({ length: 400 }, (_, i) => ({ id: 1000 + i, pc: 0.1 }));
+    const { text } = buildRecommendQuery({ ...base, muniProx: many });
+    expect(text).not.toContain('CASE c.municipio_id WHEN'); // sem CASE gigante
   });
 
   it('filtros uf/porte/q com dígitos geram predicados extras (incl. cnpj LIKE)', () => {
@@ -94,8 +102,8 @@ describe('buildRecommendQuery', () => {
       ...base,
       profile: { ...base.profile, cnaes_alvo: undefined as unknown as number[], territorio_municipios: undefined as unknown as number[] },
     });
-    expect(params[0]).toEqual([]);
-    expect(params[1]).toEqual([]);
+    expect(params[0]).toEqual([]); // municipios
+    expect(params[4]).toEqual([]); // cnaes
   });
 });
 

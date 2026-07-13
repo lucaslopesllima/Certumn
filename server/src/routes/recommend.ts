@@ -5,6 +5,7 @@ import { config } from '../config.ts';
 import { buildRecommendQuery, type RecommendProfile, type RecommendFilters } from '../sql/recommend.ts';
 
 const PORTES = new Set(['nao_informado', 'micro', 'pequeno', 'demais']);
+const PROX_NORM_M = 150_000; // normalização da proximidade (~150km) — casa com o SQL
 
 // cnae_divisao_secao é estática (~99 linhas, escrita só por seed) — cache em memória.
 let divisaoSecao: Map<number, string> | null = null;
@@ -16,6 +17,48 @@ async function getDivisaoSecao(): Promise<Map<number, string>> {
     divisaoSecao = new Map(rows.map((r) => [r.divisao, r.secao]));
   }
   return divisaoSecao;
+}
+
+// Regiões habilitadas (gate da recomendação). Mutável (o ETL habilita UF a UF),
+// então consulta por request — 27 linhas, custo desprezível perto da query principal.
+async function getEnabledRegions(): Promise<{ ufs: string[]; regioes: string[] }> {
+  const rows = await query<{ uf: string | null; regiao: string | null }>(
+    'SELECT uf, regiao FROM enabled_regions',
+  );
+  const ufs = [...new Set(rows.map((r) => r.uf).filter((u): u is string => !!u))];
+  const regioes = [...new Set(rows.map((r) => r.regiao).filter((r): r is string => !!r))];
+  return { ufs, regioes };
+}
+
+// Origem da proximidade (partida ou centroide do território) + distância de cada
+// município do território até a origem. A distância é constante por município, então
+// vira o termo de proximidade por município (embutido como CASE no SQL) — sem JOIN
+// por linha e sem geografia por empresa (o que mantém o plano paralelo e barato).
+async function muniProximity(
+  municipios: number[], wProx: number, partida: { lat: number; lon: number } | null,
+): Promise<{ muniProx: { id: number; pc: number }[]; origin: { lat: number; lon: number } }> {
+  const rows = await query<{ id: number; dist_m: number; olat: number; olon: number }>(
+    `WITH o AS (
+       SELECT CASE WHEN $2::float8 IS NOT NULL
+                   THEN ST_SetSRID(ST_MakePoint($3::float8, $2::float8), 4326)::geography
+                   ELSE (SELECT ST_Centroid(ST_Collect(geom::geometry))::geography
+                         FROM municipios WHERE id = ANY($1::int[])) END AS g
+     )
+     SELECT m.id,
+            ST_Distance(m.geom, o.g, false) AS dist_m,
+            ST_Y(o.g::geometry) AS olat, ST_X(o.g::geometry) AS olon
+     FROM municipios m, o
+     WHERE m.id = ANY($1::int[])`,
+    [municipios, partida ? partida.lat : null, partida ? partida.lon : null],
+  );
+  const muniProx = rows.map((r) => ({
+    id: Number(r.id),
+    pc: wProx * (1 - Math.min(Number(r.dist_m) / PROX_NORM_M, 1)),
+  }));
+  const first = rows[0];
+  // território sem geometria (não deveria ocorrer): origem no centro do Brasil.
+  const origin = first ? { lat: Number(first.olat), lon: Number(first.olon) } : { lat: -15.78, lon: -47.93 };
+  return { muniProx, origin };
 }
 
 // Tiers de fit calculados aqui (e não em CTE) p/ virarem = ANY($array) no SQL:
@@ -92,24 +135,42 @@ export function recommendRoutes(app: FastifyInstance): void {
     if (municipios.length === 0) {
       return reply.code(400).send({ error: 'defina o território (municípios) na busca' });
     }
+    const pesos = parsePesos(query);
+    const partida = typeof query.partida_lat === 'number' && typeof query.partida_lon === 'number'
+      ? { lat: query.partida_lat, lon: query.partida_lon } : null;
     const profile: RecommendProfile = {
       cnaes_alvo: parseInts(query.cnae),
       territorio_municipios: municipios,
-      pesos: parsePesos(query),
-      partida: typeof query.partida_lat === 'number' && typeof query.partida_lon === 'number'
-        ? { lat: query.partida_lat, lon: query.partida_lon } : null,
+      pesos,
+      partida,
     };
 
-    const tiers = await cnaeTiers(profile.cnaes_alvo ?? []);
-    const { text, params } = buildRecommendQuery({ orgId, profile, limit, offset, filters, ...tiers });
+    const [tiers, regions, prox] = await Promise.all([
+      cnaeTiers(profile.cnaes_alvo ?? []),
+      getEnabledRegions(),
+      muniProximity(municipios, pesos.proximidade ?? 0.3, partida),
+    ]);
+
+    const { text, params } = buildRecommendQuery({
+      orgId, profile, limit, offset, filters, ...tiers,
+      regioesUf: regions.ufs, regioesRegiao: regions.regioes,
+      muniProx: prox.muniProx, origin: prox.origin,
+    });
 
     // Run in a tx on a single connection so SET LOCAL work_mem applies to the recommendation sort.
     const result = await withClient(async (client) => {
       await client.query('BEGIN');
-      await client.query(`SET LOCAL work_mem = '${config.recommendWorkMem}'`);
-      const r = await client.query(text, params);
-      await client.query('COMMIT');
-      return r.rows;
+      try {
+        await client.query(`SET LOCAL work_mem = '${config.recommendWorkMem}'`);
+        const r = await client.query(text, params);
+        await client.query('COMMIT');
+        return r.rows;
+      } catch (e) {
+        // sem ROLLBACK a conexão volta ao pool em transação abortada e envenena
+        // as próximas requisições que a reusarem.
+        await client.query('ROLLBACK').catch(() => {});
+        throw e;
+      }
     });
 
     return { results: result, page: { limit, offset, count: result.length } };

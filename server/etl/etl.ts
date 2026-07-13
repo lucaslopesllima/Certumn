@@ -310,10 +310,13 @@ async function main(): Promise<void> {
       );
     }
     await client.query('DROP TABLE IF EXISTS stg_emp; DROP TABLE IF EXISTS stg_est; DROP TABLE IF EXISTS stg_mei; DROP TABLE IF EXISTS stg_mun;');
-    // Estatísticas pós-carga: sem isso o planner segue com amostra antiga da
-    // tabela (milhões de linhas novas invisíveis p/ ele) até o autovacuum passar.
-    console.log('ANALYZE companies…');
-    await client.query('ANALYZE companies');
+    // Estatísticas + visibility map pós-carga. VACUUM (não só ANALYZE) porque o
+    // scan da recomendação é Index Only (companies_reco_cov_idx, migração 058) e
+    // só evita o heap com a visibility map preenchida; sem isso as buscas voltam
+    // a tocar o heap de 18GB. ANALYZE junto atualiza a amostra do planner (linhas
+    // novas invisíveis p/ ele até passar).
+    console.log('VACUUM ANALYZE companies…');
+    await client.query('VACUUM ANALYZE companies');
     console.log(`ETL concluído. enabled_regions += ${args.uf}.`);
   } finally {
     await client.end();
