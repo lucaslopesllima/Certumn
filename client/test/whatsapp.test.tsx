@@ -158,6 +158,7 @@ const defaultPost = async (p: string): Promise<unknown> => {
 };
 const defaultPatch = async (p: string): Promise<unknown> => {
   if (/\/numero$/.test(p)) return { chat: { ...chatC, numero: '5511900001111' } };
+  if (/\/chats\/\d+\/contact$/.test(p)) return { chat: { ...chatD, contact_id: 77, contact_nome: 'Fulano' } };
   if (/\/link$/.test(p)) return { chat: { ...chatA, company_id: 200, company_fantasia: 'NovaCo' } };
   if (/\/contacts\/\d+$/.test(p)) return { contact: { id: 11, nome: 'Bob Edit', cargo: null, telefone: null, email: null, company_id: 100, represented_id: null } };
   return {};
@@ -812,6 +813,8 @@ describe('WhatsApp — ContactDetails', () => {
     fireEvent.change(await screen.findByPlaceholderText('Nome *'), { target: { value: 'Fulano' } });
     fireEvent.click(screen.getByRole('button', { name: 'Salvar' }));
     await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/contacts', expect.objectContaining({ nome: 'Fulano', company_id: null })));
+    // o contato criado é vinculado à conversa (persiste + nome passa a aparecer)
+    await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/whatsapp/chats/4/contact', { contact_id: 77 }));
   });
 
   it('"Salvar contato" não aparece quando o número já é um contato', async () => {

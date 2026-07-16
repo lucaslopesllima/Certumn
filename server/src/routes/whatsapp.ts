@@ -421,6 +421,28 @@ export function whatsappRoutes(app: FastifyInstance): void {
     return { chat: out };
   });
 
+  // Vincula (ou desvincula) a conversa a um contato (pessoa) da base. Usado pelo
+  // "Salvar contato": a conversa passa a exibir o nome do contato e o vínculo
+  // persiste, mesmo sem empresa vinculada. contact_id=null desfaz.
+  app.patch('/api/whatsapp/chats/:id/contact', {
+    preHandler: [requireAuth, requirePermission('whatsapp.link')],
+    schema: { body: { type: 'object', properties: { contact_id: { type: ['integer', 'null'] } } } },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const chatId = (req.params as { id: string }).id;
+    const { contact_id } = req.body as { contact_id?: number | null };
+    const chat = await one<{ id: string }>('SELECT id FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId]);
+    if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
+    if (contact_id != null) {
+      const ct = await one<{ id: string }>('SELECT id FROM contacts WHERE id = $1 AND org_id = $2', [contact_id, orgId]);
+      if (!ct) return reply.code(400).send({ error: 'contato inválido' });
+    }
+    await query('UPDATE whatsapp_chats SET contact_id = $3 WHERE id = $1 AND org_id = $2', [chatId, orgId, contact_id ?? null]);
+    await audit(req, 'whatsapp_chat', chatId, 'link_contact', { contact_id: contact_id ?? null });
+    const out = await one(`${CHAT_LABELS_SQL} WHERE ch.id = $1 AND ch.org_id = $2`, [chatId, orgId]);
+    return { chat: out };
+  });
+
   // Informa o telefone de um contato que chegou só como LID (número oculto).
   // Grava o número no contato e registra o jid de telefone como alias da conversa
   // — assim o envio passa a funcionar (sai pelo número).

@@ -390,6 +390,8 @@ export interface WaChat {
   relationship_id: number | null;
   company_nome: string | null;
   company_fantasia: string | null;
+  contact_id: number | null;
+  contact_nome: string | null;
   represented_id: number | null;
   represented_nome: string | null;
 }

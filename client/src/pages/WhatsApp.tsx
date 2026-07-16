@@ -33,6 +33,7 @@ function dayLabel(iso: string): string {
 }
 
 function nomeChat(c: WaChat): string {
+  if (c.contact_nome) return c.contact_nome;
   if (c.nome) return c.nome;
   if (c.remote_jid.endsWith('@g.us')) return 'Grupo';
   return c.numero ? maskPhone(c.numero) : c.remote_jid.split('@')[0];
@@ -508,10 +509,11 @@ interface GroupData { subject: string | null; desc: string | null; size: number 
 // Painel lateral de dados do contato/grupo (estilo WhatsApp Web): avatar grande,
 // identificadores, empresa vinculada, mídia compartilhada e — em grupo —
 // descrição + participantes.
-function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, onOpenContact }: {
+function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, onOpenContact, onChatUpdate }: {
   chat: WaChat; messages: WaMessage[]; onClose: () => void;
   onLink: () => void; onOrder: () => void; onNumber: () => void;
   onOpenContact: (chatId: number) => void;
+  onChatUpdate: (chat: WaChat) => void;
 }): React.JSX.Element {
   const { can } = useAuth();
   const isGroup = chat.remote_jid.endsWith('@g.us');
@@ -524,7 +526,9 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
   const [lightbox, setLightbox] = useState<string | null>(null);
   // Contatos da empresa vinculada (cria/edita aqui mesmo). Só carrega quando há empresa.
   const [contatos, setContatos] = useState<Contact[]>([]);
-  const [contactModal, setContactModal] = useState<{ contact: Contact | null } | null>(null);
+  // `link`: quando true, ao salvar o contato também vincula a conversa a ele
+  // (fluxo "Salvar contato"). O CRUD da lista de contatos da empresa usa false.
+  const [contactModal, setContactModal] = useState<{ contact: Contact | null; link: boolean } | null>(null);
   useEffect(() => {
     if (isGroup || chat.company_id == null) { setContatos([]); return; }
     void api.get<{ contacts: Contact[] }>(`/api/contacts?company_id=${chat.company_id}`)
@@ -558,8 +562,8 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
       return td.slice(-n) === cd.slice(-n);
     });
   }, [contatos, chat.numero]);
-  const canSaveContact = !isGroup && !!chat.numero && !savedContact;
-  const saveContact = (): void => setContactModal({ contact: null });
+  const canSaveContact = !isGroup && !!chat.numero && chat.contact_id == null && !savedContact && can('whatsapp.link');
+  const saveContact = (): void => setContactModal({ contact: null, link: true });
 
   return (
    <>
@@ -621,7 +625,7 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
           <div className="bg-surface px-6 py-4">
             <div className="mb-2 flex items-center justify-between">
               <p className="text-xs font-semibold uppercase tracking-wide text-ink-400">Contatos</p>
-              <button onClick={() => setContactModal({ contact: null })}
+              <button onClick={() => setContactModal({ contact: null, link: false })}
                 className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 hover:underline">
                 <Icon name="plus" size={13} /> Novo
               </button>
@@ -633,7 +637,7 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
                 {contatos.map((ct) => (
                   <div key={ct.id}
                     className="flex items-center gap-1 rounded-lg border border-ink-100 px-3 py-2 transition hover:bg-ink-50">
-                    <button onClick={() => setContactModal({ contact: ct })}
+                    <button onClick={() => setContactModal({ contact: ct, link: false })}
                       className="flex min-w-0 flex-1 items-center justify-between gap-2 text-left">
                       <span className="min-w-0">
                         <span className="block truncate text-sm text-ink-700">{ct.nome}{ct.cargo ? ` · ${ct.cargo}` : ''}</span>
@@ -698,7 +702,16 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
     {contactModal && (
       <ContactFormModal companyId={chat.company_id} contact={contactModal.contact} defaultPhone={chat.numero}
         onClose={() => setContactModal(null)}
-        onSaved={(c) => setContatos((xs) => (xs.some((x) => x.id === c.id) ? xs.map((x) => (x.id === c.id ? c : x)) : [...xs, c]))}
+        onSaved={(c) => {
+          setContatos((xs) => (xs.some((x) => x.id === c.id) ? xs.map((x) => (x.id === c.id ? c : x)) : [...xs, c]));
+          // "Salvar contato": grava o vínculo na conversa (persiste + passa a
+          // exibir o nome do contato na lista/cabeçalho).
+          if (contactModal.link) {
+            void api.patch<{ chat: WaChat }>(`/api/whatsapp/chats/${chat.id}/contact`, { contact_id: c.id })
+              .then((r) => onChatUpdate(r.chat))
+              .catch((e) => toast.error(e instanceof ApiError ? e.message : 'Falha ao vincular contato à conversa'));
+          }
+        }}
         onDeleted={(id) => setContatos((xs) => xs.filter((x) => x.id !== id))} />
     )}
     <ImageLightbox url={lightbox} onClose={() => setLightbox(null)} />
@@ -1140,7 +1153,8 @@ export function WhatsApp(): React.JSX.Element {
             onLink={() => { setDetailsOpen(false); setLinkOpen(true); }}
             onOrder={() => { setDetailsOpen(false); setOrderOpen(true); }}
             onNumber={() => { setDetailsOpen(false); setNumberOpen(true); }}
-            onOpenContact={(id) => { setDetailsOpen(false); void loadChats().then(() => openChat(id)); }} />
+            onOpenContact={(id) => { setDetailsOpen(false); void loadChats().then(() => openChat(id)); }}
+            onChatUpdate={(c) => setChats((cs) => cs.map((x) => (x.id === c.id ? c : x)))} />
         )}
       </div>
       {active && linkOpen && (

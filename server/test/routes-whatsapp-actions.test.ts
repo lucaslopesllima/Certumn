@@ -105,6 +105,25 @@ describe('whatsapp — link empresa', () => {
   });
 });
 
+describe('whatsapp — vincular contato', () => {
+  it('404, contato inválido, vincula (rótulo) e desvincula', async () => {
+    expect((await inj('PATCH', '/api/whatsapp/chats/999999/contact', { contact_id: null })).statusCode).toBe(404);
+    const chat = await mkChat('5511700000020@s.whatsapp.net', '5511700000020');
+    // contato de outra org / inexistente -> 400
+    expect((await inj('PATCH', `/api/whatsapp/chats/${chat}/contact`, { contact_id: 999999 })).statusCode).toBe(400);
+    // conversa sem empresa: contato criado direto, vínculo persiste e passa a rotular
+    const ct = await one<{ id: string }>(
+      'INSERT INTO contacts (org_id, nome, telefone) VALUES ($1,$2,$3) RETURNING id', [org, 'Fulano', '5511700000020']);
+    const r = await inj('PATCH', `/api/whatsapp/chats/${chat}/contact`, { contact_id: Number(ct!.id) });
+    expect(r.statusCode).toBe(200);
+    expect(String(r.json().chat.contact_id)).toBe(String(ct!.id));
+    expect(r.json().chat.contact_nome).toBe('Fulano');
+    const r2 = await inj('PATCH', `/api/whatsapp/chats/${chat}/contact`, { contact_id: null });
+    expect(r2.json().chat.contact_id).toBeNull();
+    expect(r2.json().chat.contact_nome).toBeNull();
+  });
+});
+
 describe('whatsapp — grupo', () => {
   it('404, 400 não-grupo, detalhes, 503/502', async () => {
     expect((await inj('GET', '/api/whatsapp/chats/999999/group')).statusCode).toBe(404);
@@ -168,7 +187,7 @@ describe('whatsapp — agendamentos', () => {
     expect((await inj('POST', '/api/whatsapp/chats/999999/schedule', { text: 'x', agendado_para: '2030-01-01T10:00:00Z' })).statusCode).toBe(404);
     const lid = await mkChat('lidsched@lid', null);
     expect((await inj('POST', `/api/whatsapp/chats/${lid}/schedule`, { text: 'x', agendado_para: '2030-01-01T10:00:00Z' })).statusCode).toBe(422);
-    const chat = await mkChat('5511700000011@s.whatsapp.net', '5511700000011');
+    const chat = await mkChat('5511700000014@s.whatsapp.net', '5511700000014');
     expect((await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, { text: 'x', agendado_para: 'data-ruim' })).statusCode).toBe(400);
     const r = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, { text: 'a'.repeat(80), agendado_para: '2030-01-01T10:00:00Z' });
     expect(r.statusCode).toBe(201);

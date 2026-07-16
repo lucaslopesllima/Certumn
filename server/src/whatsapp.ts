@@ -104,22 +104,24 @@ export async function relationshipForCompany(orgId: number, companyId: number): 
 // Conversa com rótulos do vínculo (empresa/funil/representada) p/ a UI.
 export const CHAT_LABELS_SQL = `
   SELECT ch.id, ch.remote_jid, ch.numero, ch.lid, ch.nome, ch.foto_url, ch.last_message_at, ch.last_preview,
-         ch.nao_lidas, ch.company_id, ch.relationship_id,
+         ch.nao_lidas, ch.company_id, ch.relationship_id, ch.contact_id,
          co.razao_social AS company_nome, co.nome_fantasia AS company_fantasia,
+         ct.nome AS contact_nome,
          r.represented_id, rc.nome AS represented_nome
     FROM whatsapp_chats ch
     LEFT JOIN companies co ON co.id = ch.company_id
+    LEFT JOIN contacts ct ON ct.id = ch.contact_id AND ct.org_id = ch.org_id
     LEFT JOIN company_relationships r ON r.id = ch.relationship_id
     LEFT JOIN represented_companies rc ON rc.id = r.represented_id AND rc.org_id = ch.org_id`;
 
 export interface ChatRow {
   id: string; remote_jid: string; numero: string | null; lid: string | null; nome: string | null;
   foto_url: string | null; last_message_at: string | null; last_preview: string | null;
-  nao_lidas: number; company_id: string | null; relationship_id: string | null;
+  nao_lidas: number; company_id: string | null; relationship_id: string | null; contact_id: string | null;
 }
 
 const CHAT_COLS = `id, remote_jid, numero, lid, nome, foto_url, last_message_at, last_preview,
-                   nao_lidas, company_id, relationship_id`;
+                   nao_lidas, company_id, relationship_id, contact_id`;
 
 // Resolve jid -> chat_id pela tabela de aliases (suporta vários jids por contato,
 // ex.: telefone + @lid depois de conciliar). null = jid ainda não conhecido.
