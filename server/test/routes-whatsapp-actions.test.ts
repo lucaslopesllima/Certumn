@@ -223,6 +223,18 @@ describe('whatsapp — agendamentos', () => {
     expect((await inj('DELETE', `/api/whatsapp/schedules/${schedId}`)).statusCode).toBe(404);
   });
 
+  it('apagar o compromisso na Agenda cancela o agendamento pendente', async () => {
+    const chat = await mkChat('5511700000015@s.whatsapp.net', '5511700000015');
+    const created = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, { text: 'via agenda', agendado_para: '2030-07-01T10:00:00Z' });
+    const schedId = created.json().schedule.id;
+    const sched = await one<{ activity_id: string }>(
+      'SELECT activity_id FROM whatsapp_schedules WHERE id = $1', [schedId]);
+    expect(sched!.activity_id).not.toBeNull();
+    expect((await inj('DELETE', `/api/activities/${sched!.activity_id}`)).statusCode).toBe(200);
+    const after = await one<{ status: string }>('SELECT status FROM whatsapp_schedules WHERE id = $1', [schedId]);
+    expect(after!.status).toBe('cancelado');
+  });
+
   it('cancela agendamento sem compromisso espelho (activity_id nulo)', async () => {
     const chat = await mkChat('5511700000013@s.whatsapp.net', '5511700000013');
     const row = await one<{ id: string }>(

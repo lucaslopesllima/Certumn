@@ -116,7 +116,9 @@ export const CHAT_LABELS_SQL = `
          ch.nao_lidas, ch.company_id, ch.relationship_id, ch.contact_id,
          co.razao_social AS company_nome, co.nome_fantasia AS company_fantasia,
          ct.nome AS contact_nome,
-         r.represented_id, rc.nome AS represented_nome
+         r.represented_id, rc.nome AS represented_nome,
+         (SELECT count(*)::int FROM whatsapp_schedules s
+           WHERE s.chat_id = ch.id AND s.status = 'pendente' AND s.agendado_para > now()) AS agendamentos_pendentes
     FROM whatsapp_chats ch
     LEFT JOIN companies co ON co.id = ch.company_id
     LEFT JOIN contacts ct ON ct.id = ch.contact_id AND ct.org_id = ch.org_id
@@ -127,6 +129,58 @@ export interface ChatRow {
   id: string; remote_jid: string; numero: string | null; lid: string | null; nome: string | null;
   foto_url: string | null; last_message_at: string | null; last_preview: string | null;
   nao_lidas: number; company_id: string | null; relationship_id: string | null; contact_id: string | null;
+}
+
+// Intervalos de recorrência aceitos nos agendamentos de mensagem.
+export const WA_RECORRENCIAS = ['diaria', 'semanal', 'mensal', 'anual'] as const;
+export type WaRecorrencia = (typeof WA_RECORRENCIAS)[number];
+
+// Compromisso espelho na Agenda + agendamento de WhatsApp, numa transação só.
+// Reusado pelo agendamento de dentro da conversa, pelo agendamento direto
+// (Agenda) e pelo processador ao criar a próxima ocorrência de uma recorrência.
+export async function scheduleWhatsappTx(orgId: number, opts: {
+  chatId: string | number; remoteJid: string; companyId: string | number | null;
+  contactId: string | number | null; ownerUserId: string | number | null; text: string; when: Date; titulo: string;
+  recorrencia?: WaRecorrencia | null;
+}): Promise<Record<string, unknown>> {
+  return withClient(async (c) => {
+    await c.query('BEGIN');
+    try {
+      const act = (await c.query(
+        `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, contact_id, status)
+         VALUES ($1, 'whatsapp', $2, $3, $4, $5, $6, 'pendente') RETURNING id`,
+        [orgId, opts.titulo, opts.when.toISOString(), opts.ownerUserId, opts.companyId, opts.contactId],
+      )).rows[0] as { id: string };
+      const s = (await c.query(
+        `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id, recorrencia)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+         RETURNING id, chat_id, corpo, agendado_para, status, recorrencia`,
+        [orgId, opts.chatId, opts.remoteJid, opts.text, opts.when.toISOString(), opts.ownerUserId, act.id, opts.recorrencia ?? null],
+      )).rows[0];
+      await c.query('COMMIT');
+      return s;
+    } catch (e) { await c.query('ROLLBACK'); throw e; }
+  });
+}
+
+// Próxima ocorrência estritamente futura: avança a partir da data agendada (não
+// de now) pra manter o horário original; se o sistema ficou parado, pula as
+// ocorrências perdidas em vez de disparar uma rajada. Mensal/anual clampa no
+// último dia do mês (31 → 28/29 em fevereiro).
+export function nextOccurrence(from: Date, rec: WaRecorrencia, now: Date): Date {
+  const d = new Date(from);
+  do {
+    if (rec === 'diaria') d.setDate(d.getDate() + 1);
+    else if (rec === 'semanal') d.setDate(d.getDate() + 7);
+    else {
+      const day = d.getDate();
+      d.setDate(1);
+      if (rec === 'mensal') d.setMonth(d.getMonth() + 1);
+      else d.setFullYear(d.getFullYear() + 1);
+      d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+    }
+  } while (d.getTime() <= now.getTime());
+  return d;
 }
 
 const CHAT_COLS = `id, remote_jid, numero, lid, nome, foto_url, last_message_at, last_preview,

@@ -152,6 +152,17 @@ export function activityRoutes(app: FastifyInstance): void {
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id))) {
       return reply.code(403).send({ error: 'compromisso de outro vendedor' });
     }
+    // Apagar o compromisso espelho cancela os agendamentos pendentes vinculados —
+    // senão o FK só faz SET NULL e a mensagem agendada continuaria sendo enviada.
+    await query(
+      `UPDATE whatsapp_schedules SET status = 'cancelado', updated_at = now()
+        WHERE activity_id = $1 AND org_id = $2 AND status = 'pendente'`,
+      [id, orgId],
+    );
+    await query(
+      "DELETE FROM email_schedules WHERE activity_id = $1 AND org_id = $2 AND status = 'pendente'",
+      [id, orgId],
+    );
     const rows = await query('DELETE FROM activities WHERE id = $1 AND org_id = $2 RETURNING id', [id, orgId]);
     if (rows.length === 0) return reply.code(404).send({ error: 'não encontrado' });
     return { deleted: true };

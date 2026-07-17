@@ -34,11 +34,11 @@ async function mkChat(jid: string, numero: string | null): Promise<string> {
     'INSERT INTO whatsapp_chats (org_id, remote_jid, numero) VALUES ($1,$2,$3) RETURNING id', [org, jid, numero]);
   return r!.id;
 }
-async function mkSchedule(opts: { chatId: string | null; jid: string; corpo?: string; activityId?: string | null }): Promise<string> {
+async function mkSchedule(opts: { chatId: string | null; jid: string; corpo?: string; activityId?: string | null; recorrencia?: string | null }): Promise<string> {
   const r = await one<{ id: string }>(
-    `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id)
-     VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`,
-    [org, opts.chatId, opts.jid, opts.corpo ?? 'agendada', past, userId, opts.activityId ?? null]);
+    `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id, recorrencia)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+    [org, opts.chatId, opts.jid, opts.corpo ?? 'agendada', past, userId, opts.activityId ?? null, opts.recorrencia ?? null]);
   return r!.id;
 }
 const statusOf = async (id: string): Promise<{ status: string; erro: string | null }> =>
@@ -132,6 +132,42 @@ describe('processDueWhatsapp', () => {
     const sent = await processDueWhatsapp();
     expect(sent).toBe(0);
     expect((await statusOf(id)).status).toBe('enviado');
+  });
+
+  it('recorrência: após enviar, cria a próxima ocorrência pendente + compromisso na Agenda', async () => {
+    await setConn('conectado');
+    const chat = await mkChat('5511200000008@s.whatsapp.net', '5511200000008');
+    const act = await one<{ id: string }>(
+      `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, status)
+       VALUES ($1,'whatsapp','rec-titulo', now(), $2, 'pendente') RETURNING id`, [org, userId]);
+    const id = await mkSchedule({ chatId: chat, jid: '5511200000008@s.whatsapp.net', corpo: 'rec', activityId: act!.id, recorrencia: 'diaria' });
+    await processDueWhatsapp();
+    expect((await statusOf(id)).status).toBe('enviado');
+    // Próxima ocorrência: pendente, futura, mesma recorrência, com activity própria.
+    const next = await one<{ id: string; agendado_para: string; recorrencia: string; activity_id: string }>(
+      `SELECT id, agendado_para, recorrencia, activity_id FROM whatsapp_schedules
+        WHERE chat_id = $1 AND status = 'pendente' AND id <> $2`, [chat, id]);
+    expect(next).toBeTruthy();
+    expect(next!.recorrencia).toBe('diaria');
+    expect(new Date(next!.agendado_para).getTime()).toBeGreaterThan(Date.now());
+    const a = await one<{ titulo: string; status: string }>('SELECT titulo, status FROM activities WHERE id = $1', [next!.activity_id]);
+    expect(a!.titulo).toBe('rec-titulo');
+    expect(a!.status).toBe('pendente');
+    // Segunda varredura não deve reprocessar nada (próxima é futura).
+    sendText.mockClear();
+    await processDueWhatsapp();
+    expect(sendText).not.toHaveBeenCalled();
+    await query("UPDATE whatsapp_schedules SET status='cancelado' WHERE id=$1", [next!.id]);
+  });
+
+  it('sem recorrência: envia e não cria nova ocorrência', async () => {
+    await setConn('conectado');
+    const chat = await mkChat('5511200000009@s.whatsapp.net', '5511200000009');
+    const id = await mkSchedule({ chatId: chat, jid: '5511200000009@s.whatsapp.net', corpo: 'unica' });
+    await processDueWhatsapp();
+    expect((await statusOf(id)).status).toBe('enviado');
+    const rest = await query('SELECT id FROM whatsapp_schedules WHERE chat_id = $1 AND id <> $2', [chat, id]);
+    expect(rest.length).toBe(0);
   });
 
   it('varre em lotes (CONCURRENCY) e dedupe status de conexão por org', async () => {

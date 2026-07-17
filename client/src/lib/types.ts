@@ -395,7 +395,10 @@ export interface WaChat {
   contact_nome: string | null;
   represented_id: number | null;
   represented_nome: string | null;
+  agendamentos_pendentes: number;
 }
+
+export type WaRecorrencia = 'diaria' | 'semanal' | 'mensal' | 'anual';
 
 export interface WaSchedule {
   id: number;
@@ -403,6 +406,7 @@ export interface WaSchedule {
   corpo: string;
   agendado_para: string;
   status: string;
+  recorrencia: WaRecorrencia | null;
 }
 
 export interface WaMessage {

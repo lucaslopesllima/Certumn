@@ -9,7 +9,7 @@ import { maskPhone } from '../lib/format.ts';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { OrderModal } from '../lib/orderModal.tsx';
 import { useAuth } from '../lib/auth.tsx';
-import type { Contact, CompanyHit, WaChat, WaMessage, WaSchedule, WaStatus } from '../lib/types.ts';
+import type { Contact, CompanyHit, WaChat, WaMessage, WaRecorrencia, WaSchedule, WaStatus } from '../lib/types.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
 // base64 do QR pode vir cru ou já como data URL — normaliza p/ <img src>.
@@ -295,9 +295,15 @@ function LinkModal({ chatId, current, onClose, onLinked }: { chatId: number; cur
 }
 
 // Agenda mensagens de texto + lista/cancela pendentes da conversa.
-function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void }): React.JSX.Element {
+const RECORRENCIA_LABEL: Record<WaRecorrencia, string> = {
+  diaria: 'Diária', semanal: 'Semanal', mensal: 'Mensal', anual: 'Anual',
+};
+
+function ScheduleModal({ chat, onClose, onChanged }: { chat: WaChat; onClose: () => void; onChanged: () => void }): React.JSX.Element {
   const [text, setText] = useState('');
   const [when, setWhen] = useState('');
+  const [repete, setRepete] = useState(false);
+  const [recorrencia, setRecorrencia] = useState<WaRecorrencia>('diaria');
   const [list, setList] = useState<WaSchedule[]>([]);
   const load = (): void => {
     void api.get<{ schedules: WaSchedule[] }>(`/api/whatsapp/schedules?chat_id=${chat.id}`)
@@ -310,17 +316,30 @@ function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void })
     const d = new Date(when);
     if (Number.isNaN(d.getTime()) || d.getTime() < Date.now()) { toast.error('Escolha uma data futura.'); return; }
     try {
-      await api.post(`/api/whatsapp/chats/${chat.id}/schedule`, { text: t, agendado_para: d.toISOString() });
-      toast.success('Mensagem agendada.'); setText(''); setWhen(''); load();
+      await api.post(`/api/whatsapp/chats/${chat.id}/schedule`, {
+        text: t, agendado_para: d.toISOString(), recorrencia: repete ? recorrencia : null,
+      });
+      toast.success('Mensagem agendada.'); setText(''); setWhen(''); setRepete(false); load(); onChanged();
     } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao agendar'); }
   };
   const cancel = async (id: number): Promise<void> => {
-    try { await api.del(`/api/whatsapp/schedules/${id}`); load(); } catch { toast.error('Falha ao cancelar'); }
+    try { await api.del(`/api/whatsapp/schedules/${id}`); load(); onChanged(); } catch { toast.error('Falha ao cancelar'); }
   };
   return (
     <Overlay title="Agendar mensagem" onClose={onClose}>
       <textarea value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Mensagem…" className={inputCls} />
       <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
+      <label className="flex items-center gap-2 text-sm text-ink-700">
+        <input type="checkbox" checked={repete} onChange={(e) => setRepete(e.target.checked)} className="h-4 w-4 accent-brand-600" />
+        Repetir
+      </label>
+      {repete && (
+        <select value={recorrencia} onChange={(e) => setRecorrencia(e.target.value as WaRecorrencia)} className={inputCls}>
+          {(Object.keys(RECORRENCIA_LABEL) as WaRecorrencia[]).map((r) => (
+            <option key={r} value={r}>{RECORRENCIA_LABEL[r]}</option>
+          ))}
+        </select>
+      )}
       <Btn onClick={() => create()} icon="clock">Agendar</Btn>
       {list.length > 0 && (
         <div className="border-t border-ink-100 pt-3">
@@ -338,7 +357,9 @@ function ScheduleModal({ chat, onClose }: { chat: WaChat; onClose: () => void })
                 <div className="min-w-0">
                   <p className={cn('truncate text-sm', ativa ? 'text-ink-700' : 'text-ink-500 line-through')}>{s.corpo}</p>
                   <p className="text-[11px] text-ink-400">
-                    {new Date(s.agendado_para).toLocaleString('pt-BR')}{rotulo ? ` · ${rotulo}` : ''}
+                    {new Date(s.agendado_para).toLocaleString('pt-BR')}
+                    {s.recorrencia ? ` · ${RECORRENCIA_LABEL[s.recorrencia].toLowerCase()}` : ''}
+                    {rotulo ? ` · ${rotulo}` : ''}
                   </p>
                 </div>
                 {ativa && (
@@ -1135,7 +1156,16 @@ export function WhatsApp(): React.JSX.Element {
                 <button onClick={() => setDetailsOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
                   <img src={avatarSrc(active)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
                   <span className="min-w-0">
-                    <span className="block truncate font-semibold text-[var(--wa-ink)]">{nomeChat(active)}</span>
+                    <span className="flex items-center gap-2">
+                      <span className="truncate font-semibold text-[var(--wa-ink)]">{nomeChat(active)}</span>
+                      {active.agendamentos_pendentes > 0 && (
+                        <span title="Há mensagens agendadas para este contato"
+                          className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-500/15 dark:text-amber-400">
+                          <Icon name="clock" size={11} />
+                          {active.agendamentos_pendentes > 1 ? `${active.agendamentos_pendentes} mensagens agendadas` : 'Mensagem agendada'}
+                        </span>
+                      )}
+                    </span>
                     <span className="block truncate text-xs text-[var(--wa-muted)]">
                       {isTyping ? 'digitando…'
                         : needsNumber ? 'número oculto (LID) — informe o telefone'
@@ -1233,7 +1263,7 @@ export function WhatsApp(): React.JSX.Element {
         <LinkModal chatId={active.id} current={active} onClose={() => setLinkOpen(false)}
           onLinked={(c) => setChats((cs) => cs.map((x) => (x.id === c.id ? c : x)))} />
       )}
-      {active && schedOpen && <ScheduleModal chat={active} onClose={() => setSchedOpen(false)} />}
+      {active && schedOpen && <ScheduleModal chat={active} onClose={() => setSchedOpen(false)} onChanged={() => void loadChats()} />}
       {active && mergeOpen && (
         <MergeModal current={active} chats={chats} onClose={() => setMergeOpen(false)} onMerged={() => void loadChats()} />
       )}

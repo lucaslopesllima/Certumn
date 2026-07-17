@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { one, query, withClient } from '../db.ts';
+import { one, query } from '../db.ts';
 import { requireAuth, requirePermission, authorizeToken, AuthError } from '../auth.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
 import { audit } from '../audit.ts';
@@ -10,8 +10,9 @@ import { addConn, removeConn, broadcast } from '../ws.ts';
 import {
   ensureSettings, setStatus, instanceName, upsertChat, insertMessage,
   CHAT_LABELS_SQL, relationshipForCompany, numeroToJid, mergeChats, deleteChat, syncGroupNames,
-  normalizeNumero, jidToNumero, findChatByNumero,
+  normalizeNumero, jidToNumero, findChatByNumero, scheduleWhatsappTx, WA_RECORRENCIAS,
 } from '../whatsapp.ts';
+import type { WaRecorrencia } from '../whatsapp.ts';
 
 // Sincronização de nomes de grupo já feita nesta sessão (por org) — roda uma vez
 // ao abrir a lista de conversas, conserta grupos com nome de participante.
@@ -30,32 +31,6 @@ function safeMediaType(mime: string | null): { type: string; inline: boolean } {
   const m = ((mime ?? '').split(';')[0] ?? '').trim().toLowerCase();
   if (INLINE_MEDIA_MIME.has(m)) return { type: m, inline: true };
   return { type: 'application/octet-stream', inline: false };
-}
-
-// Compromisso espelho na Agenda + agendamento de WhatsApp, numa transação só.
-// Reusado pelo agendamento de dentro da conversa e pelo agendamento direto (Agenda).
-async function scheduleWhatsappTx(orgId: number, opts: {
-  chatId: string | number; remoteJid: string; companyId: string | number | null;
-  contactId: number | null; ownerUserId: number; text: string; when: Date; titulo: string;
-}): Promise<Record<string, unknown>> {
-  return withClient(async (c) => {
-    await c.query('BEGIN');
-    try {
-      const act = (await c.query(
-        `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, contact_id, status)
-         VALUES ($1, 'whatsapp', $2, $3, $4, $5, $6, 'pendente') RETURNING id`,
-        [orgId, opts.titulo, opts.when.toISOString(), opts.ownerUserId, opts.companyId, opts.contactId],
-      )).rows[0] as { id: string };
-      const s = (await c.query(
-        `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, chat_id, corpo, agendado_para, status`,
-        [orgId, opts.chatId, opts.remoteJid, opts.text, opts.when.toISOString(), opts.ownerUserId, act.id],
-      )).rows[0];
-      await c.query('COMMIT');
-      return s;
-    } catch (e) { await c.query('ROLLBACK'); throw e; }
-  });
 }
 
 // 'open' (Evolution) -> 'conectado' etc. Normaliza p/ o vocabulário do front.
@@ -575,13 +550,17 @@ export function whatsappRoutes(app: FastifyInstance): void {
     schema: {
       body: {
         type: 'object', required: ['text', 'agendado_para'],
-        properties: { text: { type: 'string', minLength: 1 }, agendado_para: { type: 'string', minLength: 10 } },
+        properties: {
+          text: { type: 'string', minLength: 1 },
+          agendado_para: { type: 'string', minLength: 10 },
+          recorrencia: { type: ['string', 'null'], enum: [...WA_RECORRENCIAS, null] },
+        },
       },
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const chatId = (req.params as { id: string }).id;
-    const { text, agendado_para } = req.body as { text: string; agendado_para: string };
+    const { text, agendado_para, recorrencia } = req.body as { text: string; agendado_para: string; recorrencia?: WaRecorrencia | null };
     const chat = await one<{ remote_jid: string; nome: string | null; numero: string | null; company_id: string | null }>(
       'SELECT remote_jid, nome, numero, company_id FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId]);
     if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
@@ -597,7 +576,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const titulo = `WhatsApp p/ ${alvo}: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
     const row = await scheduleWhatsappTx(orgId, {
       chatId, remoteJid: chat.remote_jid, companyId: chat.company_id, contactId: null,
-      ownerUserId: req.auth!.userId, text, when, titulo,
+      ownerUserId: req.auth!.userId, text, when, titulo, recorrencia: recorrencia ?? null,
     });
     return reply.code(201).send({ schedule: row });
   });
@@ -614,6 +593,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
           numero: { type: 'string', minLength: 8 },
           text: { type: 'string', minLength: 1 },
           agendado_para: { type: 'string', minLength: 10 },
+          recorrencia: { type: ['string', 'null'], enum: [...WA_RECORRENCIAS, null] },
           company_id: { type: ['integer', 'null'] },
           contact_id: { type: ['integer', 'null'] },
         },
@@ -621,7 +601,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
-    const b = req.body as { numero: string; text: string; agendado_para: string; company_id?: number | null; contact_id?: number | null };
+    const b = req.body as { numero: string; text: string; agendado_para: string; recorrencia?: WaRecorrencia | null; company_id?: number | null; contact_id?: number | null };
     const badRef = await invalidOrgRef(orgId, b, ['contact_id']);
     if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const jid = numeroToJid(b.numero);
@@ -652,6 +632,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const row = await scheduleWhatsappTx(orgId, {
       chatId: chat.id, remoteJid: chat.remote_jid, companyId: b.company_id ?? chat.company_id,
       contactId: b.contact_id ?? null, ownerUserId: req.auth!.userId, text: b.text, when, titulo,
+      recorrencia: b.recorrencia ?? null,
     });
     return reply.code(201).send({ schedule: row });
   });
@@ -669,7 +650,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const params: unknown[] = [orgId];
     if (chat_id != null) { params.push(chat_id); where.push(`chat_id = $${params.length}`); }
     const schedules = await query(
-      `SELECT id, chat_id, corpo, agendado_para, status FROM whatsapp_schedules
+      `SELECT id, chat_id, corpo, agendado_para, status, recorrencia FROM whatsapp_schedules
         WHERE ${where.join(' AND ')} ORDER BY agendado_para LIMIT 200`,
       params,
     );

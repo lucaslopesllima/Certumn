@@ -4,7 +4,8 @@
 // envio TRAVA (segue pendente) — só falha real de envio vira 'erro'.
 import { query, one } from './db.ts';
 import * as evo from './evolution.ts';
-import { instanceName, insertMessage, upsertChat } from './whatsapp.ts';
+import { instanceName, insertMessage, upsertChat, scheduleWhatsappTx, nextOccurrence } from './whatsapp.ts';
+import type { WaRecorrencia } from './whatsapp.ts';
 import { broadcast } from './ws.ts';
 
 export async function processDueWhatsapp(now = new Date()): Promise<number> {
@@ -13,11 +14,16 @@ export async function processDueWhatsapp(now = new Date()): Promise<number> {
   // (conversa apagada) — cai no remote_jid do próprio agendamento.
   const due = await query<{
     id: string; org_id: string; chat_id: string | null; remote_jid: string; corpo: string; activity_id: string | null;
+    agendado_para: string; recorrencia: WaRecorrencia | null; owner_user_id: string | null;
+    act_titulo: string | null; act_company_id: string | null; act_contact_id: string | null;
     chat_numero: string | null; chat_remote_jid: string | null;
   }>(
     `SELECT s.id, s.org_id, s.chat_id, s.remote_jid, s.corpo, s.activity_id,
+            s.agendado_para, s.recorrencia, s.owner_user_id,
+            a.titulo AS act_titulo, a.company_id AS act_company_id, a.contact_id AS act_contact_id,
             ch.numero AS chat_numero, ch.remote_jid AS chat_remote_jid
        FROM whatsapp_schedules s
+       LEFT JOIN activities a ON a.id = s.activity_id AND a.org_id = s.org_id
        LEFT JOIN whatsapp_chats ch ON ch.id = s.chat_id AND ch.org_id = s.org_id
       WHERE s.status = 'pendente' AND s.agendado_para <= $1
       ORDER BY s.agendado_para
@@ -73,6 +79,22 @@ export async function processDueWhatsapp(now = new Date()): Promise<number> {
         // Compromisso espelho na Agenda vira 'feito' quando a mensagem sai.
         if (s.activity_id != null) {
           await query("UPDATE activities SET status = 'feito' WHERE id = $1 AND org_id = $2", [s.activity_id, orgId]);
+        }
+        // Recorrência (modelo rolante): agenda a próxima ocorrência estritamente
+        // futura, já com o compromisso espelho na Agenda. Falha aqui não desfaz o
+        // envio — loga e a série para (melhor que rajada duplicada).
+        if (s.recorrencia != null) {
+          try {
+            await scheduleWhatsappTx(orgId, {
+              chatId, remoteJid, companyId: s.act_company_id, contactId: s.act_contact_id,
+              ownerUserId: s.owner_user_id, text: s.corpo,
+              when: nextOccurrence(new Date(s.agendado_para), s.recorrencia, now),
+              titulo: s.act_titulo ?? `WhatsApp: ${s.corpo.length > 60 ? `${s.corpo.slice(0, 60)}…` : s.corpo}`,
+              recorrencia: s.recorrencia,
+            });
+          } catch (err) {
+            console.error(`whatsappScheduler: falha ao criar próxima ocorrência do agendamento ${s.id}:`, err);
+          }
         }
         sent++;
         if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
