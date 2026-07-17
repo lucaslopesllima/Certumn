@@ -264,6 +264,48 @@ describe('rotas /api/email-schedules', () => {
     expect((list.json() as { schedules: { id: number }[] }).schedules.some((x) => Number(x.id) === Number(sched.id))).toBe(true);
   });
 
+  it('recorrência + quantidade materializa N agendamentos + N compromissos, datas espaçadas, sem recorrência p/ não rolar', async () => {
+    const future = new Date('2030-08-01T09:00:00.000Z').toISOString();
+    const created = await inj(a, 'POST', '/api/email-schedules', {
+      destinatario: 'serie@y.com', assunto: 'Série', corpo: 'C', agendado_para: future, recorrencia: 'semanal', quantidade: 3,
+    });
+    expect(created.statusCode).toBe(201);
+    const rows = await query<{ agendado_para: string; recorrencia: string | null; activity_id: string }>(
+      "SELECT agendado_para, recorrencia, activity_id FROM email_schedules WHERE org_id = $1 AND destinatario = 'serie@y.com' ORDER BY agendado_para",
+      [a.user.org_id]);
+    expect(rows.length).toBe(3);
+    expect(rows.every((x) => x.recorrencia === null && x.activity_id != null)).toBe(true);
+    expect(rows.map((x) => new Date(x.agendado_para).getUTCDate())).toEqual([1, 8, 15]);
+    const acts = await query('SELECT id FROM activities WHERE org_id = $1 AND tipo = $2 AND titulo LIKE $3',
+      [a.user.org_id, 'email', '%serie@y.com%']);
+    expect(acts.length).toBe(3);
+  });
+
+  it('série: PATCH escopo "serie" edita o corpo de todas; DELETE escopo "serie" remove todas', async () => {
+    const future = new Date('2031-05-01T09:00:00.000Z').toISOString();
+    const created = await inj(a, 'POST', '/api/email-schedules', {
+      destinatario: 'serie2@y.com', assunto: 'S', corpo: 'v1', agendado_para: future, recorrencia: 'semanal', quantidade: 4,
+    });
+    const sid = (created.json() as { schedule: { id: number; serie_id: string } }).schedule;
+    expect(sid.serie_id).toBeTruthy();
+    // edita corpo de toda a série
+    const up = await inj(a, 'PATCH', `/api/email-schedules/${sid.id}`, { scope: 'serie', corpo: 'v2' });
+    expect(up.statusCode).toBe(200);
+    const corpos = await query<{ corpo: string }>('SELECT corpo FROM email_schedules WHERE serie_id = $1', [sid.serie_id]);
+    expect(corpos.length).toBe(4);
+    expect(corpos.every((c) => c.corpo === 'v2')).toBe(true);
+    // regen: reduz pra 2 ocorrências
+    const rg = await inj(a, 'PATCH', `/api/email-schedules/${sid.id}`, { scope: 'serie', recorrencia: 'semanal', quantidade: 2 });
+    expect(rg.statusCode).toBe(200);
+    expect((await query("SELECT id FROM email_schedules WHERE serie_id = $1 AND status = 'pendente'", [sid.serie_id])).length).toBe(2);
+    // DELETE série inteira
+    const newId = (rg.json() as { schedule: { id: number } }).schedule.id;
+    const del = await inj(a, 'DELETE', `/api/email-schedules/${newId}?scope=serie`);
+    expect(del.statusCode).toBe(200);
+    expect((await query('SELECT id FROM email_schedules WHERE serie_id = $1', [sid.serie_id])).length).toBe(0);
+    expect((await query("SELECT id FROM activities WHERE org_id = $1 AND titulo LIKE '%serie2@y.com%'", [a.user.org_id])).length).toBe(0);
+  });
+
   it('PATCH edita campos/recorrência/status; 400 vazio; 404 inexistente; 403 de outro; 409 já processado', async () => {
     const future = new Date(Date.now() + 86_400_000).toISOString();
     const sched = (await inj(a, 'POST', '/api/email-schedules', {

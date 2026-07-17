@@ -6,7 +6,7 @@ import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import { toast } from '../lib/toast.tsx';
-import { confirmDialog } from '../lib/confirm.ts';
+import { confirmDialog, serieScopeDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -99,21 +99,27 @@ function SchedulesTab(): React.JSX.Element {
   const enviados = useMemo(() => list.filter((e) => e.status === 'enviado').length, [list]);
   const filtered = useMemo(() => filter === 'todos' ? list : list.filter((e) => e.status === filter), [list, filter]);
 
+  // Série → pergunta esta/toda; avulso → confirma simples. null = desistiu.
+  const askScope = async (e: EmailSchedule, verbo: string): Promise<'one' | 'serie' | null | false> => {
+    if (e.serie_id) return serieScopeDialog(`${verbo} só esta ocorrência ou toda a série?`, { danger: true });
+    return (await confirmDialog(`${verbo} o agendamento para ${e.destinatario}?`)) ? 'one' : false;
+  };
+
   const cancelar = async (e: EmailSchedule): Promise<void> => {
-    if (!(await confirmDialog(`Cancelar o envio para ${e.destinatario}?`))) return;
+    const sc = await askScope(e, 'Cancelar');
+    if (!sc) return;
     try {
-      const r = await api.patch<{ schedule: EmailSchedule }>(`/api/email-schedules/${e.id}`, { status: 'cancelado' });
-      setList((xs) => xs.map((x) => (x.id === e.id ? r.schedule : x)));
-      toast.success('Envio cancelado.');
+      await api.patch<{ schedule: EmailSchedule }>(`/api/email-schedules/${e.id}`, { status: 'cancelado', scope: sc });
+      await load();
+      toast.success(sc === 'serie' ? 'Série cancelada.' : 'Envio cancelado.');
     } catch (err) { toast.error(err instanceof Error ? err.message : 'Não foi possível cancelar.'); }
   };
 
   const remove = async (e: EmailSchedule): Promise<void> => {
-    if (!(await confirmDialog(`Remover o agendamento para ${e.destinatario}?`))) return;
-    const before = list;
-    setList((xs) => xs.filter((x) => x.id !== e.id));
-    try { await api.del(`/api/email-schedules/${e.id}`); toast.success('Agendamento removido.'); }
-    catch { setList(before); toast.error('Não foi possível remover.'); }
+    const sc = await askScope(e, 'Remover');
+    if (!sc) return;
+    try { await api.del(`/api/email-schedules/${e.id}?scope=${sc}`); await load(); toast.success('Agendamento removido.'); }
+    catch { toast.error('Não foi possível remover.'); }
   };
 
   if (loading) return <Spinner />;
@@ -192,8 +198,10 @@ function SchedulesTab(): React.JSX.Element {
       {(creating || editing) && (
         <ScheduleModal schedule={editing} templates={templates}
           onClose={() => { setCreating(false); setEditing(null); }}
-          onSaved={(s) => {
-            setList((xs) => editing ? xs.map((x) => (x.id === s.id ? s : x)) : [s, ...xs]);
+          onSaved={() => {
+            // criar/editar pode materializar ou regenerar N linhas (série) e trocar
+            // ids — recarrega a lista inteira em vez de tentar casar por id.
+            void load();
             setCreating(false); setEditing(null);
           }} />
       )}
@@ -222,7 +230,11 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
   const [corpo, setCorpo] = useState(schedule?.corpo ?? '');
   const [agendadoPara, setAgendadoPara] = useState(schedule ? toLocalInput(schedule.agendado_para) : '');
   const [recorrencia, setRecorrencia] = useState(schedule?.recorrencia ?? 'nenhuma');
+  const [quantidade, setQuantidade] = useState(4);
+  const [scope, setScope] = useState<'one' | 'serie'>('serie'); // edição de série: padrão toda
+  const [regen, setRegen] = useState(false); // edição: recriar datas (frequência/quantidade)
   const [busy, setBusy] = useState(false);
+  const emSerie = schedule?.serie_id != null;
 
   // Adiciona um ou mais e-mails à lista (dedup), ignorando tokens sem "@".
   const addRecipients = (raw: string): void => {
@@ -257,21 +269,29 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
       toast.error('Preencha remetente, ao menos um destinatário, assunto, corpo e a data/hora.');
       return;
     }
+    const repete = recorrencia !== 'nenhuma';
+    if ((regen || !schedule) && repete && (quantidade < 2 || quantidade > 60)) { toast.error('Quantidade deve ser de 2 a 60.'); return; }
     setBusy(true);
-    const body = {
-      company_id: companyId,
-      template_id: templateId,
-      remetente: remetente.trim(),
-      destinatario: all.join(', '),
-      assunto, corpo,
-      agendado_para: new Date(agendadoPara).toISOString(),
-      recorrencia,
-    };
+    const iso = new Date(agendadoPara).toISOString();
+    const dest = all.join(', ');
     try {
-      const r = schedule
-        ? await api.patch<{ schedule: EmailSchedule }>(`/api/email-schedules/${schedule.id}`,
-          { remetente: body.remetente, destinatario: body.destinatario, assunto, corpo, agendado_para: body.agendado_para, recorrencia })
-        : await api.post<{ schedule: EmailSchedule }>('/api/email-schedules', body);
+      let r: { schedule: EmailSchedule };
+      if (schedule) {
+        // Edição: conteúdo + escopo (esta/série). 'regen' recria as datas
+        // (frequência/quantidade) — só então mandamos recorrencia/quantidade,
+        // senão o backend regeneraria a série sem querer.
+        const body: Record<string, unknown> = {
+          scope, remetente: remetente.trim(), destinatario: dest, assunto, corpo,
+        };
+        if (scope === 'one') body.agendado_para = iso;
+        if (regen && repete) { body.recorrencia = recorrencia; body.quantidade = quantidade; body.agendado_para = iso; }
+        r = await api.patch<{ schedule: EmailSchedule }>(`/api/email-schedules/${schedule.id}`, body);
+      } else {
+        r = await api.post<{ schedule: EmailSchedule }>('/api/email-schedules', {
+          company_id: companyId, template_id: templateId, remetente: remetente.trim(),
+          destinatario: dest, assunto, corpo, agendado_para: iso, recorrencia, quantidade: repete ? quantidade : 1,
+        });
+      }
       toast.success(schedule ? 'Agendamento salvo.' : 'E-mail agendado.');
       onSaved(r.schedule);
     } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
@@ -336,21 +356,52 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
               <label className="mb-1 block text-xs font-semibold text-ink-500">Corpo</label>
               <textarea value={corpo} onChange={(e) => setCorpo(e.target.value)} rows={6} maxLength={20000} placeholder="Conteúdo do e-mail" className={cn(inputCls, 'resize-y')} />
             </div>
+            {/* Edição de uma série: aplicar em toda a série ou só nesta ocorrência. */}
+            {emSerie && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-ink-500">Aplicar em</label>
+                <select value={scope} onChange={(e) => setScope(e.target.value as 'one' | 'serie')} className={inputCls}>
+                  <option value="serie">Toda a série</option>
+                  <option value="one">Só esta ocorrência</option>
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="mb-1 block text-xs font-semibold text-ink-500">Enviar em</label>
                 <input type="datetime-local" value={agendadoPara} onChange={(e) => setAgendadoPara(e.target.value)} className={inputCls} />
               </div>
-              <div>
-                <label className="mb-1 block text-xs font-semibold text-ink-500">Repetição</label>
-                <select value={recorrencia} onChange={(e) => setRecorrencia(e.target.value)} className={inputCls}>
-                  <option value="nenhuma">Não repetir</option>
-                  <option value="diaria">Diária</option>
-                  <option value="semanal">Semanal</option>
-                  <option value="mensal">Mensal</option>
-                </select>
-              </div>
+              {(!schedule || regen) && (
+                <div>
+                  <label className="mb-1 block text-xs font-semibold text-ink-500">Repetição</label>
+                  <select value={recorrencia} onChange={(e) => setRecorrencia(e.target.value)} className={inputCls}>
+                    <option value="nenhuma">Não repetir</option>
+                    <option value="diaria">Diária</option>
+                    <option value="semanal">Semanal</option>
+                    <option value="mensal">Mensal</option>
+                  </select>
+                </div>
+              )}
             </div>
+            {/* Em edição, recriar as datas (frequência/quantidade) é opt-in — senão
+                a edição só troca o conteúdo das ocorrências pendentes. */}
+            {schedule && (
+              <label className="flex items-center gap-2 text-sm text-ink-700">
+                <input type="checkbox" checked={regen} onChange={(e) => setRegen(e.target.checked)} className="h-4 w-4 accent-brand-600" />
+                Recriar as datas (frequência/quantidade)
+              </label>
+            )}
+            {(!schedule || regen) && recorrencia !== 'nenhuma' && (
+              <div>
+                <label className="mb-1 block text-xs font-semibold text-ink-500">Quantidade de envios</label>
+                <input type="number" min={2} max={60} value={quantidade}
+                  onChange={(e) => setQuantidade(Math.max(2, Math.min(60, Number(e.target.value) || 2)))}
+                  className={inputCls} />
+                {agendadoPara && (
+                  <p className="mt-1 text-xs text-ink-400">{schedule ? 'Recria' : 'Cria'} {quantidade} agendamentos, todos visíveis na Agenda.</p>
+                )}
+              </div>
+            )}
 
             <div className="flex justify-end gap-2 pt-1">
               <Btn variant="ghost" type="button" onClick={onClose}>Cancelar</Btn>

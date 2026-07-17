@@ -9,6 +9,38 @@ export interface ConfirmOptions {
   cancelText?: string;
 }
 
+const isDark = (): 'dark' | 'light' => document.documentElement.classList.contains('dark') ? 'dark' : 'light';
+
+// Escolha de escopo para agendamentos em série: 'serie' (toda) | 'one' (só esta)
+// | null (desistiu). Três botões via showDenyButton do SweetAlert2.
+export async function serieScopeDialog(message: string, opts: { title?: string; danger?: boolean } = {}): Promise<'one' | 'serie' | null> {
+  const btn = (extra: string): string =>
+    `inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors focus-visible:outline-none focus-visible:ring-2 ${extra}`;
+  const r = await Swal.fire({
+    title: opts.title ?? 'Faz parte de uma série',
+    text: message,
+    icon: 'question',
+    showDenyButton: true,
+    showCancelButton: true,
+    confirmButtonText: 'Toda a série',
+    denyButtonText: 'Só esta',
+    cancelButtonText: 'Voltar',
+    reverseButtons: true,
+    buttonsStyling: false,
+    theme: isDark(),
+    customClass: {
+      popup: 'rounded-2xl',
+      actions: 'gap-2',
+      confirmButton: btn(opts.danger ? 'text-white bg-rose-600 hover:bg-rose-700 focus-visible:ring-rose-300' : 'text-white bg-brand-600 hover:bg-brand-700 focus-visible:ring-brand-300'),
+      denyButton: btn('text-ink-700 bg-ink-100 hover:bg-ink-200 focus-visible:ring-brand-300'),
+      cancelButton: btn('text-ink-600 hover:bg-ink-100 focus-visible:ring-brand-300'),
+    },
+  });
+  if (r.isConfirmed) return 'serie';
+  if (r.isDenied) return 'one';
+  return null;
+}
+
 // Botões estilizados com as classes do Btn (ui.tsx); tema segue a classe
 // `.dark` no <html> (fonte da verdade, ver theme.tsx) e não o prefers-color-scheme.
 export async function confirmDialog(message: string, opts: ConfirmOptions = {}): Promise<boolean> {

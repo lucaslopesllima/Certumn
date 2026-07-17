@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
-import { one, query } from '../db.ts';
+import { one, query, withClient } from '../db.ts';
 import { requireAuth, requirePermission, authorizeToken, AuthError } from '../auth.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
 import { audit } from '../audit.ts';
@@ -10,9 +10,26 @@ import { addConn, removeConn, broadcast } from '../ws.ts';
 import {
   ensureSettings, setStatus, instanceName, upsertChat, insertMessage,
   CHAT_LABELS_SQL, relationshipForCompany, numeroToJid, mergeChats, deleteChat, syncGroupNames,
-  normalizeNumero, jidToNumero, findChatByNumero, scheduleWhatsappTx, WA_RECORRENCIAS,
+  normalizeNumero, jidToNumero, findChatByNumero, scheduleWhatsappTx, insertWhatsappSeries,
+  WA_RECORRENCIAS,
 } from '../whatsapp.ts';
 import type { WaRecorrencia } from '../whatsapp.ts';
+
+// Cadência inferida pelo intervalo entre duas ocorrências consecutivas de uma
+// série (as linhas materializadas guardam recorrencia=null; a frequência fica
+// implícita no espaçamento). Usado ao regenerar sem a frequência explícita.
+function inferRecorrencia(d0: Date, d1: Date): WaRecorrencia | null {
+  const dias = Math.round((d1.getTime() - d0.getTime()) / 86_400_000);
+  if (dias <= 1) return 'diaria';
+  if (dias <= 10) return 'semanal';
+  if (dias <= 45) return 'mensal';
+  return 'anual';
+}
+
+// Título do compromisso espelho de WhatsApp (mesmo formato usado na criação).
+function waTitulo(alvo: string, text: string): string {
+  return `WhatsApp p/ ${alvo}: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
+}
 
 // Sincronização de nomes de grupo já feita nesta sessão (por org) — roda uma vez
 // ao abrir a lista de conversas, conserta grupos com nome de participante.
@@ -154,7 +171,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     );
     if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
     const messages = await query<{ id: string; evolution_id: string | null; from_me: boolean }>(
-      `SELECT m.id, m.evolution_id, m.from_me, m.tipo, m.corpo, m.status, m.momento, m.mime, m.file_name,
+      `SELECT m.id, m.evolution_id, m.from_me, m.tipo, m.corpo, m.status, m.momento, m.mime, m.file_name, m.internal, m.reply_to_id,
               COALESCE(u.nome, o.nome, u.email) AS sender_nome
          FROM whatsapp_messages m
          LEFT JOIN users u ON u.id = m.sender_user_id
@@ -321,6 +338,38 @@ export function whatsappRoutes(app: FastifyInstance): void {
       if (e instanceof evo.EvolutionDisabledError) return reply.code(503).send({ error: e.message });
       return reply.code(502).send({ error: e instanceof Error ? e.message : 'falha ao enviar' });
     }
+  });
+
+  // Nota interna: balão que fica só na conversa (visível a toda a organização),
+  // NUNCA enviado ao contato — sem chamada à Evolution, sem evolution_id e sem
+  // mexer na prévia da conversa. Só exige whatsapp.view (anotar não é enviar).
+  app.post('/api/whatsapp/chats/:id/note', {
+    preHandler: [requireAuth, requirePermission('whatsapp.view')],
+    // replyToId (id do balão citado) fica fora do schema de propósito: chega no
+    // body e é validado contra o banco abaixo (existência na conversa).
+    schema: {
+      body: { type: 'object', required: ['text'], properties: { text: { type: 'string', minLength: 1, maxLength: 2000 } } },
+    },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const chatId = (req.params as { id: string }).id;
+    const { text, replyToId } = req.body as { text: string; replyToId?: number | string | null };
+    const chat = await one<{ id: string }>(
+      'SELECT id FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId],
+    );
+    if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
+    // Só ancora se a mensagem citada existir nesta conversa (id otimista/negativo
+    // ou de outra conversa vira nota solta, sem âncora quebrada).
+    let replyTo: number | null = null;
+    if (replyToId != null && Number(replyToId) > 0) {
+      const ref = await one<{ id: string }>(
+        'SELECT id FROM whatsapp_messages WHERE id = $1 AND chat_id = $2 AND org_id = $3', [Number(replyToId), chatId, orgId],
+      );
+      if (ref) replyTo = Number(ref.id);
+    }
+    const msg = await insertMessage(orgId, chatId, { fromMe: true, corpo: text, internal: true, senderUserId: req.auth!.userId, replyToId: replyTo });
+    if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
+    return { message: msg };
   });
 
   // Envia mídia (anexo): base64 vindo do upload do navegador. Cacheia o próprio
@@ -563,13 +612,14 @@ export function whatsappRoutes(app: FastifyInstance): void {
           text: { type: 'string', minLength: 1 },
           agendado_para: { type: 'string', minLength: 10 },
           recorrencia: { type: ['string', 'null'], enum: [...WA_RECORRENCIAS, null] },
+          quantidade: { type: 'integer', minimum: 1, maximum: 60 },
         },
       },
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const chatId = (req.params as { id: string }).id;
-    const { text, agendado_para, recorrencia } = req.body as { text: string; agendado_para: string; recorrencia?: WaRecorrencia | null };
+    const { text, agendado_para, recorrencia, quantidade } = req.body as { text: string; agendado_para: string; recorrencia?: WaRecorrencia | null; quantidade?: number };
     const chat = await one<{ remote_jid: string; nome: string | null; numero: string | null; company_id: string | null }>(
       'SELECT remote_jid, nome, numero, company_id FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId]);
     if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
@@ -585,7 +635,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const titulo = `WhatsApp p/ ${alvo}: ${text.length > 60 ? `${text.slice(0, 60)}…` : text}`;
     const row = await scheduleWhatsappTx(orgId, {
       chatId, remoteJid: chat.remote_jid, companyId: chat.company_id, contactId: null,
-      ownerUserId: req.auth!.userId, text, when, titulo, recorrencia: recorrencia ?? null,
+      ownerUserId: req.auth!.userId, text, when, titulo, recorrencia: recorrencia ?? null, quantidade,
     });
     return reply.code(201).send({ schedule: row });
   });
@@ -603,6 +653,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
           text: { type: 'string', minLength: 1 },
           agendado_para: { type: 'string', minLength: 10 },
           recorrencia: { type: ['string', 'null'], enum: [...WA_RECORRENCIAS, null] },
+          quantidade: { type: 'integer', minimum: 1, maximum: 60 },
           company_id: { type: ['integer', 'null'] },
           contact_id: { type: ['integer', 'null'] },
         },
@@ -610,7 +661,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
-    const b = req.body as { numero: string; text: string; agendado_para: string; recorrencia?: WaRecorrencia | null; company_id?: number | null; contact_id?: number | null };
+    const b = req.body as { numero: string; text: string; agendado_para: string; recorrencia?: WaRecorrencia | null; quantidade?: number; company_id?: number | null; contact_id?: number | null };
     const badRef = await invalidOrgRef(orgId, b, ['contact_id']);
     if (badRef) return reply.code(400).send({ error: `${badRef} inválido` });
     const jid = numeroToJid(b.numero);
@@ -641,7 +692,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const row = await scheduleWhatsappTx(orgId, {
       chatId: chat.id, remoteJid: chat.remote_jid, companyId: b.company_id ?? chat.company_id,
       contactId: b.contact_id ?? null, ownerUserId: req.auth!.userId, text: b.text, when, titulo,
-      recorrencia: b.recorrencia ?? null,
+      recorrencia: b.recorrencia ?? null, quantidade: b.quantidade,
     });
     return reply.code(201).send({ schedule: row });
   });
@@ -659,27 +710,146 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const params: unknown[] = [orgId];
     if (chat_id != null) { params.push(chat_id); where.push(`chat_id = $${params.length}`); }
     const schedules = await query(
-      `SELECT id, chat_id, corpo, agendado_para, status, recorrencia FROM whatsapp_schedules
+      `SELECT id, chat_id, corpo, agendado_para, status, recorrencia, serie_id FROM whatsapp_schedules
         WHERE ${where.join(' AND ')} ORDER BY agendado_para LIMIT 200`,
       params,
     );
     return { schedules };
   });
 
-  // Cancela um agendamento pendente.
-  app.delete('/api/whatsapp/schedules/:id', { preHandler: [requireAuth, requirePermission('whatsapp.schedule')] }, async (req, reply) => {
+  // Edita um agendamento pendente. scope='serie' aplica na série inteira (linhas
+  // pendentes com o mesmo serie_id); 'one' só nesta ocorrência. Mudar
+  // recorrencia/quantidade REGENERA as ocorrências pendentes (apaga e recria a
+  // série a partir de agendado_para ou da 1ª pendente).
+  app.patch('/api/whatsapp/schedules/:id', {
+    preHandler: [requireAuth, requirePermission('whatsapp.schedule')],
+    schema: {
+      body: {
+        type: 'object',
+        properties: {
+          scope: { type: 'string', enum: ['one', 'serie'] },
+          text: { type: 'string', minLength: 1 },
+          agendado_para: { type: 'string', minLength: 10 },
+          recorrencia: { type: 'string', enum: [...WA_RECORRENCIAS] },
+          quantidade: { type: 'integer', minimum: 2, maximum: 60 },
+        },
+      },
+    },
+  }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const id = (req.params as { id: string }).id;
+    const b = req.body as { scope?: 'one' | 'serie'; text?: string; agendado_para?: string; recorrencia?: WaRecorrencia; quantidade?: number };
+    const cur = await one<{
+      serie_id: string | null; status: string; chat_id: string | null; remote_jid: string; corpo: string;
+      agendado_para: string; owner_user_id: string | null; act_company: string | null; act_contact: string | null;
+      chat_jid: string | null; chat_numero: string | null; chat_nome: string | null; chat_company: string | null;
+    }>(
+      `SELECT s.serie_id, s.status, s.chat_id, s.remote_jid, s.corpo, s.agendado_para, s.owner_user_id,
+              a.company_id AS act_company, a.contact_id AS act_contact,
+              ch.remote_jid AS chat_jid, ch.numero AS chat_numero, ch.nome AS chat_nome, ch.company_id AS chat_company
+         FROM whatsapp_schedules s
+         LEFT JOIN activities a ON a.id = s.activity_id AND a.org_id = s.org_id
+         LEFT JOIN whatsapp_chats ch ON ch.id = s.chat_id AND ch.org_id = s.org_id
+        WHERE s.id = $1 AND s.org_id = $2`, [id, orgId]);
+    if (!cur) return reply.code(404).send({ error: 'agendamento não encontrado' });
+    if (cur.status !== 'pendente') return reply.code(409).send({ error: 'agendamento já processado' });
+
+    const scope = b.scope ?? 'one';
+    const serieMode = scope === 'serie' && cur.serie_id != null;
+    const alvo = cur.chat_nome || cur.chat_numero || (cur.chat_jid ?? cur.remote_jid).split('@')[0] || '';
+    // Regenera quando muda a quantidade, ou quando já é série e muda a frequência.
+    // Frequência isolada num agendamento avulso não vira série por acidente.
+    const regen = b.quantidade !== undefined || (cur.serie_id != null && b.recorrencia !== undefined);
+
+    // Alvos pendentes: a série inteira (serie) ou só esta ocorrência.
+    const alvos = serieMode
+      ? await query<{ id: string; activity_id: string | null; agendado_para: string }>(
+        `SELECT id, activity_id, agendado_para FROM whatsapp_schedules
+          WHERE org_id = $1 AND serie_id = $2 AND status = 'pendente' ORDER BY agendado_para`, [orgId, cur.serie_id])
+      : [{ id, activity_id: null as string | null, agendado_para: cur.agendado_para }];
+
+    if (regen) {
+      // Regenera a série: apaga as ocorrências pendentes-alvo + compromissos e
+      // recria N a partir da base, mantendo o serie_id (ou criando um novo).
+      const base = b.agendado_para ? new Date(b.agendado_para) : new Date(alvos[0]!.agendado_para);
+      if (Number.isNaN(base.getTime())) return reply.code(400).send({ error: 'data inválida' });
+      const text = b.text ?? cur.corpo;
+      const rec = b.recorrencia
+        ?? (alvos.length >= 2 ? inferRecorrencia(new Date(alvos[0]!.agendado_para), new Date(alvos[1]!.agendado_para)) : null);
+      if (!rec) return reply.code(400).send({ error: 'informe a frequência (recorrencia) para regenerar' });
+      const qtd = b.quantidade ?? Math.max(2, alvos.length);
+      const created = await withClient(async (c) => {
+        await c.query('BEGIN');
+        try {
+          const actIds = alvos.map((a) => a.activity_id).filter((x): x is string => x != null);
+          await c.query(`DELETE FROM whatsapp_schedules WHERE org_id = $1 AND id = ANY($2::bigint[])`, [orgId, alvos.map((a) => a.id)]);
+          if (actIds.length) await c.query(`DELETE FROM activities WHERE org_id = $1 AND id = ANY($2::bigint[])`, [orgId, actIds]);
+          const first = await insertWhatsappSeries(c, orgId, {
+            chatId: cur.chat_id ?? id, remoteJid: cur.chat_jid ?? cur.remote_jid,
+            companyId: cur.act_company ?? cur.chat_company, contactId: cur.act_contact,
+            ownerUserId: cur.owner_user_id, text, when: base, titulo: waTitulo(alvo, text),
+            recorrencia: rec, quantidade: qtd, serieId: cur.serie_id ?? undefined,
+          });
+          await c.query('COMMIT');
+          return first;
+        } catch (e) { await c.query('ROLLBACK'); throw e; }
+      });
+      return { schedule: created };
+    }
+
+    // Edição simples (sem regenerar): texto e/ou data.
+    if (b.text === undefined && b.agendado_para === undefined) {
+      return reply.code(400).send({ error: 'nada para atualizar' });
+    }
+    const novaData = b.agendado_para ? new Date(b.agendado_para) : null;
+    if (novaData && Number.isNaN(novaData.getTime())) return reply.code(400).send({ error: 'data inválida' });
+    // Mudar a data só faz sentido numa ocorrência (cada uma tem a sua).
+    const aplicaData = novaData && !serieMode;
+    await withClient(async (c) => {
+      await c.query('BEGIN');
+      try {
+        for (const a of alvos) {
+          if (b.text !== undefined) {
+            await c.query('UPDATE whatsapp_schedules SET corpo = $3, updated_at = now() WHERE id = $1 AND org_id = $2', [a.id, orgId, b.text]);
+          }
+          if (aplicaData) {
+            await c.query('UPDATE whatsapp_schedules SET agendado_para = $3, updated_at = now() WHERE id = $1 AND org_id = $2', [a.id, orgId, novaData!.toISOString()]);
+          }
+          if (a.activity_id != null && (b.text !== undefined || aplicaData)) {
+            const sets: string[] = []; const p: unknown[] = [];
+            if (b.text !== undefined) { p.push(waTitulo(alvo, b.text)); sets.push(`titulo = $${p.length}`); }
+            if (aplicaData) { p.push(novaData!.toISOString()); sets.push(`start_at = $${p.length}`); }
+            p.push(a.activity_id, orgId);
+            await c.query(`UPDATE activities SET ${sets.join(', ')} WHERE id = $${p.length - 1} AND org_id = $${p.length}`, p);
+          }
+        }
+        await c.query('COMMIT');
+      } catch (e) { await c.query('ROLLBACK'); throw e; }
+    });
+    const updated = await one('SELECT id, chat_id, corpo, agendado_para, status, recorrencia, serie_id FROM whatsapp_schedules WHERE id = $1 AND org_id = $2', [id, orgId]);
+    return { schedule: updated };
+  });
+
+  // Cancela um agendamento pendente. scope='serie' cancela a série inteira.
+  app.delete('/api/whatsapp/schedules/:id', {
+    preHandler: [requireAuth, requirePermission('whatsapp.schedule')],
+    schema: { querystring: { type: 'object', properties: { scope: { type: 'string', enum: ['one', 'serie'] } } } },
+  }, async (req, reply) => {
+    const orgId = req.auth!.orgId;
+    const id = (req.params as { id: string }).id;
+    const scope = (req.query as { scope?: string }).scope ?? 'one';
+    const cur = await one<{ serie_id: string | null }>(
+      "SELECT serie_id FROM whatsapp_schedules WHERE id = $1 AND org_id = $2 AND status = 'pendente'", [id, orgId]);
+    if (!cur) return reply.code(404).send({ error: 'agendamento não encontrado' });
+    const cond = scope === 'serie' && cur.serie_id != null
+      ? { sql: 'org_id = $1 AND serie_id = $2', params: [orgId, cur.serie_id] }
+      : { sql: 'org_id = $1 AND id = $2', params: [orgId, id] };
     const rows = await query<{ activity_id: string | null }>(
       `UPDATE whatsapp_schedules SET status = 'cancelado', updated_at = now()
-        WHERE id = $1 AND org_id = $2 AND status = 'pendente' RETURNING activity_id`,
-      [id, orgId],
-    );
-    if (rows.length === 0) return reply.code(404).send({ error: 'agendamento não encontrado' });
-    // Cancelou o agendamento → remove o compromisso espelho da Agenda.
-    if (rows[0]!.activity_id != null) {
-      await query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [rows[0]!.activity_id, orgId]);
-    }
-    return { ok: true };
+        WHERE ${cond.sql} AND status = 'pendente' RETURNING activity_id`, cond.params);
+    // Cancelou → remove os compromissos espelho da Agenda.
+    const actIds = rows.map((r) => r.activity_id).filter((x): x is string => x != null);
+    if (actIds.length) await query('DELETE FROM activities WHERE org_id = $1 AND id = ANY($2::bigint[])', [orgId, actIds]);
+    return { ok: true, canceladas: rows.length };
   });
 }

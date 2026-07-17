@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './whatsapp-theme.css';
 import { useSearchParams } from 'react-router-dom';
 import { api, getToken, ApiError } from '../lib/api.ts';
@@ -177,11 +177,102 @@ function Tick({ m }: { m: WaMessage }): React.JSX.Element | null {
   );
 }
 
+// Rótulo curto pra citar uma mensagem numa nota (texto ou tipo da mídia).
+function quotePreview(m: WaMessage): string {
+  if (m.tipo === 'imagem') return '📷 Imagem';
+  if (m.tipo === 'video') return '🎬 Vídeo';
+  if (m.tipo === 'audio') return '🎧 Áudio';
+  if (m.tipo !== 'texto') return `📎 ${m.file_name ?? 'Documento'}`;
+  return m.corpo ?? '';
+}
+function quoteAutor(m: WaMessage): string {
+  if (m.internal) return `Nota${m.sender_nome ? ` · ${m.sender_nome}` : ''}`;
+  return m.from_me ? (m.sender_nome || 'Atendente') : 'Contato';
+}
+
+// Flecha de ações do balão (aparece no hover), estilo WhatsApp Web. Hoje só
+// "Criar nota" (pendurada nesta mensagem). Estado de aberto é local ao balão.
+function MsgActions({ m, onNote }: { m: WaMessage; onNote: (m: WaMessage) => void }): React.JSX.Element {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return undefined;
+    const onDoc = (e: MouseEvent): void => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [open]);
+  return (
+    <div ref={ref} className="absolute right-1 top-0.5">
+      <button aria-label="Ações da mensagem" onClick={() => setOpen((v) => !v)}
+        className={cn('grid h-5 w-6 place-items-center rounded transition',
+          open ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+          'text-[var(--wa-muted)] hover:bg-black/10 dark:hover:bg-white/10')}>
+        <Icon name="chevronRight" size={16} className="rotate-90" />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-6 z-20 min-w-[160px] overflow-hidden rounded-lg border border-ink-200 bg-surface py-1 text-sm shadow-pop">
+          <button onClick={() => { setOpen(false); onNote(m); }}
+            className="flex w-full items-center gap-2 px-3 py-2 text-left text-ink-700 hover:bg-ink-100 dark:text-ink-200">
+            <Icon name="pencil" size={15} /> Criar nota
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // Balão de mensagem nativo (texto ou mídia), cores via vars --wa-* (tema-aware).
 // React.memo por id+status: mensagem nova (ou tique atualizado) re-renderiza só
 // o próprio balão, não o thread inteiro.
-const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage; onImage: (url: string) => void }): React.JSX.Element {
+const MessageBubble = memo(function MessageBubble({ m, onImage, onNote, quoted, attached, parentFromMe }: {
+  m: WaMessage; onImage: (url: string) => void; onNote?: (m: WaMessage) => void; quoted?: WaMessage;
+  attached?: boolean; parentFromMe?: boolean;
+}): React.JSX.Element {
   const url = useAuthedMedia(m);
+  // Nota interna: balão âmbar, sem tique/status, com selo. Nunca vai ao contato.
+  if (m.internal) {
+    const balloon = (
+      <div className="relative max-w-full rounded-[7.5px] border border-amber-300 bg-amber-100 px-[9px] py-[6px] text-[14.2px] leading-[19px] text-amber-900 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] dark:border-amber-400/40 dark:bg-amber-400/15 dark:text-amber-100">
+        {onNote && <MsgActions m={m} onNote={onNote} />}
+        <div className="mb-0.5 flex items-center gap-1 text-[11.5px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300">
+          <Icon name="pencil" size={12} /> Nota interna{m.sender_nome ? ` · ${m.sender_nome}` : ''}
+        </div>
+        {/* Fora da posição pendurada (nota solta ou alvo fora da janela): mostra o
+            trecho citado. Pendurada não precisa — já vem colada na mensagem. */}
+        {!attached && quoted && (
+          <div className="mb-1 rounded border-l-[3px] border-amber-500 bg-amber-200/50 px-2 py-1 text-[12.5px] dark:bg-amber-400/10">
+            <div className="font-medium text-amber-800 dark:text-amber-200">{quoteAutor(quoted)}</div>
+            <div className="line-clamp-2 break-words text-amber-900/80 dark:text-amber-100/80">{quotePreview(quoted)}</div>
+          </div>
+        )}
+        <span className="whitespace-pre-wrap break-words">{m.corpo}</span>
+        <span className="float-right -mb-[3px] ml-2 mt-[7px] text-[11px] text-amber-700/80 dark:text-amber-300/70">{hora(m.momento)}</span>
+      </div>
+    );
+    // Pendurada: entra logo abaixo da mensagem-alvo, do mesmo lado, ligada por um
+    // conector em L que desce da mensagem de cima e curva até o balão da nota.
+    // -mt-2 sobe o conector pra encostar na borda de baixo da mensagem.
+    if (attached) {
+      return (
+        <div className={cn('group relative -mt-2 flex px-[5%] pb-1', parentFromMe ? 'justify-end' : 'justify-start')}>
+          <div className={cn('flex max-w-[80%] items-stretch', parentFromMe ? 'flex-row-reverse' : '')}>
+            {/* Coluna do conector: box ocupa a largura toda (inset-x-0) pra a barra
+                horizontal encostar no balão de um lado e a vertical na mensagem. */}
+            <div className="relative w-3.5 shrink-0">
+              <div className={cn('absolute inset-x-0 top-0 h-6 border-amber-400/80',
+                parentFromMe ? 'rounded-br-[10px] border-b-2 border-r-2' : 'rounded-bl-[10px] border-b-2 border-l-2')} />
+            </div>
+            <div className="min-w-0">{balloon}</div>
+          </div>
+        </div>
+      );
+    }
+    return (
+      <div className="group relative flex justify-end px-[5%] py-0.5">
+        <div className="max-w-[75%]">{balloon}</div>
+      </div>
+    );
+  }
   let media: ReactNode = null;
   if (m.tipo === 'imagem') {
     media = url ? <img src={url} alt="" className="block max-w-[240px] cursor-pointer rounded-md" onClick={() => onImage(url)} /> : null;
@@ -197,9 +288,10 @@ const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage
     );
   }
   return (
-    <div className={cn('flex px-[5%] py-0.5', m.from_me ? 'justify-end' : 'justify-start')}>
-      <div className={cn('max-w-[75%] rounded-[7.5px] px-[9px] py-[6px] text-[14.2px] leading-[19px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]',
+    <div className={cn('group relative flex px-[5%] py-0.5', m.from_me ? 'justify-end' : 'justify-start')}>
+      <div className={cn('relative max-w-[75%] rounded-[7.5px] px-[9px] py-[6px] text-[14.2px] leading-[19px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]',
         m.from_me ? 'bg-[var(--wa-out)]' : 'bg-[var(--wa-in)]', 'text-[var(--wa-ink)]')}>
+        {onNote && <MsgActions m={m} onNote={onNote} />}
         {/* Nome do atendente que enviou (como o nome do remetente em grupos). */}
         {m.from_me && m.sender_nome && (
           <div className="text-[12.8px] font-medium leading-[18px] text-[var(--wa-green)]">{m.sender_nome}</div>
@@ -216,7 +308,9 @@ const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage
       </div>
     </div>
   );
-}, (prev, next) => prev.m.id === next.m.id && prev.m.status === next.m.status);
+}, (prev, next) => prev.m.id === next.m.id && prev.m.status === next.m.status
+  && prev.quoted?.id === next.quoted?.id && prev.onNote === next.onNote
+  && prev.attached === next.attached && prev.parentFromMe === next.parentFromMe);
 
 // Miniatura de mídia no painel "Mídia, links e docs" — usa o mesmo fetch
 // autenticado (blob URL, sem token na URL). Componente próprio porque o hook não
@@ -275,10 +369,26 @@ function ImageLightbox({ url, onClose }: { url: string | null; onClose: () => vo
 }
 
 // Balões com separadores de data entre dias (usado na conversa e no espiar).
-function messageList(messages: WaMessage[], onImage: (url: string) => void): ReactNode[] {
+function messageList(messages: WaMessage[], onImage: (url: string) => void, onNote?: (m: WaMessage) => void): ReactNode[] {
   const items: ReactNode[] = [];
+  // Resolve a mensagem citada por uma nota olhando o próprio thread carregado.
+  const byId = new Map(messages.map((x) => [Number(x.id), x]));
+  // Notas penduradas: agrupa por mensagem-alvo presente na janela carregada.
+  // Elas saem da ordem cronológica pra aparecer coladas na mensagem de origem.
+  const notesByTarget = new Map<number, WaMessage[]>();
+  const attached = new Set<number>();
+  for (const m of messages) {
+    if (!m.internal || m.reply_to_id == null) continue;
+    const tid = Number(m.reply_to_id);
+    if (!byId.has(tid)) continue; // alvo fora da janela: nota fica solta (cronológica)
+    const arr = notesByTarget.get(tid) ?? [];
+    arr.push(m);
+    notesByTarget.set(tid, arr);
+    attached.add(Number(m.id));
+  }
   let lastDay = '';
   for (const m of messages) {
+    if (attached.has(Number(m.id))) continue; // renderizada abaixo do alvo
     const day = new Date(m.momento).toDateString();
     if (day !== lastDay) {
       items.push(
@@ -290,7 +400,15 @@ function messageList(messages: WaMessage[], onImage: (url: string) => void): Rea
       );
       lastDay = day;
     }
-    items.push(<MessageBubble key={m.id} m={m} onImage={onImage} />);
+    const quoted = m.internal && m.reply_to_id != null ? byId.get(Number(m.reply_to_id)) : undefined;
+    items.push(<MessageBubble key={m.id} m={m} onImage={onImage} onNote={onNote} quoted={quoted} />);
+    // Notas penduradas nesta mensagem, logo abaixo, do mesmo lado do balão.
+    const notes = notesByTarget.get(Number(m.id));
+    if (notes) {
+      for (const nt of notes) {
+        items.push(<MessageBubble key={nt.id} m={nt} onImage={onImage} onNote={onNote} attached parentFromMe={m.from_me} />);
+      }
+    }
   }
   return items;
 }
@@ -366,71 +484,144 @@ const RECORRENCIA_LABEL: Record<WaRecorrencia, string> = {
   diaria: 'Diária', semanal: 'Semanal', mensal: 'Mensal', anual: 'Anual',
 };
 
+// ISO -> valor de <input type="datetime-local"> no fuso local.
+function toLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const p = (n: number): string => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
 function ScheduleModal({ chat, onClose, onChanged }: { chat: WaChat; onClose: () => void; onChanged: () => void }): React.JSX.Element {
+  const [editing, setEditing] = useState<WaSchedule | null>(null);
   const [text, setText] = useState('');
   const [when, setWhen] = useState('');
   const [repete, setRepete] = useState(false);
   const [recorrencia, setRecorrencia] = useState<WaRecorrencia>('diaria');
+  const [quantidade, setQuantidade] = useState(4);
+  const [scope, setScope] = useState<'one' | 'serie'>('serie'); // padrão: série inteira
   const [list, setList] = useState<WaSchedule[]>([]);
   const load = (): void => {
     void api.get<{ schedules: WaSchedule[] }>(`/api/whatsapp/schedules?chat_id=${chat.id}`)
       .then((r) => setList(r.schedules)).catch(() => undefined);
   };
   useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, []);
-  const create = async (): Promise<void> => {
+
+  const reset = (): void => {
+    setEditing(null); setText(''); setWhen(''); setRepete(false); setRecorrencia('diaria'); setQuantidade(4); setScope('serie');
+  };
+  // Abre a edição de um agendamento pendente. Série: 'repete' liga a opção de
+  // regenerar datas (frequência/quantidade); ocorrência avulsa só edita texto/data.
+  const startEdit = (s: WaSchedule): void => {
+    setEditing(s); setText(s.corpo); setWhen(toLocalInput(s.agendado_para));
+    setRepete(false); setScope(s.serie_id ? 'serie' : 'one');
+  };
+
+  const submit = async (): Promise<void> => {
     const t = text.trim();
     if (!t || !when) { toast.error('Preencha mensagem e data.'); return; }
     const d = new Date(when);
-    if (Number.isNaN(d.getTime()) || d.getTime() < Date.now()) { toast.error('Escolha uma data futura.'); return; }
+    if (Number.isNaN(d.getTime())) { toast.error('Data inválida.'); return; }
+    if (repete && (quantidade < 2 || quantidade > 60)) { toast.error('Quantidade deve ser de 2 a 60.'); return; }
     try {
-      await api.post(`/api/whatsapp/chats/${chat.id}/schedule`, {
-        text: t, agendado_para: d.toISOString(), recorrencia: repete ? recorrencia : null,
-      });
-      toast.success('Mensagem agendada.'); setText(''); setWhen(''); setRepete(false); load(); onChanged();
-    } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao agendar'); }
+      if (editing) {
+        // repete on em edição = regenerar as datas (frequência/quantidade novas).
+        const body: Record<string, unknown> = { scope, text: t };
+        if (repete) { body.recorrencia = recorrencia; body.quantidade = quantidade; body.agendado_para = d.toISOString(); }
+        else if (scope === 'one') { body.agendado_para = d.toISOString(); }
+        await api.patch(`/api/whatsapp/schedules/${editing.id}`, body);
+        toast.success('Agendamento atualizado.');
+      } else {
+        if (d.getTime() < Date.now()) { toast.error('Escolha uma data futura.'); return; }
+        await api.post(`/api/whatsapp/chats/${chat.id}/schedule`, {
+          text: t, agendado_para: d.toISOString(),
+          recorrencia: repete ? recorrencia : null, quantidade: repete ? quantidade : 1,
+        });
+        toast.success(repete ? `${quantidade} mensagens agendadas.` : 'Mensagem agendada.');
+      }
+      reset(); load(); onChanged();
+    } catch (e) { toast.error(e instanceof ApiError ? e.message : 'Falha ao salvar'); }
   };
-  const cancel = async (id: number): Promise<void> => {
-    try { await api.del(`/api/whatsapp/schedules/${id}`); load(); onChanged(); } catch { toast.error('Falha ao cancelar'); }
+  const cancel = async (id: number, sc: 'one' | 'serie'): Promise<void> => {
+    if (sc === 'serie' && !(await confirmDialog('Cancelar toda a série de agendamentos?'))) return;
+    try { await api.del(`/api/whatsapp/schedules/${id}?scope=${sc}`); load(); onChanged(); } catch { toast.error('Falha ao cancelar'); }
   };
+
+  const emSerie = editing != null && editing.serie_id != null;
   return (
-    <Overlay title="Agendar mensagem" onClose={onClose}>
+    <Overlay title={editing ? 'Editar agendamento' : 'Agendar mensagem'} onClose={onClose}>
       <textarea value={text} maxLength={2000} onChange={(e) => setText(e.target.value)} rows={3} placeholder="Mensagem…" className={inputCls} />
       <input type="datetime-local" value={when} onChange={(e) => setWhen(e.target.value)} className={inputCls} />
+      {emSerie && (
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-ink-500">Aplicar em</label>
+          <select value={scope} onChange={(e) => setScope(e.target.value as 'one' | 'serie')} className={inputCls}>
+            <option value="serie">Toda a série</option>
+            <option value="one">Só esta ocorrência</option>
+          </select>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-sm text-ink-700">
         <input type="checkbox" checked={repete} onChange={(e) => setRepete(e.target.checked)} className="h-4 w-4 accent-brand-600" />
-        Repetir
+        {editing ? 'Alterar frequência/quantidade (recria as datas)' : 'Repetir'}
       </label>
       {repete && (
-        <select value={recorrencia} onChange={(e) => setRecorrencia(e.target.value as WaRecorrencia)} className={inputCls}>
-          {(Object.keys(RECORRENCIA_LABEL) as WaRecorrencia[]).map((r) => (
-            <option key={r} value={r}>{RECORRENCIA_LABEL[r]}</option>
-          ))}
-        </select>
+        <>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-ink-500">Frequência</label>
+              <select value={recorrencia} onChange={(e) => setRecorrencia(e.target.value as WaRecorrencia)} className={inputCls}>
+                {(Object.keys(RECORRENCIA_LABEL) as WaRecorrencia[]).map((r) => (
+                  <option key={r} value={r}>{RECORRENCIA_LABEL[r]}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="mb-1 block text-xs font-semibold text-ink-500">Quantidade</label>
+              <input type="number" min={2} max={60} value={quantidade}
+                onChange={(e) => setQuantidade(Math.max(2, Math.min(60, Number(e.target.value) || 2)))}
+                className={inputCls} />
+            </div>
+          </div>
+          {when && (
+            <p className="text-xs text-ink-400">
+              {editing ? 'Recria' : 'Cria'} {quantidade} agendamentos ({RECORRENCIA_LABEL[recorrencia].toLowerCase()}), todos visíveis na Agenda.
+            </p>
+          )}
+        </>
       )}
-      <Btn onClick={() => create()} icon="clock">Agendar</Btn>
+      <div className="flex gap-2">
+        <Btn onClick={() => submit()} icon={editing ? 'check' : 'clock'}>{editing ? 'Salvar' : 'Agendar'}</Btn>
+        {editing && <Btn variant="ghost" onClick={reset}>Cancelar edição</Btn>}
+      </div>
       {list.length > 0 && (
         <div className="border-t border-ink-100 pt-3">
           <p className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-ink-400">Agendadas</p>
           <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
           {list.map((s) => {
             // Passou do horário (ou já processada) → riscada e inativa; só pendente
-            // futura pode ser cancelada.
+            // futura pode ser editada/cancelada.
             const passou = new Date(s.agendado_para).getTime() <= Date.now();
             const ativa = s.status === 'pendente' && !passou;
             const rotulo = s.status === 'enviado' ? 'enviada' : s.status === 'erro' ? 'falhou' : passou ? 'expirada' : null;
             return (
               <div key={s.id} className={cn('flex items-center justify-between gap-2 rounded-lg px-3 py-2',
-                ativa ? 'bg-ink-50' : 'bg-ink-50/60 opacity-60')}>
+                editing?.id === s.id ? 'bg-brand-50 ring-1 ring-brand-200' : ativa ? 'bg-ink-50' : 'bg-ink-50/60 opacity-60')}>
                 <div className="min-w-0">
                   <p className={cn('truncate text-sm', ativa ? 'text-ink-700' : 'text-ink-500 line-through')}>{s.corpo}</p>
                   <p className="text-[11px] text-ink-400">
                     {new Date(s.agendado_para).toLocaleString('pt-BR')}
-                    {s.recorrencia ? ` · ${RECORRENCIA_LABEL[s.recorrencia].toLowerCase()}` : ''}
+                    {s.serie_id ? ' · série' : ''}
                     {rotulo ? ` · ${rotulo}` : ''}
                   </p>
                 </div>
                 {ativa && (
-                  <SafeButton onClick={() => cancel(s.id)} className="shrink-0 text-xs font-semibold text-rose-600 hover:underline">Cancelar</SafeButton>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <SafeButton onClick={() => startEdit(s)} className="text-xs font-semibold text-brand-600 hover:underline">Editar</SafeButton>
+                    <SafeButton onClick={() => cancel(s.id, 'one')} className="text-xs font-semibold text-rose-600 hover:underline">Cancelar</SafeButton>
+                    {s.serie_id && (
+                      <SafeButton onClick={() => cancel(s.id, 'serie')} className="text-xs font-semibold text-rose-500 hover:underline">Série</SafeButton>
+                    )}
+                  </div>
                 )}
               </div>
             );
@@ -854,6 +1045,9 @@ export function WhatsApp(): React.JSX.Element {
   const [peekMessages, setPeekMessages] = useState<WaMessage[]>([]);
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [draft, setDraft] = useState('');
+  const [noteMode, setNoteMode] = useState(false); // compõe nota interna, não envio
+  const [noteReplyTo, setNoteReplyTo] = useState<WaMessage | null>(null); // nota pendurada numa msg
+  const composerRef = useRef<HTMLTextAreaElement>(null);
   const [busca, setBusca] = useState('');
   const [typingJid, setTypingJid] = useState<string | null>(null);
   const [linkOpen, setLinkOpen] = useState(false);
@@ -1042,10 +1236,16 @@ export function WhatsApp(): React.JSX.Element {
           }
           if (Number(chatId) === Number(activeRef.current)) {
             setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+            // Nota interna não é mensagem recebida: não confirma leitura nem recarrega.
+            if (m.internal) return;
             // Conversa aberta: confirma leitura no servidor e só então recarrega a
             // lista já zerada (evita que loadChats traga o contador de volta).
             void api.post(`/api/whatsapp/chats/${chatId}/read`, {})
               .then(loadChats).catch(() => loadChats());
+          } else if (m.internal) {
+            // Nota numa conversa fechada: não mexe na prévia/contador da lista;
+            // aparece quando a conversa for aberta (vem no GET das mensagens).
+            return;
           } else if (chatsRef.current.some((c) => Number(c.id) === Number(chatId))) {
             // Conversa fechada mas já listada: aplica o payload direto no item
             // (contador, prévia, horário, topo) — sem recarregar a lista inteira.
@@ -1114,6 +1314,45 @@ export function WhatsApp(): React.JSX.Element {
     }
   };
 
+  // Nota interna: grava o balão só no app (não chama Evolution). Otimista como o
+  // envio; sem loadChats porque a nota não mexe na prévia da conversa.
+  // Entra no modo nota já pendurada numa mensagem (menu de ações do balão) e foca
+  // o compositor. Setters são estáveis → callback estável (não invalida o memo).
+  const startNote = useCallback((m: WaMessage): void => {
+    setNoteMode(true);
+    setNoteReplyTo(m);
+    setTimeout(() => composerRef.current?.focus(), 0);
+  }, []);
+
+  const sendNote = async (): Promise<void> => {
+    const text = draft.trim();
+    if (!text || activeId == null) return;
+    const replyTo = noteReplyTo;
+    setDraft('');
+    setNoteReplyTo(null);
+    setNoteMode(false); // fecha o compositor de nota depois de criar
+    const tempId = -Date.now();
+    const temp: WaMessage = {
+      id: tempId, evolution_id: null, from_me: true, tipo: 'texto', corpo: text,
+      status: null, momento: new Date().toISOString(), mime: null, file_name: null,
+      sender_nome: user?.nome || user?.org_nome || user?.email || null, internal: true,
+      reply_to_id: replyTo ? replyTo.id : null,
+    };
+    setMessages((ms) => [...ms, temp]);
+    try {
+      const r = await api.post<{ message: WaMessage | null }>(`/api/whatsapp/chats/${activeId}/note`,
+        { text, replyToId: replyTo ? replyTo.id : null });
+      setMessages((ms) => {
+        const rest = ms.filter((x) => x.id !== tempId);
+        if (!r.message) return rest.length === ms.length ? ms : [...rest, temp];
+        return rest.some((x) => x.id === r.message!.id) ? rest : [...rest, r.message!];
+      });
+    } catch (e) {
+      setMessages((ms) => ms.filter((x) => x.id !== tempId));
+      toast.error(e instanceof ApiError ? e.message : 'Falha ao salvar nota');
+    }
+  };
+
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>): Promise<void> => {
     const f = e.target.files?.[0];
     e.target.value = '';
@@ -1133,7 +1372,7 @@ export function WhatsApp(): React.JSX.Element {
   };
 
   // Lista com separadores de data entre dias.
-  const listItems = useMemo(() => messageList(messages, setLightbox), [messages]);
+  const listItems = useMemo(() => messageList(messages, setLightbox, startNote), [messages, startNote]);
 
   // Rola pro fim ao trocar de conversa ou chegar mensagem (a lib fazia sozinha).
   useEffect(() => { listEndRef.current?.scrollIntoView({ block: 'end' }); }, [messages, activeId]);
@@ -1321,23 +1560,47 @@ export function WhatsApp(): React.JSX.Element {
                 </div>
               </div>
 
-              <div className="flex items-end gap-2 bg-[var(--wa-panel)] px-3 py-2">
-                {can('whatsapp.send') && (
+              <div className={cn('px-3 py-2', noteMode ? 'bg-amber-100 dark:bg-amber-400/15' : 'bg-[var(--wa-panel)]')}>
+                {/* Chip da mensagem citada: a nota vai pendurada nela. */}
+                {noteMode && noteReplyTo && (
+                  <div className="mb-1.5 flex items-start gap-2 rounded-lg border-l-[3px] border-amber-500 bg-amber-200/60 px-2.5 py-1.5 dark:bg-amber-400/10">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[12px] font-semibold text-amber-800 dark:text-amber-200">Nota em resposta a {quoteAutor(noteReplyTo)}</div>
+                      <div className="line-clamp-2 break-words text-[12.5px] text-amber-900/80 dark:text-amber-100/80">{quotePreview(noteReplyTo)}</div>
+                    </div>
+                    <button onClick={() => setNoteReplyTo(null)} aria-label="Soltar a mensagem citada"
+                      className="grid h-6 w-6 shrink-0 place-items-center rounded-full text-amber-700 hover:bg-amber-300/50 dark:text-amber-300">
+                      <Icon name="x" size={15} />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-end gap-2">
+                {/* Alterna entre enviar mensagem e criar nota interna (só a equipe vê). */}
+                <button onClick={() => { setNoteMode((v) => { if (v) setNoteReplyTo(null); return !v; }); }} aria-pressed={noteMode}
+                  title={noteMode ? 'Modo nota interna (clique para voltar a enviar)' : 'Nota interna (não enviada ao contato)'}
+                  className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-full',
+                    noteMode ? 'bg-amber-400/30 text-amber-700 dark:text-amber-300' : 'text-[var(--wa-muted)] hover:bg-[var(--wa-hover)]')}>
+                  <Icon name="pencil" size={20} />
+                </button>
+                {!noteMode && can('whatsapp.send') && (
                   <button onClick={() => fileRef.current?.click()} aria-label="Anexar"
                     className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-[var(--wa-hover)]">
                     <Icon name="paperclip" size={20} />
                   </button>
                 )}
-                <textarea value={draft} maxLength={2000} onChange={(e) => setDraft(e.target.value)} rows={1} autoFocus
-                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (can('whatsapp.send')) void send(); } }}
-                  placeholder="Digite uma mensagem…"
-                  className="max-h-32 min-h-[40px] min-w-0 flex-1 resize-none rounded-lg bg-[var(--wa-in)] px-3 py-2 text-sm text-[var(--wa-ink)] outline-none placeholder:text-[var(--wa-muted)]" />
-                {can('whatsapp.send') && (
-                  <SafeButton onClick={() => send()} aria-label="Enviar"
-                    className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-[var(--wa-green)] hover:bg-[var(--wa-hover)]">
-                    <Icon name="send" size={20} />
+                <textarea ref={composerRef} value={draft} maxLength={2000} onChange={(e) => setDraft(e.target.value)} rows={1} autoFocus
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (noteMode) void sendNote(); else if (can('whatsapp.send')) void send(); } }}
+                  placeholder={noteMode ? 'Nota interna — só a equipe vê…' : 'Digite uma mensagem…'}
+                  className={cn('max-h-32 min-h-[40px] min-w-0 flex-1 resize-none rounded-lg px-3 py-2 text-sm outline-none',
+                    noteMode ? 'bg-amber-50 text-amber-900 placeholder:text-amber-700/60 dark:bg-amber-400/10 dark:text-amber-100' : 'bg-[var(--wa-in)] text-[var(--wa-ink)] placeholder:text-[var(--wa-muted)]')} />
+                {(noteMode || can('whatsapp.send')) && (
+                  <SafeButton onClick={() => (noteMode ? sendNote() : send())} aria-label={noteMode ? 'Salvar nota' : 'Enviar'}
+                    className={cn('grid h-10 w-10 shrink-0 place-items-center rounded-full hover:bg-[var(--wa-hover)]',
+                      noteMode ? 'text-amber-700 dark:text-amber-300' : 'text-[var(--wa-green)]')}>
+                    <Icon name={noteMode ? 'check' : 'send'} size={20} />
                   </SafeButton>
                 )}
+                </div>
               </div>
             </>
           ) : (

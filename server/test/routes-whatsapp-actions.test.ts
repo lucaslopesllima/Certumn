@@ -60,6 +60,47 @@ describe('whatsapp — send texto', () => {
   });
 });
 
+describe('whatsapp — nota interna', () => {
+  it('404 conversa inexistente', async () => {
+    expect((await inj('POST', '/api/whatsapp/chats/999999/note', { text: 'x' })).statusCode).toBe(404);
+  });
+  it('salva nota interna sem chamar a Evolution e marca internal', async () => {
+    const chat = await mkChat('5511700000016@s.whatsapp.net', '5511700000016');
+    const r = await inj('POST', `/api/whatsapp/chats/${chat}/note`, { text: 'lembrar de ligar' });
+    expect(r.statusCode).toBe(200);
+    expect(r.json().message.corpo).toBe('lembrar de ligar');
+    expect(r.json().message.internal).toBe(true);
+    expect(r.json().message.from_me).toBe(true);
+    expect(evoMock.sendText).not.toHaveBeenCalled();
+    const row = await one<{ internal: boolean; evolution_id: string | null }>(
+      'SELECT internal, evolution_id FROM whatsapp_messages WHERE chat_id = $1 ORDER BY id DESC LIMIT 1', [chat]);
+    expect(row!.internal).toBe(true);
+    expect(row!.evolution_id).toBeNull();
+  });
+  it('nota não altera a prévia da conversa', async () => {
+    const chat = await mkChat('5511700000017@s.whatsapp.net', '5511700000017');
+    await inj('POST', `/api/whatsapp/chats/${chat}/note`, { text: 'nota secreta' });
+    const c = await one<{ last_preview: string | null }>('SELECT last_preview FROM whatsapp_chats WHERE id = $1', [chat]);
+    expect(c!.last_preview).not.toBe('nota secreta');
+  });
+  it('pendura a nota numa mensagem existente (reply_to_id)', async () => {
+    const chat = await mkChat('5511700000022@s.whatsapp.net', '5511700000022');
+    evoMock.sendText.mockResolvedValueOnce({ key: { id: 'alvo-nota-1' } });
+    const alvo = await inj('POST', `/api/whatsapp/chats/${chat}/send`, { text: 'mensagem alvo' });
+    const alvoId = alvo.json().message.id;
+    const r = await inj('POST', `/api/whatsapp/chats/${chat}/note`, { text: 'anotação', replyToId: alvoId });
+    expect(r.statusCode).toBe(200);
+    expect(Number(r.json().message.reply_to_id)).toBe(Number(alvoId));
+  });
+  it('replyToId inexistente/negativo vira nota solta (reply_to_id null)', async () => {
+    const chat = await mkChat('5511700000023@s.whatsapp.net', '5511700000023');
+    const r1 = await inj('POST', `/api/whatsapp/chats/${chat}/note`, { text: 'a', replyToId: 999999 });
+    expect(r1.json().message.reply_to_id).toBeNull();
+    const r2 = await inj('POST', `/api/whatsapp/chats/${chat}/note`, { text: 'b', replyToId: -123 });
+    expect(r2.json().message.reply_to_id).toBeNull();
+  });
+});
+
 describe('whatsapp — send-media', () => {
   const b64 = Buffer.from('anexo').toString('base64');
   it('404 e 422 (LID)', async () => {
@@ -210,6 +251,63 @@ describe('whatsapp — agendamentos', () => {
     expect(act.length).toBeGreaterThanOrEqual(1);
   });
 
+  it('recorrência + quantidade materializa a série inteira (N agendamentos + N compromissos, sem recorrência p/ não rolar)', async () => {
+    const chat = await mkChat('5511700000019@s.whatsapp.net', '5511700000019');
+    const r = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, {
+      text: 'série', agendado_para: '2030-03-01T10:00:00Z', recorrencia: 'semanal', quantidade: 4,
+    });
+    expect(r.statusCode).toBe(201);
+    const rows = await query<{ agendado_para: string; recorrencia: string | null; activity_id: string }>(
+      "SELECT agendado_para, recorrencia, activity_id FROM whatsapp_schedules WHERE chat_id = $1 AND corpo = 'série' ORDER BY agendado_para",
+      [chat]);
+    expect(rows.length).toBe(4);
+    // datas espaçadas 7 dias, cada uma com compromisso espelho, nenhuma rola.
+    expect(rows.every((x) => x.recorrencia === null && x.activity_id != null)).toBe(true);
+    const dias = rows.map((x) => new Date(x.agendado_para).getUTCDate());
+    expect(dias).toEqual([1, 8, 15, 22]);
+    const acts = await query('SELECT id FROM activities WHERE org_id = $1 AND titulo LIKE $2', [org, 'WhatsApp%série%']);
+    expect(acts.length).toBe(4);
+  });
+
+  it('série: cancelar escopo "serie" cancela todas; "one" cancela uma só', async () => {
+    const chat = await mkChat('5511700000030@s.whatsapp.net', '5511700000030');
+    const r = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, {
+      text: 'cancel-serie', agendado_para: '2031-01-01T10:00:00Z', recorrencia: 'diaria', quantidade: 5,
+    });
+    const serieId = r.json().schedule.serie_id;
+    expect(serieId).toBeTruthy();
+    const ids = (await query<{ id: string }>(
+      "SELECT id FROM whatsapp_schedules WHERE chat_id = $1 AND corpo = 'cancel-serie' ORDER BY agendado_para", [chat])).map((x) => x.id);
+    // cancela só a 1ª ocorrência
+    const d1 = await inj('DELETE', `/api/whatsapp/schedules/${ids[0]}?scope=one`);
+    expect(d1.json()).toMatchObject({ ok: true, canceladas: 1 });
+    // cancela o resto da série de uma vez (a partir de outra ocorrência)
+    const d2 = await inj('DELETE', `/api/whatsapp/schedules/${ids[1]}?scope=serie`);
+    expect(d2.json().canceladas).toBe(4);
+    const pend = await query("SELECT id FROM whatsapp_schedules WHERE chat_id = $1 AND corpo = 'cancel-serie' AND status = 'pendente'", [chat]);
+    expect(pend.length).toBe(0);
+  });
+
+  it('série: PATCH escopo "serie" edita o texto de todas; regen muda a quantidade', async () => {
+    const chat = await mkChat('5511700000031@s.whatsapp.net', '5511700000031');
+    const r = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, {
+      text: 'original', agendado_para: '2031-03-01T10:00:00Z', recorrencia: 'semanal', quantidade: 3,
+    });
+    const anyId = r.json().schedule.id;
+    // edita texto de toda a série
+    const up = await inj('PATCH', `/api/whatsapp/schedules/${anyId}`, { scope: 'serie', text: 'novo texto' });
+    expect(up.statusCode).toBe(200);
+    const corpos = await query<{ corpo: string }>("SELECT corpo FROM whatsapp_schedules WHERE serie_id = (SELECT serie_id FROM whatsapp_schedules WHERE id = $1) AND status = 'pendente'", [anyId]);
+    expect(corpos.length).toBe(3);
+    expect(corpos.every((c) => c.corpo === 'novo texto')).toBe(true);
+    // regen: aumenta pra 6 ocorrências, mesmo serie_id
+    const serieId = r.json().schedule.serie_id;
+    const rg = await inj('PATCH', `/api/whatsapp/schedules/${anyId}`, { scope: 'serie', recorrencia: 'semanal', quantidade: 6 });
+    expect(rg.statusCode).toBe(200);
+    const after = await query("SELECT id FROM whatsapp_schedules WHERE serie_id = $1 AND status = 'pendente'", [serieId]);
+    expect(after.length).toBe(6);
+  });
+
   it('lista agendamentos (com e sem filtro de chat) e cancela', async () => {
     const chat = await mkChat('5511700000012@s.whatsapp.net', '5511700000012');
     const created = await inj('POST', `/api/whatsapp/chats/${chat}/schedule`, { text: 'cancelar', agendado_para: '2030-02-01T10:00:00Z' });
@@ -218,7 +316,7 @@ describe('whatsapp — agendamentos', () => {
     const filtered = await inj('GET', `/api/whatsapp/schedules?chat_id=${chat}`);
     expect(filtered.json().schedules.every((x: { chat_id: string }) => String(x.chat_id) === String(chat))).toBe(true);
     // cancela → remove o compromisso espelho
-    expect((await inj('DELETE', `/api/whatsapp/schedules/${schedId}`)).json()).toEqual({ ok: true });
+    expect((await inj('DELETE', `/api/whatsapp/schedules/${schedId}`)).json()).toMatchObject({ ok: true });
     // cancelar de novo → 404 (não está mais pendente)
     expect((await inj('DELETE', `/api/whatsapp/schedules/${schedId}`)).statusCode).toBe(404);
   });
@@ -241,7 +339,7 @@ describe('whatsapp — agendamentos', () => {
       `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id)
        VALUES ($1,$2,$3,'sem-activity','2030-03-01T10:00:00Z',$4) RETURNING id`,
       [org, chat, '5511700000013@s.whatsapp.net', Number(s.user.id)]);
-    expect((await inj('DELETE', `/api/whatsapp/schedules/${row!.id}`)).json()).toEqual({ ok: true });
+    expect((await inj('DELETE', `/api/whatsapp/schedules/${row!.id}`)).json()).toMatchObject({ ok: true });
   });
 });
 

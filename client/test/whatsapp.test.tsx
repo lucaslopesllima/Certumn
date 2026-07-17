@@ -148,6 +148,7 @@ const defaultGet = async (p: string): Promise<unknown> => {
   return {};
 };
 const defaultPost = async (p: string): Promise<unknown> => {
+  if (p.endsWith('/note')) return { message: msg({ id: 902, from_me: true, tipo: 'texto', corpo: 'minha nota', status: null, internal: true, sender_nome: 'Carlos' }) };
   if (p.endsWith('/send')) return { message: msg({ id: 900, from_me: true, tipo: 'texto', corpo: 'enviado!', status: 'enviado' }) };
   if (p.endsWith('/send-media')) return { message: msg({ id: 901, from_me: true, tipo: 'imagem', mime: 'image/png' }) };
   if (p.endsWith('/read')) return {};
@@ -292,6 +293,21 @@ describe('WhatsApp — lista e mensagens', () => {
     await waitFor(() => expect([...utils.container.querySelectorAll('img')].some((i) => i.src === 'blob:mock')).toBe(true));
   });
 
+  it('nota pendurada aparece colada na mensagem de origem, fora da ordem cronológica', async () => {
+    // Nota anexada à msg id 3 ('hoje'), mas no fim do array (momento mais novo):
+    // deve ser puxada pra logo abaixo de 'hoje', antes de 'lido' (id 4).
+    const withNote = [...MESSAGES, msg({ id: 50, from_me: true, internal: true, corpo: 'nota no hoje', reply_to_id: 3, sender_nome: 'Carlos' })];
+    m.get.mockImplementation((p: string) => (/\/messages$/.test(p) ? Promise.resolve({ messages: withNote }) : defaultGet(p)));
+    await mountConnected();
+    await openChat('Alice');
+    const hoje = await screen.findByText('hoje');
+    const nota = await screen.findByText('nota no hoje');
+    const lido = screen.getByText('lido');
+    // nota depois de 'hoje' e antes de 'lido' no DOM
+    expect(hoje.compareDocumentPosition(nota) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(nota.compareDocumentPosition(lido) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
   it('abre lightbox ao clicar na imagem e fecha com Esc', async () => {
     const utils = await mountConnected();
     await openChat('Alice');
@@ -351,6 +367,37 @@ describe('WhatsApp — envio', () => {
     fireEvent.click(screen.getByLabelText('Enviar'));
     await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/whatsapp/chats/1/send', { text: 'olá mundo' }));
     expect(await screen.findByText('enviado!')).toBeInTheDocument();
+  });
+
+  it('nota interna: alterna o modo e salva sem chamar /send', async () => {
+    await mountConnected();
+    await openChat('Alice');
+    fireEvent.click(screen.getByTitle('Nota interna (não enviada ao contato)'));
+    const ta = await screen.findByPlaceholderText('Nota interna — só a equipe vê…');
+    fireEvent.change(ta, { target: { value: 'lembrete' } });
+    fireEvent.click(screen.getByLabelText('Salvar nota'));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/whatsapp/chats/1/note', { text: 'lembrete', replyToId: null }));
+    expect(m.post).not.toHaveBeenCalledWith('/api/whatsapp/chats/1/send', expect.anything());
+    expect(await screen.findByText('minha nota')).toBeInTheDocument();
+    expect(screen.getByText(/Nota interna/)).toBeInTheDocument();
+  });
+
+  it('flecha de ações cria nota pendurada na mensagem (replyToId)', async () => {
+    await mountConnected();
+    await openChat('Alice');
+    // Abre o menu de ações do balão existente e escolhe "Criar nota".
+    const chevrons = await screen.findAllByLabelText('Ações da mensagem');
+    fireEvent.click(chevrons[0]);
+    fireEvent.click(await screen.findByText('Criar nota'));
+    // Chip da mensagem citada aparece; digita e salva.
+    expect(await screen.findByText(/Nota em resposta a/)).toBeInTheDocument();
+    const ta = await screen.findByPlaceholderText('Nota interna — só a equipe vê…');
+    fireEvent.change(ta, { target: { value: 'pendurada' } });
+    fireEvent.click(screen.getByLabelText('Salvar nota'));
+    await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/whatsapp/chats/1/note',
+      expect.objectContaining({ text: 'pendurada', replyToId: expect.anything() })));
+    const call = m.post.mock.calls.find((c: unknown[]) => c[0] === '/api/whatsapp/chats/1/note');
+    expect((call![1] as { replyToId: unknown }).replyToId).not.toBeNull();
   });
 
   it('envia com Enter', async () => {

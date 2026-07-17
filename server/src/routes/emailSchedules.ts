@@ -1,8 +1,11 @@
+import { randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import type { FastifyInstance } from 'fastify';
 import { one, query, withClient } from '../db.ts';
 import { requireAuth, requirePermission } from '../auth.ts';
 import { scopeOwner, canWriteOwned } from '../scope.ts';
 import { audit, pick } from '../audit.ts';
+import { addInterval } from '../email.ts';
 
 // Agendamento de envio de e-mail (scaffold). Duas entidades:
 //  - email_templates: modelos reutilizáveis da org (todos leem; dono/admin edita).
@@ -20,7 +23,7 @@ const EMAIL_OR_EMPTY_PATTERN = '^([^@\\s]+@[^@\\s]+\\.[^@\\s]+)?$';
 
 const SCHED_SELECT = `
   SELECT e.id, e.template_id, e.company_id, e.remetente, e.destinatario, e.assunto, e.corpo,
-         e.agendado_para, e.recorrencia, e.status, e.enviado_em, e.erro, e.owner_user_id,
+         e.agendado_para, e.recorrencia, e.serie_id, e.status, e.enviado_em, e.erro, e.owner_user_id,
          e.created_at, e.updated_at,
          COALESCE(c.nome_fantasia, c.razao_social) AS empresa
     FROM email_schedules e
@@ -32,6 +35,54 @@ const normRec = (v: unknown): string | null =>
 
 const fullSched = (id: number, orgId: number): Promise<Record<string, unknown> | null> =>
   one(`${SCHED_SELECT} WHERE e.id = $1 AND e.org_id = $2`, [id, orgId]);
+
+const EMAIL_TITULO = (dest: string, assunto: string): string =>
+  `E-mail p/ ${dest}: ${assunto.length > 60 ? `${assunto.slice(0, 60)}…` : assunto}`;
+
+// Cadência inferida pelo intervalo entre duas ocorrências (as linhas
+// materializadas guardam recorrencia=null). E-mail não tem 'anual'.
+function inferRecEmail(d0: Date, d1: Date): string | null {
+  const dias = Math.round((d1.getTime() - d0.getTime()) / 86_400_000);
+  if (dias <= 1) return 'diaria';
+  if (dias <= 10) return 'semanal';
+  return 'mensal';
+}
+
+interface EmailSeriesOpts {
+  orgId: number; templateId: number | null; companyId: number | null; remetente: string;
+  destinatario: string; assunto: string; corpo: string; agendadoPara: string;
+  recorrencia: string | null; quantidade?: number; ownerUserId: number; serieId?: string | null;
+}
+
+// Materializa a série de e-mail num client de transação já aberto. quantidade > 1
+// cria N compromissos + N agendamentos com datas espaçadas pela recorrência,
+// compartilhando serie_id; cada linha fica sem recorrência (série finita, o
+// processador não gera a próxima). Devolve o id da 1ª linha.
+async function insertEmailSeries(c: PoolClient, o: EmailSeriesOpts): Promise<number> {
+  const rec = o.recorrencia;
+  const n = rec ? Math.max(1, Math.min(60, Math.trunc(o.quantidade ?? 1))) : 1;
+  const rowRec = n > 1 ? null : rec;
+  const serieId = n > 1 ? (o.serieId ?? randomUUID()) : (o.serieId ?? null);
+  const titulo = EMAIL_TITULO(o.destinatario, o.assunto);
+  let first = 0;
+  let quando: string | null = o.agendadoPara;
+  for (let i = 0; i < n && quando; i++) {
+    const act = (await c.query(
+      `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, status)
+       VALUES ($1, 'email', $2, $3, $4, $5, 'pendente') RETURNING id`,
+      [o.orgId, titulo, quando, o.ownerUserId, o.companyId],
+    )).rows[0] as { id: number };
+    const s = (await c.query(
+      `INSERT INTO email_schedules
+         (org_id, template_id, company_id, remetente, destinatario, assunto, corpo, agendado_para, recorrencia, owner_user_id, activity_id, serie_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING id`,
+      [o.orgId, o.templateId, o.companyId, o.remetente, o.destinatario, o.assunto, o.corpo, quando, rowRec, o.ownerUserId, act.id, serieId],
+    )).rows[0] as { id: number };
+    if (i === 0) first = s.id;
+    if (rec) quando = addInterval(quando, rec);
+  }
+  return first;
+}
 
 export function emailScheduleRoutes(app: FastifyInstance): void {
   /* ── Templates ─────────────────────────────────────────── */
@@ -170,6 +221,7 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
           corpo: { type: 'string', minLength: 1 },
           agendado_para: { type: 'string', minLength: 1 },
           recorrencia: { type: ['string', 'null'], enum: [...RECORRENCIA, null] },
+          quantidade: { type: 'integer', minimum: 1, maximum: 60 },
         },
       },
     },
@@ -177,7 +229,7 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const b = req.body as {
       template_id?: number | null; company_id?: number | null; remetente?: string | null;
-      destinatario: string; assunto: string; corpo: string; agendado_para: string; recorrencia?: string | null;
+      destinatario: string; assunto: string; corpo: string; agendado_para: string; recorrencia?: string | null; quantidade?: number;
     };
     // template é org-scoped; valida se veio. company_id aponta p/ base global
     // (sem org), então só confere existência.
@@ -195,31 +247,25 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
       const u = await one<{ email: string }>('SELECT email FROM users WHERE id = $1', [req.auth!.userId]);
       remetente = u?.email ?? '';
     }
-    // Espelha na Agenda: compromisso 'email' + agendamento, numa transação só.
+    // Espelha na Agenda: compromisso 'email' + agendamento. Recorrência com
+    // quantidade > 1 materializa a série inteira (N linhas + N compromissos,
+    // mesmo serie_id), tudo numa transação só.
     const dest = b.destinatario.trim();
-    const titulo = `E-mail p/ ${dest}: ${b.assunto.length > 60 ? `${b.assunto.slice(0, 60)}…` : b.assunto}`;
-    const row = await withClient(async (c) => {
+    const firstId = await withClient(async (c) => {
       await c.query('BEGIN');
       try {
-        const act = (await c.query(
-          `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, status)
-           VALUES ($1, 'email', $2, $3, $4, $5, 'pendente') RETURNING id`,
-          [orgId, titulo, b.agendado_para, req.auth!.userId, b.company_id ?? null],
-        )).rows[0] as { id: number };
-        const s = (await c.query(
-          `INSERT INTO email_schedules
-             (org_id, template_id, company_id, remetente, destinatario, assunto, corpo, agendado_para, recorrencia, owner_user_id, activity_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id`,
-          [orgId, b.template_id ?? null, b.company_id ?? null, remetente, dest,
-            b.assunto, b.corpo, b.agendado_para, normRec(b.recorrencia), req.auth!.userId, act.id],
-        )).rows[0] as { id: number };
+        const fid = await insertEmailSeries(c, {
+          orgId, templateId: b.template_id ?? null, companyId: b.company_id ?? null, remetente,
+          destinatario: dest, assunto: b.assunto, corpo: b.corpo, agendadoPara: b.agendado_para,
+          recorrencia: normRec(b.recorrencia), quantidade: b.quantidade, ownerUserId: req.auth!.userId,
+        });
         await c.query('COMMIT');
-        return s;
+        return fid;
       } catch (e) { await c.query('ROLLBACK'); throw e; }
     });
-    await audit(req, 'email_schedule', row.id, 'create',
+    await audit(req, 'email_schedule', firstId, 'create',
       { company_id: b.company_id ?? null, agendado_para: b.agendado_para });
-    return reply.code(201).send({ schedule: await fullSched(row.id, orgId) });
+    return reply.code(201).send({ schedule: await fullSched(firstId, orgId) });
   });
 
   app.patch('/api/email-schedules/:id', {
@@ -229,12 +275,14 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
       body: {
         type: 'object',
         properties: {
+          scope: { type: 'string', enum: ['one', 'serie'] },
           remetente: { type: 'string', pattern: EMAIL_OR_EMPTY_PATTERN },
           destinatario: { type: 'string', pattern: EMAIL_PATTERN },
           assunto: { type: 'string', minLength: 1 },
           corpo: { type: 'string', minLength: 1 },
           agendado_para: { type: 'string', minLength: 1 },
           recorrencia: { type: ['string', 'null'], enum: [...RECORRENCIA, null] },
+          quantidade: { type: 'integer', minimum: 2, maximum: 60 },
           status: { type: 'string', enum: ['pendente', 'cancelado'] },
         },
       },
@@ -243,8 +291,14 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
     const b = req.body as Record<string, unknown>;
-    const current = await one<{ owner_user_id: string | null; status: string; activity_id: string | null }>(
-      'SELECT owner_user_id, status, activity_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
+    const current = await one<{
+      owner_user_id: string | null; status: string; activity_id: string | null; serie_id: string | null;
+      template_id: string | null; company_id: string | null; remetente: string | null;
+      destinatario: string; assunto: string; corpo: string; agendado_para: string;
+    }>(
+      `SELECT owner_user_id, status, activity_id, serie_id, template_id, company_id, remetente,
+              destinatario, assunto, corpo, agendado_para
+         FROM email_schedules WHERE id = $1 AND org_id = $2`, [id, orgId],
     );
     if (!current) return reply.code(404).send({ error: 'não encontrado' });
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id), { nullWritable: true })) {
@@ -254,57 +308,124 @@ export function emailScheduleRoutes(app: FastifyInstance): void {
     if (current.status !== 'pendente' && current.status !== 'cancelado') {
       return reply.code(409).send({ error: 'agendamento já processado' });
     }
+    const scope = b.scope === 'serie' && current.serie_id != null ? 'serie' : 'one';
+
+    // Regenera a série quando muda a quantidade, ou quando já é série e muda a
+    // frequência: apaga as ocorrências pendentes-alvo + compromissos e recria N a
+    // partir da base. Cancelar tem prioridade (não regenera). Frequência isolada
+    // num agendamento avulso continua sendo só atualização de campo (compat).
+    const cancelling = b.status === 'cancelado';
+    const regen = !cancelling && ('quantidade' in b
+      || (current.serie_id != null && typeof b.recorrencia === 'string' && normRec(b.recorrencia) != null));
+    if (regen) {
+      const alvos = scope === 'serie'
+        ? await query<{ id: string; activity_id: string | null; agendado_para: string }>(
+          `SELECT id, activity_id, agendado_para FROM email_schedules
+            WHERE org_id = $1 AND serie_id = $2 AND status = 'pendente' ORDER BY agendado_para`, [orgId, current.serie_id])
+        : [{ id: String(id), activity_id: current.activity_id, agendado_para: current.agendado_para }];
+      const base = 'agendado_para' in b ? new Date(String(b.agendado_para)) : new Date(alvos[0]!.agendado_para);
+      if (Number.isNaN(base.getTime())) return reply.code(400).send({ error: 'data inválida' });
+      const rec = typeof b.recorrencia === 'string' ? normRec(b.recorrencia)
+        : alvos.length >= 2 ? inferRecEmail(new Date(alvos[0]!.agendado_para), new Date(alvos[1]!.agendado_para)) : null;
+      if (!rec) return reply.code(400).send({ error: 'informe a frequência (recorrencia) para regenerar' });
+      const qtd = 'quantidade' in b ? Number(b.quantidade) : Math.max(2, alvos.length);
+      const firstId = await withClient(async (c) => {
+        await c.query('BEGIN');
+        try {
+          const actIds = alvos.map((a) => a.activity_id).filter((x): x is string => x != null);
+          await c.query('DELETE FROM email_schedules WHERE org_id = $1 AND id = ANY($2::bigint[])', [orgId, alvos.map((a) => a.id)]);
+          if (actIds.length) await c.query('DELETE FROM activities WHERE org_id = $1 AND id = ANY($2::bigint[])', [orgId, actIds]);
+          const fid = await insertEmailSeries(c, {
+            orgId, templateId: current.template_id == null ? null : Number(current.template_id),
+            companyId: current.company_id == null ? null : Number(current.company_id),
+            remetente: 'remetente' in b ? String(b.remetente).trim() : (current.remetente ?? ''),
+            destinatario: 'destinatario' in b ? String(b.destinatario).trim() : current.destinatario,
+            assunto: 'assunto' in b ? String(b.assunto) : current.assunto,
+            corpo: 'corpo' in b ? String(b.corpo) : current.corpo,
+            agendadoPara: base.toISOString(), recorrencia: rec, quantidade: qtd,
+            ownerUserId: Number(current.owner_user_id), serieId: current.serie_id ?? undefined,
+          });
+          await c.query('COMMIT');
+          return fid;
+        } catch (e) { await c.query('ROLLBACK'); throw e; }
+      });
+      await audit(req, 'email_schedule', firstId, 'update', b);
+      return { schedule: await fullSched(firstId, orgId) };
+    }
+
+    // Alvos da edição simples: série pendente ou só esta ocorrência.
+    const alvos = scope === 'serie'
+      ? await query<{ id: string; activity_id: string | null }>(
+        `SELECT id, activity_id FROM email_schedules WHERE org_id = $1 AND serie_id = $2 AND status = 'pendente'`, [orgId, current.serie_id])
+      : [{ id: String(id), activity_id: current.activity_id }];
+
     const sets: string[] = [];
-    const params: unknown[] = [];
-    for (const k of ['remetente', 'destinatario', 'assunto', 'corpo', 'agendado_para'] as const) {
-      if (k in b) { params.push(k === 'remetente' || k === 'destinatario' ? String(b[k]).trim() : b[k]); sets.push(`${k} = $${params.length}`); }
+    const vals: unknown[] = [];
+    // agendado_para só numa ocorrência (cada uma tem a sua data).
+    const camposConteudo = ['remetente', 'destinatario', 'assunto', 'corpo'] as const;
+    for (const k of camposConteudo) {
+      if (k in b) { vals.push(k === 'remetente' || k === 'destinatario' ? String(b[k]).trim() : b[k]); sets.push(`${k} = $${vals.length}`); }
     }
-    if ('recorrencia' in b) { params.push(normRec(b.recorrencia)); sets.push(`recorrencia = $${params.length}`); }
-    if ('status' in b) { params.push(b.status); sets.push(`status = $${params.length}::email_schedule_status`); }
+    if ('agendado_para' in b && scope === 'one') { vals.push(b.agendado_para); sets.push(`agendado_para = $${vals.length}`); }
+    if ('recorrencia' in b) { vals.push(normRec(b.recorrencia)); sets.push(`recorrencia = $${vals.length}`); }
+    if ('status' in b) { vals.push(b.status); sets.push(`status = $${vals.length}::email_schedule_status`); }
     if (sets.length === 0) return reply.code(400).send({ error: 'nada para atualizar' });
-    params.push(id, orgId);
-    await query(
-      `UPDATE email_schedules SET ${sets.join(', ')}, updated_at = now()
-        WHERE id = $${params.length - 1} AND org_id = $${params.length}`,
-      params,
-    );
-    // Mantém o compromisso espelho da Agenda em sincronia: cancelar remove-o; mudar
-    // a data/assunto/destinatário atualiza o horário e o título.
-    if (current.activity_id != null) {
-      if (b.status === 'cancelado') {
-        await query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [current.activity_id, orgId]);
-      } else if ('agendado_para' in b || 'assunto' in b || 'destinatario' in b) {
-        const s = await one<{ destinatario: string; assunto: string; agendado_para: string }>(
-          'SELECT destinatario, assunto, agendado_para FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId]);
-        if (s) {
-          const titulo = `E-mail p/ ${s.destinatario}: ${s.assunto.length > 60 ? `${s.assunto.slice(0, 60)}…` : s.assunto}`;
-          await query('UPDATE activities SET titulo = $1, start_at = $2 WHERE id = $3 AND org_id = $4',
-            [titulo, s.agendado_para, current.activity_id, orgId]);
+
+    await withClient(async (c) => {
+      await c.query('BEGIN');
+      try {
+        for (const a of alvos) {
+          const p = [...vals, a.id, orgId];
+          await c.query(`UPDATE email_schedules SET ${sets.join(', ')}, updated_at = now()
+                          WHERE id = $${p.length - 1} AND org_id = $${p.length}`, p);
+          // Sincroniza o compromisso espelho: cancelar remove; senão atualiza título/data.
+          if (a.activity_id != null) {
+            if (b.status === 'cancelado') {
+              await c.query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [a.activity_id, orgId]);
+            } else {
+              const s = (await c.query(
+                'SELECT destinatario, assunto, agendado_para FROM email_schedules WHERE id = $1 AND org_id = $2', [a.id, orgId]
+              )).rows[0] as { destinatario: string; assunto: string; agendado_para: string } | undefined;
+              if (s) {
+                await c.query('UPDATE activities SET titulo = $1, start_at = $2 WHERE id = $3 AND org_id = $4',
+                  [EMAIL_TITULO(s.destinatario, s.assunto), s.agendado_para, a.activity_id, orgId]);
+              }
+            }
+          }
         }
-      }
-    }
+        await c.query('COMMIT');
+      } catch (e) { await c.query('ROLLBACK'); throw e; }
+    });
     await audit(req, 'email_schedule', id, 'update', b);
     return { schedule: await fullSched(id, orgId) };
   });
 
   app.delete('/api/email-schedules/:id', {
     preHandler: [requireAuth, requirePermission('email_schedules.delete')],
-    schema: { params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } } },
+    schema: {
+      params: { type: 'object', required: ['id'], properties: { id: { type: 'integer' } } },
+      querystring: { type: 'object', properties: { scope: { type: 'string', enum: ['one', 'serie'] } } },
+    },
   }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const { id } = req.params as { id: number };
-    const current = await one<{ owner_user_id: string | null; activity_id: string | null }>(
-      'SELECT owner_user_id, activity_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
+    const scope = (req.query as { scope?: string }).scope ?? 'one';
+    const current = await one<{ owner_user_id: string | null; activity_id: string | null; serie_id: string | null }>(
+      'SELECT owner_user_id, activity_id, serie_id FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId],
     );
     if (!current) return reply.code(404).send({ error: 'não encontrado' });
     if (!canWriteOwned(req, current.owner_user_id === null ? null : Number(current.owner_user_id), { nullWritable: true })) {
       return reply.code(403).send({ error: 'agendamento de outro vendedor' });
     }
-    await query('DELETE FROM email_schedules WHERE id = $1 AND org_id = $2', [id, orgId]);
-    // Remove o compromisso espelho da Agenda junto.
-    if (current.activity_id != null) {
-      await query('DELETE FROM activities WHERE id = $1 AND org_id = $2', [current.activity_id, orgId]);
-    }
+    // scope='serie' remove a série inteira (todas as ocorrências, não só as pendentes).
+    const serieMode = scope === 'serie' && current.serie_id != null;
+    const alvos = serieMode
+      ? await query<{ id: string; activity_id: string | null }>(
+        'SELECT id, activity_id FROM email_schedules WHERE org_id = $1 AND serie_id = $2', [orgId, current.serie_id])
+      : [{ id: String(id), activity_id: current.activity_id }];
+    const actIds = alvos.map((a) => a.activity_id).filter((x): x is string => x != null);
+    await query('DELETE FROM email_schedules WHERE org_id = $1 AND id = ANY($2::bigint[])', [orgId, alvos.map((a) => a.id)]);
+    if (actIds.length) await query('DELETE FROM activities WHERE org_id = $1 AND id = ANY($2::bigint[])', [orgId, actIds]);
     await audit(req, 'email_schedule', id, 'delete');
     return { deleted: true };
   });

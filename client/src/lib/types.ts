@@ -356,6 +356,7 @@ export interface EmailSchedule {
   corpo: string;
   agendado_para: string;
   recorrencia: string | null;
+  serie_id: string | null;
   status: EmailScheduleStatus;
   enviado_em: string | null;
   erro: string | null;
@@ -407,6 +408,7 @@ export interface WaSchedule {
   agendado_para: string;
   status: string;
   recorrencia: WaRecorrencia | null;
+  serie_id: string | null;
 }
 
 export interface WaMessage {
@@ -420,4 +422,6 @@ export interface WaMessage {
   mime: string | null;
   file_name: string | null;
   sender_nome: string | null; // atendente que enviou pelo sistema (null: recebida ou enviada pelo celular)
+  internal?: boolean; // nota interna: só a equipe vê, nunca enviada ao contato
+  reply_to_id?: string | number | null; // id da mensagem citada (nota pendurada)
 }

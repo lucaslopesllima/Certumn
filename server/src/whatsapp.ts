@@ -1,6 +1,8 @@
 // Lógica de domínio do WhatsApp compartilhada entre a rota (envio pela UI) e o
 // webhook (recebimento da Evolution): nome da instância, upsert de conversa e
 // inserção de mensagem com dedup. SQL cru via db.ts, sempre filtrando org_id.
+import { randomUUID } from 'node:crypto';
+import type { PoolClient } from 'pg';
 import { one, query, withClient } from './db.ts';
 import * as evo from './evolution.ts';
 import { broadcast } from './ws.ts';
@@ -138,48 +140,81 @@ export type WaRecorrencia = (typeof WA_RECORRENCIAS)[number];
 // Compromisso espelho na Agenda + agendamento de WhatsApp, numa transação só.
 // Reusado pelo agendamento de dentro da conversa, pelo agendamento direto
 // (Agenda) e pelo processador ao criar a próxima ocorrência de uma recorrência.
-export async function scheduleWhatsappTx(orgId: number, opts: {
+export const SCHEDULE_MAX_OCORRENCIAS = 60;
+
+interface WhatsappSeriesOpts {
   chatId: string | number; remoteJid: string; companyId: string | number | null;
   contactId: string | number | null; ownerUserId: string | number | null; text: string; when: Date; titulo: string;
-  recorrencia?: WaRecorrencia | null;
-}): Promise<Record<string, unknown>> {
+  recorrencia?: WaRecorrencia | null; quantidade?: number; serieId?: string | null;
+}
+
+// Materializa a série num client de transação já aberto (BEGIN feito por quem
+// chama). quantidade > 1 gera N compromissos + N agendamentos com datas
+// espaçadas pela recorrência, todos já visíveis na Agenda, compartilhando um
+// serie_id (permite editar/cancelar a série inteira depois). Cada linha fica SEM
+// recorrência (série finita: o processador não rola de novo). quantidade = 1 é o
+// caso normal — envio único, ou a próxima ocorrência criada pelo processador,
+// que guarda a recorrência pra rolar. Devolve a 1ª linha criada.
+export async function insertWhatsappSeries(c: PoolClient, orgId: number, opts: WhatsappSeriesOpts): Promise<Record<string, unknown>> {
+  const rec = opts.recorrencia ?? null;
+  const n = rec ? Math.max(1, Math.min(SCHEDULE_MAX_OCORRENCIAS, Math.trunc(opts.quantidade ?? 1))) : 1;
+  const rowRec = n > 1 ? null : rec;
+  // série só quando há mais de uma ocorrência; reaproveita o serie_id no regen.
+  const serieId = n > 1 ? (opts.serieId ?? randomUUID()) : (opts.serieId ?? null);
+  let first: Record<string, unknown> | null = null;
+  let when = new Date(opts.when);
+  for (let i = 0; i < n; i++) {
+    const act = (await c.query(
+      `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, contact_id, status)
+       VALUES ($1, 'whatsapp', $2, $3, $4, $5, $6, 'pendente') RETURNING id`,
+      [orgId, opts.titulo, when.toISOString(), opts.ownerUserId, opts.companyId, opts.contactId],
+    )).rows[0] as { id: string };
+    const s = (await c.query(
+      `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id, recorrencia, serie_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       RETURNING id, chat_id, corpo, agendado_para, status, recorrencia, serie_id`,
+      [orgId, opts.chatId, opts.remoteJid, opts.text, when.toISOString(), opts.ownerUserId, act.id, rowRec, serieId],
+    )).rows[0];
+    if (i === 0) first = s;
+    if (rec && i < n - 1) when = stepOccurrence(when, rec);
+  }
+  return first!;
+}
+
+export async function scheduleWhatsappTx(orgId: number, opts: WhatsappSeriesOpts): Promise<Record<string, unknown>> {
   return withClient(async (c) => {
     await c.query('BEGIN');
     try {
-      const act = (await c.query(
-        `INSERT INTO activities (org_id, tipo, titulo, start_at, owner_user_id, company_id, contact_id, status)
-         VALUES ($1, 'whatsapp', $2, $3, $4, $5, $6, 'pendente') RETURNING id`,
-        [orgId, opts.titulo, opts.when.toISOString(), opts.ownerUserId, opts.companyId, opts.contactId],
-      )).rows[0] as { id: string };
-      const s = (await c.query(
-        `INSERT INTO whatsapp_schedules (org_id, chat_id, remote_jid, corpo, agendado_para, owner_user_id, activity_id, recorrencia)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING id, chat_id, corpo, agendado_para, status, recorrencia`,
-        [orgId, opts.chatId, opts.remoteJid, opts.text, opts.when.toISOString(), opts.ownerUserId, act.id, opts.recorrencia ?? null],
-      )).rows[0];
+      const first = await insertWhatsappSeries(c, orgId, opts);
       await c.query('COMMIT');
-      return s;
+      return first;
     } catch (e) { await c.query('ROLLBACK'); throw e; }
   });
 }
 
+// Um passo da recorrência a partir de `from` (sem pular pra frente de now) —
+// base da materialização da série. Mensal/anual clampa no último dia do mês
+// (31 → 28/29 em fevereiro).
+export function stepOccurrence(from: Date, rec: WaRecorrencia): Date {
+  const d = new Date(from);
+  if (rec === 'diaria') d.setDate(d.getDate() + 1);
+  else if (rec === 'semanal') d.setDate(d.getDate() + 7);
+  else {
+    const day = d.getDate();
+    d.setDate(1);
+    if (rec === 'mensal') d.setMonth(d.getMonth() + 1);
+    else d.setFullYear(d.getFullYear() + 1);
+    d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
+  }
+  return d;
+}
+
 // Próxima ocorrência estritamente futura: avança a partir da data agendada (não
 // de now) pra manter o horário original; se o sistema ficou parado, pula as
-// ocorrências perdidas em vez de disparar uma rajada. Mensal/anual clampa no
-// último dia do mês (31 → 28/29 em fevereiro).
+// ocorrências perdidas em vez de disparar uma rajada.
 export function nextOccurrence(from: Date, rec: WaRecorrencia, now: Date): Date {
-  const d = new Date(from);
-  do {
-    if (rec === 'diaria') d.setDate(d.getDate() + 1);
-    else if (rec === 'semanal') d.setDate(d.getDate() + 7);
-    else {
-      const day = d.getDate();
-      d.setDate(1);
-      if (rec === 'mensal') d.setMonth(d.getMonth() + 1);
-      else d.setFullYear(d.getFullYear() + 1);
-      d.setDate(Math.min(day, new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate()));
-    }
-  } while (d.getTime() <= now.getTime());
+  let d = new Date(from);
+  do { d = stepOccurrence(d, rec); } while (d.getTime() <= now.getTime());
   return d;
 }
 
@@ -348,6 +383,7 @@ export interface MessageRow {
   id: string; chat_id: string; evolution_id: string | null; from_me: boolean;
   tipo: string; corpo: string | null; status: string | null; momento: string;
   mime: string | null; file_name: string | null; sender_nome: string | null;
+  internal: boolean; reply_to_id: string | null;
 }
 
 // Insere a mensagem; ON CONFLICT no índice de dedup evita duplicar reentrega de
@@ -359,6 +395,7 @@ export async function insertMessage(
     evolutionId?: string | null; fromMe: boolean; tipo?: string; corpo?: string | null;
     status?: string | null; momento?: string; mime?: string | null; fileName?: string | null;
     mediaB64?: string | null; mediaPath?: string | null; senderUserId?: number | null;
+    internal?: boolean; replyToId?: number | null;
   },
 ): Promise<MessageRow | null> {
   // Sem evolution_id (ex.: envio otimista) não há como deduplicar — insere direto.
@@ -373,17 +410,17 @@ export async function insertMessage(
   return one<MessageRow>(
     `WITH ins AS (
        INSERT INTO whatsapp_messages
-         (org_id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, media_b64, media_path, sender_user_id)
-       VALUES ($1, $2, $3, $4, COALESCE($5,'texto'), $6, $7, COALESCE($8::timestamptz, now()), $9, $10, $11, $12, $13)
-       RETURNING id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, sender_user_id
+         (org_id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, media_b64, media_path, sender_user_id, internal, reply_to_id)
+       VALUES ($1, $2, $3, $4, COALESCE($5,'texto'), $6, $7, COALESCE($8::timestamptz, now()), $9, $10, $11, $12, $13, COALESCE($14, false), $15)
+       RETURNING id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, sender_user_id, internal, reply_to_id
      )
      SELECT ins.id, ins.chat_id, ins.evolution_id, ins.from_me, ins.tipo, ins.corpo, ins.status,
-            ins.momento, ins.mime, ins.file_name, COALESCE(u.nome, o.nome, u.email) AS sender_nome
+            ins.momento, ins.mime, ins.file_name, ins.internal, ins.reply_to_id, COALESCE(u.nome, o.nome, u.email) AS sender_nome
        FROM ins
        LEFT JOIN users u ON u.id = ins.sender_user_id
        LEFT JOIN organizations o ON o.id = u.org_id`,
     [orgId, chatId, m.evolutionId ?? null, m.fromMe, m.tipo ?? null, m.corpo ?? null,
       m.status ?? null, m.momento ?? null, m.mime ?? null, m.fileName ?? null, m.mediaB64 ?? null, m.mediaPath ?? null,
-      m.senderUserId ?? null],
+      m.senderUserId ?? null, m.internal ?? false, m.replyToId ?? null],
   );
 }
