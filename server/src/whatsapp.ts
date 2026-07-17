@@ -347,7 +347,7 @@ export async function deleteChat(orgId: number, chatId: number): Promise<boolean
 export interface MessageRow {
   id: string; chat_id: string; evolution_id: string | null; from_me: boolean;
   tipo: string; corpo: string | null; status: string | null; momento: string;
-  mime: string | null; file_name: string | null;
+  mime: string | null; file_name: string | null; sender_nome: string | null;
 }
 
 // Insere a mensagem; ON CONFLICT no índice de dedup evita duplicar reentrega de
@@ -358,7 +358,7 @@ export async function insertMessage(
   m: {
     evolutionId?: string | null; fromMe: boolean; tipo?: string; corpo?: string | null;
     status?: string | null; momento?: string; mime?: string | null; fileName?: string | null;
-    mediaB64?: string | null; mediaPath?: string | null;
+    mediaB64?: string | null; mediaPath?: string | null; senderUserId?: number | null;
   },
 ): Promise<MessageRow | null> {
   // Sem evolution_id (ex.: envio otimista) não há como deduplicar — insere direto.
@@ -368,12 +368,22 @@ export async function insertMessage(
     );
     if (dup) return null;
   }
+  // CTE: a linha inserida volta já com o nome do atendente (join em users),
+  // pronta pra resposta da API e pro broadcast do WebSocket.
   return one<MessageRow>(
-    `INSERT INTO whatsapp_messages
-       (org_id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, media_b64, media_path)
-     VALUES ($1, $2, $3, $4, COALESCE($5,'texto'), $6, $7, COALESCE($8::timestamptz, now()), $9, $10, $11, $12)
-     RETURNING id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name`,
+    `WITH ins AS (
+       INSERT INTO whatsapp_messages
+         (org_id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, media_b64, media_path, sender_user_id)
+       VALUES ($1, $2, $3, $4, COALESCE($5,'texto'), $6, $7, COALESCE($8::timestamptz, now()), $9, $10, $11, $12, $13)
+       RETURNING id, chat_id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name, sender_user_id
+     )
+     SELECT ins.id, ins.chat_id, ins.evolution_id, ins.from_me, ins.tipo, ins.corpo, ins.status,
+            ins.momento, ins.mime, ins.file_name, COALESCE(u.nome, o.nome, u.email) AS sender_nome
+       FROM ins
+       LEFT JOIN users u ON u.id = ins.sender_user_id
+       LEFT JOIN organizations o ON o.id = u.org_id`,
     [orgId, chatId, m.evolutionId ?? null, m.fromMe, m.tipo ?? null, m.corpo ?? null,
-      m.status ?? null, m.momento ?? null, m.mime ?? null, m.fileName ?? null, m.mediaB64 ?? null, m.mediaPath ?? null],
+      m.status ?? null, m.momento ?? null, m.mime ?? null, m.fileName ?? null, m.mediaB64 ?? null, m.mediaPath ?? null,
+      m.senderUserId ?? null],
   );
 }

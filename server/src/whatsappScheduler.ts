@@ -68,7 +68,10 @@ export async function processDueWhatsapp(now = new Date()): Promise<number> {
         // garante a conversa (caso o chat_id tenha sumido) e espelha a mensagem.
         const chat = await upsertChat(orgId, remoteJid, { preview: s.corpo, incNaoLidas: false });
         const chatId = s.chat_id ?? chat.id;
-        const msg = await insertMessage(orgId, chatId, { evolutionId, fromMe: true, corpo: s.corpo, status: 'enviado' });
+        const msg = await insertMessage(orgId, chatId, {
+          evolutionId, fromMe: true, corpo: s.corpo, status: 'enviado',
+          senderUserId: s.owner_user_id != null ? Number(s.owner_user_id) : null,
+        });
 
         const rows = await query(
           `UPDATE whatsapp_schedules SET status = 'enviado', enviado_em = now(), erro = NULL, updated_at = now()

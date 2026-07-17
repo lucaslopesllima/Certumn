@@ -102,12 +102,12 @@ const CHATS = [chatA, chatB, chatC, chatD];
 
 const msg = (o: Record<string, unknown>): Record<string, unknown> => ({
   id: 0, evolution_id: null, from_me: false, tipo: 'texto', corpo: null, status: null,
-  momento: TODAY, mime: null, file_name: null, ...o,
+  momento: TODAY, mime: null, file_name: null, sender_nome: null, ...o,
 });
 const MESSAGES = [
   msg({ id: 1, from_me: false, tipo: 'texto', corpo: 'oi antigo', momento: OLD }),
   msg({ id: 2, from_me: true, tipo: 'texto', corpo: 'ontem', status: 'enviado', momento: YEST }),
-  msg({ id: 3, evolution_id: 'ev1', from_me: true, tipo: 'texto', corpo: 'hoje', status: 'entregue' }),
+  msg({ id: 3, evolution_id: 'ev1', from_me: true, tipo: 'texto', corpo: 'hoje', status: 'entregue', sender_nome: 'Carlos' }),
   msg({ id: 4, from_me: true, tipo: 'texto', corpo: 'lido', status: 'lido' }),
   msg({ id: 5, from_me: true, tipo: 'imagem', corpo: 'legenda', status: 'lido', mime: 'image/png' }),
   msg({ id: 6, from_me: true, tipo: 'video', status: 'lido', mime: 'video/mp4' }),
@@ -284,6 +284,8 @@ describe('WhatsApp — lista e mensagens', () => {
     expect(await screen.findByText('hoje')).toBeInTheDocument();
     expect(screen.getByText('Hoje')).toBeInTheDocument();
     expect(screen.getByText('Ontem')).toBeInTheDocument();
+    // nome do atendente no balão enviado pelo sistema (só onde sender_nome vem preenchido)
+    expect(screen.getByText('Carlos')).toBeInTheDocument();
     // documento com nome de arquivo
     expect(await screen.findByText('doc.pdf')).toBeInTheDocument();
     // imagem carregada via fetch autenticado

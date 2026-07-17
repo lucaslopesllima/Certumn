@@ -419,4 +419,5 @@ export interface WaMessage {
   momento: string;
   mime: string | null;
   file_name: string | null;
+  sender_nome: string | null; // atendente que enviou pelo sistema (null: recebida ou enviada pelo celular)
 }

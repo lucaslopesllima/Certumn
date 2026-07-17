@@ -143,30 +143,39 @@ export function whatsappRoutes(app: FastifyInstance): void {
 
   // Mensagens de uma conversa (ordem cronológica). Zera não-lidas localmente e
   // dispara confirmação de leitura (ticks azuis) pro contato no WhatsApp.
+  // Com ?peek=1 ("espiar"), devolve as mensagens sem confirmar leitura nem zerar
+  // o contador — o contato não fica sabendo que a conversa foi lida.
   app.get('/api/whatsapp/chats/:id/messages', { preHandler: [requireAuth, requirePermission('whatsapp.view')] }, async (req, reply) => {
     const orgId = req.auth!.orgId;
     const chatId = (req.params as { id: string }).id;
+    const peek = (req.query as { peek?: string }).peek === '1';
     const chat = await one<{ id: string; remote_jid: string; nao_lidas: number }>(
       'SELECT id, remote_jid, nao_lidas FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId],
     );
     if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
     const messages = await query<{ id: string; evolution_id: string | null; from_me: boolean }>(
-      `SELECT id, evolution_id, from_me, tipo, corpo, status, momento, mime, file_name
-         FROM whatsapp_messages
-        WHERE chat_id = $1 AND org_id = $2
-        ORDER BY momento
+      `SELECT m.id, m.evolution_id, m.from_me, m.tipo, m.corpo, m.status, m.momento, m.mime, m.file_name,
+              COALESCE(u.nome, o.nome, u.email) AS sender_nome
+         FROM whatsapp_messages m
+         LEFT JOIN users u ON u.id = m.sender_user_id
+         LEFT JOIN organizations o ON o.id = u.org_id
+        WHERE m.chat_id = $1 AND m.org_id = $2
+        ORDER BY m.momento
         LIMIT 500`,
       [chatId, orgId],
     );
     // Confirma leitura no WhatsApp só se havia não-lidas (evita chamada à toa).
-    if (chat.nao_lidas > 0) {
-      const reads = messages
-        .filter((m) => !m.from_me && m.evolution_id)
-        .slice(-30)
-        .map((m) => ({ id: m.evolution_id as string, remoteJid: chat.remote_jid, fromMe: false }));
-      evo.markRead(instanceName(orgId), reads).catch(() => undefined); // best-effort
+    // Espiando, pula tudo: nem ticks azuis nem zerar o contador.
+    if (!peek) {
+      if (chat.nao_lidas > 0) {
+        const reads = messages
+          .filter((m) => !m.from_me && m.evolution_id)
+          .slice(-30)
+          .map((m) => ({ id: m.evolution_id as string, remoteJid: chat.remote_jid, fromMe: false }));
+        evo.markRead(instanceName(orgId), reads).catch(() => undefined); // best-effort
+      }
+      await query('UPDATE whatsapp_chats SET nao_lidas = 0 WHERE id = $1 AND org_id = $2', [chatId, orgId]);
     }
-    await query('UPDATE whatsapp_chats SET nao_lidas = 0 WHERE id = $1 AND org_id = $2', [chatId, orgId]);
     return { messages };
   });
 
@@ -304,7 +313,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
     try {
       const sent = await evo.sendText(instanceName(orgId), chat.numero || chat.remote_jid, text);
       const evolutionId = sent.key?.id ?? null;
-      const msg = await insertMessage(orgId, chatId, { evolutionId, fromMe: true, corpo: text, status: 'enviado' });
+      const msg = await insertMessage(orgId, chatId, { evolutionId, fromMe: true, corpo: text, status: 'enviado', senderUserId: req.auth!.userId });
       await upsertChat(orgId, chat.remote_jid, { preview: text, incNaoLidas: false });
       if (msg) broadcast(orgId, 'message', { chat_id: Number(chatId), message: msg });
       return { message: msg };
@@ -361,7 +370,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
       const msg = await insertMessage(orgId, chatId, {
         evolutionId: sent.key?.id ?? null, fromMe: true, tipo, corpo: b.caption ?? null,
         status: 'enviado', mime: b.mimetype ?? null, fileName: b.fileName ?? null,
-        mediaB64: disk ? null : b.media,
+        mediaB64: disk ? null : b.media, senderUserId: req.auth!.userId,
       });
       if (msg && disk) {
         const rel = await saveMedia(orgId, msg.id, b.media, b.mimetype ?? null, b.fileName ?? null);

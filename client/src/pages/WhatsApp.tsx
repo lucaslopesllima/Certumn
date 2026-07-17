@@ -200,6 +200,10 @@ const MessageBubble = memo(function MessageBubble({ m, onImage }: { m: WaMessage
     <div className={cn('flex px-[5%] py-0.5', m.from_me ? 'justify-end' : 'justify-start')}>
       <div className={cn('max-w-[75%] rounded-[7.5px] px-[9px] py-[6px] text-[14.2px] leading-[19px] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]',
         m.from_me ? 'bg-[var(--wa-out)]' : 'bg-[var(--wa-in)]', 'text-[var(--wa-ink)]')}>
+        {/* Nome do atendente que enviou (como o nome do remetente em grupos). */}
+        {m.from_me && m.sender_nome && (
+          <div className="text-[12.8px] font-medium leading-[18px] text-[var(--wa-green)]">{m.sender_nome}</div>
+        )}
         {media}
         {m.tipo === 'texto'
           ? <span className="whitespace-pre-wrap break-words">{m.corpo}</span>
@@ -266,6 +270,69 @@ function ImageLightbox({ url, onClose }: { url: string | null; onClose: () => vo
         <Icon name="x" size={22} />
       </button>
       <img src={url} alt="" className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain" onClick={(e) => e.stopPropagation()} />
+    </div>
+  );
+}
+
+// Balões com separadores de data entre dias (usado na conversa e no espiar).
+function messageList(messages: WaMessage[], onImage: (url: string) => void): ReactNode[] {
+  const items: ReactNode[] = [];
+  let lastDay = '';
+  for (const m of messages) {
+    const day = new Date(m.momento).toDateString();
+    if (day !== lastDay) {
+      items.push(
+        <div key={`sep-${m.id}`} className="my-2.5 flex justify-center">
+          <span className="rounded-lg bg-[var(--wa-sep)] px-3 py-1 text-[12.5px] uppercase text-[var(--wa-muted)] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
+            {dayLabel(m.momento)}
+          </span>
+        </div>,
+      );
+      lastDay = day;
+    }
+    items.push(<MessageBubble key={m.id} m={m} onImage={onImage} />);
+  }
+  return items;
+}
+
+// Espiar: mostra a conversa num modal, sem confirmar leitura pro contato (sem
+// ticks azuis, contador da lista fica) e sem trocar a conversa ativa. O ✓✓
+// confirma a leitura e fecha; o X fecha mantendo a conversa como não lida.
+function PeekModal({ chat, messages, onClose, onRead, onImage }: {
+  chat: WaChat; messages: WaMessage[]; onClose: () => void; onRead: () => void; onImage: (url: string) => void;
+}): React.JSX.Element {
+  const endRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { endRef.current?.scrollIntoView({ block: 'end' }); }, [messages]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
+      <div className="wa flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-[var(--wa-panel)] shadow-pop" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-3 border-b border-[var(--wa-border)] bg-[var(--wa-panel)] px-4 py-2.5">
+          <img src={avatarSrc(chat)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-semibold text-[var(--wa-ink)]">{nomeChat(chat)}</span>
+            <span className="flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400">
+              <Icon name="eye" size={12} /> Espiando — leitura não confirmada
+            </span>
+          </span>
+          <button title="Marcar como lida (envia a confirmação de leitura ao contato)" onClick={onRead}
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-sky-600 hover:bg-[var(--wa-hover)]">
+            <Icon name="checkCheck" size={18} />
+          </button>
+          <button onClick={onClose} aria-label="Fechar"
+            className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-[var(--wa-muted)] hover:bg-[var(--wa-hover)]">
+            <Icon name="x" size={18} />
+          </button>
+        </div>
+        <div className="wa-canvas min-h-0 flex-1 overflow-y-auto py-3">
+          {messageList(messages, onImage)}
+          <div ref={endRef} />
+        </div>
+      </div>
     </div>
   );
 }
@@ -776,11 +843,15 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
 }
 
 export function WhatsApp(): React.JSX.Element {
-  const { can } = useAuth();
+  const { can, user } = useAuth();
   const [status, setStatus] = useState<WaStatus | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [chats, setChats] = useState<WaChat[]>([]);
   const [activeId, setActiveId] = useState<number | null>(null);
+  // "Espiar": conversa aberta num modal sem confirmar leitura (nem ticks azuis
+  // nem zerar o contador) e sem trocar a conversa ativa.
+  const [peekChat, setPeekChat] = useState<WaChat | null>(null);
+  const [peekMessages, setPeekMessages] = useState<WaMessage[]>([]);
   const [messages, setMessages] = useState<WaMessage[]>([]);
   const [draft, setDraft] = useState('');
   const [busca, setBusca] = useState('');
@@ -803,18 +874,22 @@ export function WhatsApp(): React.JSX.Element {
   const canvasRef = useRef<HTMLDivElement>(null);
   const listContentRef = useRef<HTMLDivElement>(null);
   const openedParam = useRef(false);
+  const peekIdRef = useRef<number | null>(null);
   activeRef.current = activeId;
   chatsRef.current = chats;
+  peekIdRef.current = peekChat?.id ?? null;
 
   const loadStatus = (): Promise<void> =>
     api.get<{ enabled: boolean; status: WaStatus }>('/api/whatsapp/status')
       .then(async (r) => {
         setEnabled(r.enabled);
-        // O status do /status vem do cache no banco. Se ele diz 'conectado',
-        // confirma o estado real na Evolution (/connection) — a sessão pode ter
-        // sido derrubada no aparelho sem o webhook chegar, e não queremos abrir o
-        // painel de conversas com a conexão já morta.
-        if (r.enabled && r.status === 'conectado') {
+        // O status do /status vem do cache no banco, que pode estar defasado nos
+        // dois sentidos: sessão derrubada no aparelho sem o webhook chegar (cache
+        // 'conectado', real morto) ou instância viva na Evolution com cache
+        // 'desconectado' (webhook perdido, server reiniciado). Confirma sempre o
+        // estado real (/connection); se a consulta falhar (ex.: instância nunca
+        // criada), fica com o cache.
+        if (r.enabled) {
           const live = await api.get<{ status: WaStatus }>('/api/whatsapp/connection').catch(() => ({ status: r.status }));
           setStatus(live.status);
         } else {
@@ -844,6 +919,25 @@ export function WhatsApp(): React.JSX.Element {
     void api.get<{ messages: WaMessage[] }>(`/api/whatsapp/chats/${id}/messages`)
       .then((r) => setMessages(r.messages)).catch(() => undefined);
     setChats((cs) => cs.map((c) => (c.id === id ? { ...c, nao_lidas: 0 } : c)));
+  };
+
+  // Espiar: carrega as mensagens com ?peek=1 (servidor não confirma leitura nem
+  // zera o contador) e mostra num modal, sem mexer na conversa ativa.
+  const openPeek = (c: WaChat): void => {
+    setPeekChat(c);
+    setPeekMessages([]);
+    void api.get<{ messages: WaMessage[] }>(`/api/whatsapp/chats/${c.id}/messages?peek=1`)
+      .then((r) => setPeekMessages(r.messages)).catch(() => undefined);
+  };
+
+  // "Marcar como lida" no modal de espiar: confirma a leitura (ticks azuis),
+  // zera o contador na lista e fecha o modal.
+  const peekRead = (): void => {
+    const id = peekIdRef.current;
+    if (id == null) return;
+    void api.post(`/api/whatsapp/chats/${id}/read`, {}).catch(() => undefined);
+    setChats((cs) => cs.map((c) => (c.id === id ? { ...c, nao_lidas: 0 } : c)));
+    setPeekChat(null);
   };
 
   // Remove a conversa do espelho local (mensagens/agendamentos vão junto).
@@ -880,6 +974,23 @@ export function WhatsApp(): React.JSX.Element {
     }, 30000);
     return () => clearInterval(t);
   }, [status]);
+
+  // Aplica uma mensagem recém-chegada no item da lista (contador, prévia,
+  // horário, topo) sem recarregar a lista inteira.
+  const patchChatItem = (chatId: number | undefined, m: WaMessage, patch?: Partial<WaChat>): void => {
+    setChats((cs) => {
+      const idx = cs.findIndex((c) => Number(c.id) === Number(chatId));
+      if (idx === -1) return cs;
+      const cur = cs[idx];
+      const upd: WaChat = {
+        ...cur,
+        nao_lidas: patch?.nao_lidas != null ? Number(patch.nao_lidas) : (m.from_me ? 0 : cur.nao_lidas + 1),
+        last_preview: patch?.last_preview ?? (m.corpo ?? `[${m.tipo === 'texto' ? 'mídia' : m.tipo}]`),
+        last_message_at: patch?.last_message_at ?? m.momento,
+      };
+      return [upd, ...cs.slice(0, idx), ...cs.slice(idx + 1)];
+    });
+  };
 
   // some o "digitando…" sozinho se parar de chegar presença.
   useEffect(() => {
@@ -924,6 +1035,11 @@ export function WhatsApp(): React.JSX.Element {
         if (msg.event === 'message' && msg.data.message) {
           const m = msg.data.message;
           const chatId = msg.data.chat_id;
+          // Modal de espiar aberto nessa conversa: mensagem nova entra no modal
+          // (sem confirmar leitura — os branches abaixo cuidam da lista).
+          if (peekIdRef.current != null && Number(chatId) === Number(peekIdRef.current)) {
+            setPeekMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+          }
           if (Number(chatId) === Number(activeRef.current)) {
             setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
             // Conversa aberta: confirma leitura no servidor e só então recarrega a
@@ -933,19 +1049,7 @@ export function WhatsApp(): React.JSX.Element {
           } else if (chatsRef.current.some((c) => Number(c.id) === Number(chatId))) {
             // Conversa fechada mas já listada: aplica o payload direto no item
             // (contador, prévia, horário, topo) — sem recarregar a lista inteira.
-            const patch = msg.data.chat;
-            setChats((cs) => {
-              const idx = cs.findIndex((c) => Number(c.id) === Number(chatId));
-              if (idx === -1) return cs;
-              const cur = cs[idx];
-              const upd: WaChat = {
-                ...cur,
-                nao_lidas: patch?.nao_lidas != null ? Number(patch.nao_lidas) : (m.from_me ? 0 : cur.nao_lidas + 1),
-                last_preview: patch?.last_preview ?? (m.corpo ?? `[${m.tipo === 'texto' ? 'mídia' : m.tipo}]`),
-                last_message_at: patch?.last_message_at ?? m.momento,
-              };
-              return [upd, ...cs.slice(0, idx), ...cs.slice(idx + 1)];
-            });
+            patchChatItem(chatId, m, msg.data.chat);
           } else {
             // Conversa ainda fora da lista (nova): reconciliação com debounce —
             // uma rajada de mensagens vira uma recarga só.
@@ -990,6 +1094,7 @@ export function WhatsApp(): React.JSX.Element {
     const temp: WaMessage = {
       id: tempId, evolution_id: null, from_me: true, tipo: 'texto', corpo: text,
       status: 'pendente', momento: new Date().toISOString(), mime: null, file_name: null,
+      sender_nome: user?.nome || user?.org_nome || user?.email || null,
     };
     setMessages((ms) => [...ms, temp]);
     try {
@@ -1028,25 +1133,7 @@ export function WhatsApp(): React.JSX.Element {
   };
 
   // Lista com separadores de data entre dias.
-  const listItems = useMemo(() => {
-    const items: ReactNode[] = [];
-    let lastDay = '';
-    for (const m of messages) {
-      const day = new Date(m.momento).toDateString();
-      if (day !== lastDay) {
-        items.push(
-          <div key={`sep-${m.id}`} className="my-2.5 flex justify-center">
-            <span className="rounded-lg bg-[var(--wa-sep)] px-3 py-1 text-[12.5px] uppercase text-[var(--wa-muted)] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
-              {dayLabel(m.momento)}
-            </span>
-          </div>,
-        );
-        lastDay = day;
-      }
-      items.push(<MessageBubble key={m.id} m={m} onImage={setLightbox} />);
-    }
-    return items;
-  }, [messages]);
+  const listItems = useMemo(() => messageList(messages, setLightbox), [messages]);
 
   // Rola pro fim ao trocar de conversa ou chegar mensagem (a lib fazia sozinha).
   useEffect(() => { listEndRef.current?.scrollIntoView({ block: 'end' }); }, [messages, activeId]);
@@ -1124,7 +1211,7 @@ export function WhatsApp(): React.JSX.Element {
               <p className="px-4 py-8 text-center text-sm text-[var(--wa-muted)]">Nenhuma conversa.</p>
             ) : filtered.map((c) => (
               <button key={c.id} onClick={() => openChat(c.id)}
-                className={cn('flex w-full items-center gap-3 border-b border-[var(--wa-border)] px-3 py-2.5 text-left transition-colors',
+                className={cn('group flex w-full items-center gap-3 border-b border-[var(--wa-border)] px-3 py-2.5 text-left transition-colors',
                   c.id === activeId ? 'bg-[var(--wa-active)]' : 'hover:bg-[var(--wa-hover)]')}>
                 <img src={avatarSrc(c)} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
                 <span className="min-w-0 flex-1">
@@ -1134,9 +1221,19 @@ export function WhatsApp(): React.JSX.Element {
                   </span>
                   <span className="mt-0.5 flex items-center justify-between gap-2">
                     <span className="truncate text-sm text-[var(--wa-muted)]">{c.last_preview ?? ''}</span>
-                    {c.nao_lidas > 0 && (
-                      <span className="grid h-5 min-w-5 shrink-0 place-items-center rounded-full bg-[var(--wa-green)] px-1.5 text-[11px] font-bold text-white">{c.nao_lidas}</span>
-                    )}
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      {/* Espiar: abre a conversa num modal sem confirmar leitura. span
+                          com role de botão porque o item inteiro já é um <button>. */}
+                      <span role="button" tabIndex={0} title="Espiar (ler sem confirmar a leitura)" aria-label="Espiar conversa"
+                        onClick={(e) => { e.stopPropagation(); openPeek(c); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); openPeek(c); } }}
+                        className="hidden h-5 w-5 place-items-center rounded-full text-[var(--wa-muted)] hover:text-[var(--wa-ink)] group-hover:grid">
+                        <Icon name="eye" size={15} />
+                      </span>
+                      {c.nao_lidas > 0 && (
+                        <span className="grid h-5 min-w-5 place-items-center rounded-full bg-[var(--wa-green)] px-1.5 text-[11px] font-bold text-white">{c.nao_lidas}</span>
+                      )}
+                    </span>
                   </span>
                 </span>
               </button>
@@ -1277,6 +1374,10 @@ export function WhatsApp(): React.JSX.Element {
       {active && numberOpen && (
         <NumberModal chatId={active.id} onClose={() => setNumberOpen(false)}
           onSet={(c) => setChats((cs) => cs.map((x) => (x.id === c.id ? c : x)))} />
+      )}
+      {peekChat && (
+        <PeekModal chat={peekChat} messages={peekMessages} onClose={() => setPeekChat(null)}
+          onRead={peekRead} onImage={setLightbox} />
       )}
       <ImageLightbox url={lightbox} onClose={() => setLightbox(null)} />
     </div>
