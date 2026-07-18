@@ -60,6 +60,9 @@ export default defineConfig({
   server: {
     host: true, // listen on 0.0.0.0 so the container port is reachable
     port: 5173,
+    // Cloudflare quick tunnels geram um subdomínio aleatório a cada execução;
+    // o sufixo libera qualquer *.trycloudflare.com sem editar a config de novo.
+    allowedHosts: ['.trycloudflare.com'],
     proxy: {
       // ws:true encaminha o WebSocket do espelho WhatsApp (/api/whatsapp/ws).
       '/api': { target: proxyTarget, changeOrigin: true, ws: true },

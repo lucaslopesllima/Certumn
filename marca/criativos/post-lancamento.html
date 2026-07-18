@@ -1,0 +1,163 @@
+<meta charset="utf-8">
+<style>
+  :root{
+    --brand-50:#EEF1FE; --brand-500:#3D5AF1; --brand-700:#2438C4;
+    --accent:#FF6A2B; --ink:#0D1220; --slate-600:#475069; --slate-400:#8A93A6;
+    --bg:#FFFFFF; --bg-alt:#F7F8FB; --success:#16A34A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{font-family:Inter,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif}
+  .slide{margin:0}
+  .slide{
+    width:1080px;height:1350px;position:relative;overflow:hidden;
+    display:flex;flex-direction:column;padding:96px 88px;
+  }
+  /* light / dark bases */
+  .light{background:var(--bg);color:var(--ink)}
+  .alt{background:var(--bg-alt);color:var(--ink)}
+  .dark{background:var(--ink);color:#fff}
+  .dark .muted{color:#8A93A6}
+  .muted{color:var(--slate-600)}
+  .eyebrow{
+    font-size:26px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--brand-500);margin-bottom:36px;
+  }
+  .dark .eyebrow{color:#7C90F6}
+  h1{font-size:104px;line-height:1.02;font-weight:800;letter-spacing:-0.02em}
+  h2{font-size:76px;line-height:1.05;font-weight:800;letter-spacing:-0.02em}
+  .lead{font-size:40px;line-height:1.4;font-weight:400;margin-top:44px}
+  .lead b{font-weight:700}
+  .accent{color:var(--accent)}
+  .brand{color:var(--brand-500)}
+  .grow{flex:1}
+  /* logo mark */
+  .mark{width:132px;height:132px}
+  .wordmark{font-size:64px;font-weight:800;letter-spacing:-0.03em}
+  .wordmark .vv{color:var(--brand-500)}
+  .brandrow{display:flex;align-items:center;gap:28px}
+  /* badges / steps */
+  .steps{display:flex;flex-direction:column;gap:30px;margin-top:20px}
+  .step{display:flex;align-items:center;gap:34px;font-size:44px;font-weight:600}
+  .num{
+    width:82px;height:82px;flex:0 0 82px;border-radius:22px;background:var(--brand-50);
+    color:var(--brand-700);font-weight:800;font-size:40px;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .dark .num{background:rgba(61,90,241,.22);color:#9FB0FA}
+  .feats{margin-top:56px;display:grid;grid-template-columns:1fr 1fr;gap:40px 48px}
+  .feats div{font-size:39px;font-weight:600;display:flex;align-items:center;gap:24px}
+  .fchk{
+    flex:0 0 52px;width:52px;height:52px;border-radius:14px;background:var(--brand-50);
+    color:var(--brand-700);font-size:30px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .why{margin-top:20px;display:flex;flex-direction:column;gap:26px}
+  .why div{font-size:42px;font-weight:600;display:flex;align-items:center;gap:26px}
+  .chk{color:var(--success);font-size:48px}
+  .cta{
+    display:inline-flex;align-items:center;gap:22px;background:var(--brand-500);color:#fff;
+    font-size:40px;font-weight:700;padding:34px 54px;border-radius:20px;align-self:flex-start;
+  }
+  .foot{font-size:30px;color:var(--slate-400);margin-top:44px}
+  .dark .foot{color:#8A93A6}
+  .pin{
+    position:absolute;border-radius:50% 50% 50% 0;background:var(--accent);
+    transform:rotate(-45deg);box-shadow:0 18px 40px rgba(255,106,43,.35)
+  }
+  .big-tag{font-size:88px;font-weight:800;letter-spacing:-0.02em;line-height:1.05}
+</style>
+
+<!-- SLIDE 1 — capa / lançamento -->
+<div class="slide dark" id="s1">
+  <div class="brandrow">
+    <svg class="mark" viewBox="0 0 100 100" fill="none">
+      <rect x="2" y="2" width="96" height="96" rx="26" fill="#141B2E" stroke="#26304A" stroke-width="1.5"/>
+      <path d="M30 74 L30 50 Q30 40 42 40 L58 40 Q70 40 70 30 L70 24" stroke="url(#g)" stroke-width="8" stroke-linecap="round" fill="none"/>
+      <circle cx="30" cy="74" r="9" fill="#FF6A2B"/>
+      <path d="M62 24 L70 18 L78 26 Z" fill="#3D5AF1"/>
+      <defs><linearGradient id="g" x1="30" y1="74" x2="72" y2="22" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#FF6A2B"/><stop offset="1" stop-color="#3D5AF1"/></linearGradient></defs>
+    </svg>
+    <div class="wordmark">Ro<span class="vv">vv</span>a</div>
+  </div>
+  <div class="grow"></div>
+  <div class="eyebrow">Chegou</div>
+  <h1>O app do<br>representante<br>comercial.</h1>
+  <div class="lead muted">Prospecção quente + gestão de representação<br>num produto só. <b style="color:#fff">Do território ao pedido pago.</b></div>
+  <div class="grow"></div>
+  <div class="foot">Arrasta pro lado →</div>
+</div>
+
+<!-- SLIDE 2 — dor -->
+<div class="slide light" id="s2">
+  <div class="eyebrow">O problema</div>
+  <h2>Quanto tempo você<br>perde, só<br>decidindo <span class="accent">pra onde ir?</span></h2>
+  <div class="lead muted">Lista comprada. Google Maps. Achismo.<br>O representante perde horas <b>antes</b> da primeira visita.</div>
+  <div class="grow"></div>
+</div>
+
+<!-- SLIDE 3 — virada -->
+<div class="slide dark" id="s3">
+  <div class="eyebrow">A virada</div>
+  <h2>Abre o app e vê as<br>empresas <span class="brand" style="color:#7C90F6">quentes</span> do dia<br>já no mapa.</h2>
+  <div class="lead muted">Escolhidas pelo <b style="color:#fff">ramo que você vende</b>, pela <b style="color:#fff">distância</b> e pelo <b style="color:#fff">porte</b>. Você sai pra vender, não pra pesquisar.</div>
+  <div class="grow"></div>
+  <span class="pin" style="width:70px;height:70px;left:120px;bottom:210px"></span>
+  <span class="pin" style="width:46px;height:46px;left:340px;bottom:340px"></span>
+  <span class="pin" style="width:54px;height:54px;left:560px;bottom:170px"></span>
+  <span class="pin" style="width:38px;height:38px;left:760px;bottom:300px"></span>
+</div>
+
+<!-- SLIDE 4 — você sabe o porquê -->
+<div class="slide alt" id="s4">
+  <div class="eyebrow">Você sabe o porquê</div>
+  <h2>Não é só um contato.<br>É a empresa <span class="brand">e o motivo.</span></h2>
+  <div class="why">
+    <div><span class="chk">✓</span> Vende o que você oferece</div>
+    <div><span class="chk">✓</span> Fica perto do seu roteiro</div>
+    <div><span class="chk">✓</span> É do tamanho que você atende</div>
+  </div>
+  <div class="grow"></div>
+  <div class="lead muted">Prospecção deixa de ser sorte. Vira <b>prioridade.</b></div>
+</div>
+
+<!-- SLIDE 5 — features -->
+<div class="slide light" id="s5">
+  <div class="eyebrow">Tudo num lugar só</div>
+  <h2>O que vem<br>dentro do Rovva.</h2>
+  <div class="feats">
+    <div><span class="fchk">✓</span> Empresas certas no mapa</div>
+    <div><span class="fchk">✓</span> Funil de vendas</div>
+    <div><span class="fchk">✓</span> Agenda + rotas de visita</div>
+    <div><span class="fchk">✓</span> Clientes e carteiras</div>
+    <div><span class="fchk">✓</span> WhatsApp integrado</div>
+    <div><span class="fchk">✓</span> Pedidos e tabelas de preço</div>
+    <div><span class="fchk">✓</span> Comissões</div>
+    <div><span class="fchk">✓</span> Financeiro e relatórios</div>
+  </div>
+  <div class="grow"></div>
+  <div class="lead muted">Chega de planilha paralela.</div>
+</div>
+
+<!-- SLIDE 6 — CTA -->
+<div class="slide dark" id="s6">
+  <div class="brandrow">
+    <svg class="mark" viewBox="0 0 100 100" fill="none">
+      <rect x="2" y="2" width="96" height="96" rx="26" fill="#141B2E" stroke="#26304A" stroke-width="1.5"/>
+      <path d="M30 74 L30 50 Q30 40 42 40 L58 40 Q70 40 70 30 L70 24" stroke="url(#g2)" stroke-width="8" stroke-linecap="round" fill="none"/>
+      <circle cx="30" cy="74" r="9" fill="#FF6A2B"/>
+      <path d="M62 24 L70 18 L78 26 Z" fill="#3D5AF1"/>
+      <defs><linearGradient id="g2" x1="30" y1="74" x2="72" y2="22" gradientUnits="userSpaceOnUse">
+        <stop stop-color="#FF6A2B"/><stop offset="1" stop-color="#3D5AF1"/></linearGradient></defs>
+    </svg>
+    <div class="wordmark">Ro<span class="vv" style="color:#7C90F6">vv</span>a</div>
+  </div>
+  <div class="grow"></div>
+  <h1>Pare de<br>prospectar<br>no <span class="accent">escuro.</span></h1>
+  <div class="lead muted">Quer ver funcionando<br>no <b style="color:#fff">seu território?</b></div>
+  <div style="height:56px"></div>
+  <div class="cta">Chame no direct 📩</div>
+  <div class="grow"></div>
+  <div class="foot">Prospecção + gestão comercial pra representante</div>
+</div>
