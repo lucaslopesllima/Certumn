@@ -343,7 +343,7 @@ export function Recommend(): React.JSX.Element {
                 <Btn variant={filter.filtroAtivo ? 'primary' : 'soft'} icon="search"
                   aria-expanded={filtersOpen} title={filtersOpen ? 'Recolher filtros' : 'Expandir filtros'}
                   onClick={() => setFiltersOpen((v) => !v)}>
-                  Filtros{filter.filtroAtivo ? ' · ativos' : ''}
+                  Filtros
                   <Icon name="chevronRight" size={15}
                     className={cn('transition-transform duration-300 ease-out', filtersOpen ? 'rotate-90' : 'rotate-0')} />
                 </Btn>

@@ -18,17 +18,21 @@ export default defineConfig({
     // lib/offline.ts; o SW NÃO intercepta POST.
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      includeAssets: ['icon.svg', 'apple-touch-icon-180.png'],
       manifest: {
         name: 'Rovva — Representação Comercial',
         short_name: 'Rovva',
         description: 'Prospecção, pedidos e rotas em campo.',
+        lang: 'pt-BR',
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
         start_url: '/',
         icons: [
-          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any maskable' },
+          { src: 'icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
       workbox: {
@@ -51,7 +55,7 @@ export default defineConfig({
           },
         ],
       },
-      devOptions: { enabled: false },
+      devOptions: { enabled: true },
     }),
     // Emite .gz e .br pré-comprimidos no build — o Fastify serve via
     // preCompressed sem gastar CPU comprimindo a cada request.

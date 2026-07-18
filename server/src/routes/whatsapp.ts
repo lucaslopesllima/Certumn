@@ -11,7 +11,7 @@ import {
   ensureSettings, setStatus, instanceName, upsertChat, insertMessage,
   CHAT_LABELS_SQL, relationshipForCompany, numeroToJid, mergeChats, deleteChat, syncGroupNames,
   normalizeNumero, jidToNumero, findChatByNumero, scheduleWhatsappTx, insertWhatsappSeries,
-  WA_RECORRENCIAS,
+  WA_RECORRENCIAS, applySenderPrefix,
 } from '../whatsapp.ts';
 import type { WaRecorrencia } from '../whatsapp.ts';
 
@@ -78,10 +78,32 @@ export function whatsappRoutes(app: FastifyInstance): void {
   app.get('/api/whatsapp/status', { preHandler: [requireAuth, requirePermission('whatsapp.view')] }, async (req) => {
     const orgId = req.auth!.orgId;
     await ensureSettings(orgId);
-    const s = await one<{ status: string; numero: string | null; updated_at: string }>(
-      'SELECT status, numero, updated_at FROM org_whatsapp_settings WHERE org_id = $1', [orgId],
+    const s = await one<{ status: string; numero: string | null; updated_at: string; include_sender_name: boolean }>(
+      'SELECT status, numero, updated_at, include_sender_name FROM org_whatsapp_settings WHERE org_id = $1', [orgId],
     );
-    return { enabled: evo.evolutionEnabled(), status: s?.status ?? 'desconectado', numero: s?.numero ?? null };
+    return {
+      enabled: evo.evolutionEnabled(), status: s?.status ?? 'desconectado', numero: s?.numero ?? null,
+      include_sender_name: s?.include_sender_name ?? false,
+    };
+  });
+
+  // Preferências de envio da org (admin). Hoje só o flag de prefixar o texto com o
+  // nome de quem enviou — reusa whatsapp.connect (mesmo nível de config da conexão).
+  app.patch('/api/whatsapp/settings', {
+    preHandler: [requireAuth, requirePermission('whatsapp.connect')],
+    schema: {
+      body: { type: 'object', required: ['include_sender_name'], properties: { include_sender_name: { type: 'boolean' } } },
+    },
+  }, async (req) => {
+    const orgId = req.auth!.orgId;
+    await ensureSettings(orgId);
+    const { include_sender_name } = req.body as { include_sender_name: boolean };
+    await query(
+      'UPDATE org_whatsapp_settings SET include_sender_name = $2, updated_at = now() WHERE org_id = $1',
+      [orgId, include_sender_name],
+    );
+    await audit(req, 'org_whatsapp_settings', orgId, 'update', { include_sender_name });
+    return { ok: true };
   });
 
   // Inicia conexão: cria a instância (idempotente) e devolve o QR pra leitura.
@@ -328,7 +350,10 @@ export function whatsappRoutes(app: FastifyInstance): void {
       return reply.code(422).send({ error: 'Contato sem número de telefone (LID — o WhatsApp ocultou o número). Concilie esta conversa com a de telefone do mesmo contato para poder enviar.' });
     }
     try {
-      const sent = await evo.sendText(instanceName(orgId), chat.numero || chat.remote_jid, text);
+      // Prefixa só o texto que sai pro contato (quando a org liga o flag); o corpo
+      // guardado e a prévia ficam crus — o app já rotula o remetente no balão.
+      const outgoing = await applySenderPrefix(orgId, req.auth!.userId, text) ?? text;
+      const sent = await evo.sendText(instanceName(orgId), chat.numero || chat.remote_jid, outgoing);
       const evolutionId = sent.key?.id ?? null;
       const msg = await insertMessage(orgId, chatId, { evolutionId, fromMe: true, corpo: text, status: 'enviado', senderUserId: req.auth!.userId });
       await upsertChat(orgId, chat.remote_jid, { preview: text, incNaoLidas: false });
@@ -406,11 +431,14 @@ export function whatsappRoutes(app: FastifyInstance): void {
     const dest = chat.numero || chat.remote_jid;
     const name = instanceName(orgId);
     try {
+      // Legenda que vai pro contato leva o prefixo do remetente (quando ligado);
+      // corpo guardado fica cru. Áudio não tem legenda.
+      const outCaption = await applySenderPrefix(orgId, req.auth!.userId, b.caption ?? null);
       const sent = b.mediatype === 'audio'
         ? await evo.sendAudio(name, dest, b.media)
         : await evo.sendMedia(name, dest, {
             mediatype: b.mediatype, media: b.media,
-            mimetype: b.mimetype ?? undefined, fileName: b.fileName ?? undefined, caption: b.caption ?? undefined,
+            mimetype: b.mimetype ?? undefined, fileName: b.fileName ?? undefined, caption: outCaption ?? undefined,
           });
       const tipo = b.mediatype === 'image' ? 'imagem' : b.mediatype === 'video' ? 'video' : b.mediatype === 'audio' ? 'audio' : 'documento';
       // Com disco habilitado grava o binário no volume; senão cacheia o base64 na

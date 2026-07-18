@@ -77,6 +77,27 @@ export async function orgByInstance(name: string): Promise<number | null> {
   return r ? Number(r.org_id) : null;
 }
 
+// Prefixo opcional "*Nome*:\n" no texto que sai pro contato — só o payload da
+// Evolution; o corpo guardado/prévia continuam crus (o app já rotula o remetente
+// no balão). Aplica quando a org ligou include_sender_name, há autor e há texto
+// (mídia sem legenda passa reto). Uma consulta só traz o flag e o nome (mesmo
+// COALESCE do balão). Devolve o texto cru quando desligado/sem autor/sem texto.
+export async function applySenderPrefix(
+  orgId: number, userId: number | null, text: string | null,
+): Promise<string | null> {
+  if (!text || userId == null) return text ?? null;
+  const r = await one<{ include: boolean; nome: string | null }>(
+    `SELECT s.include_sender_name AS include, COALESCE(u.nome, o.nome, u.email) AS nome
+       FROM org_whatsapp_settings s
+       LEFT JOIN users u ON u.id = $2
+       LEFT JOIN organizations o ON o.id = u.org_id
+      WHERE s.org_id = $1`,
+    [orgId, userId],
+  );
+  if (!r?.include || !r.nome) return text;
+  return `*${r.nome}*:\n${text}`;
+}
+
 // '5511999999999@s.whatsapp.net' -> '5511999999999'. Grupos (@g.us) passam cru.
 export function jidToNumero(jid: string): string {
   return jid.split('@')[0]?.replace(/[^0-9]/g, '') ?? '';

@@ -114,6 +114,9 @@ body {
   -webkit-tap-highlight-color: transparent;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Desativa zoom por duplo-toque no mobile/PWA. `manipulation` mantém o
+     pinch-zoom do Leaflet (que define seu próprio touch-action nos panes). */
+  touch-action: manipulation;
 }
 
 /* Autofill do Chrome pinta o campo de branco e ignora o bg do Tailwind —

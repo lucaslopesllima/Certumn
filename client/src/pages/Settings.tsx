@@ -8,7 +8,7 @@ import { toast } from '../lib/toast.tsx';
 import { clampNum, dec, maskPct } from '../lib/format.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
-type Section = 'funil' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp';
+type Section = 'funil' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp' | 'whatsapp';
 const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; admin?: boolean }[] = [
   { key: 'cenarios', label: 'Cenários', icon: 'list', desc: 'Opções de "cenário atual"' },
   { key: 'acoes', label: 'Ações próximo nível', icon: 'target', desc: 'Opções de ação para avançar' },
@@ -17,6 +17,7 @@ const SECTIONS: { key: Section; label: string; icon: IconName; desc: string; adm
   // { key: 'aliquotas', label: 'Alíquotas', icon: 'percent', desc: 'Impostos default dos pedidos', admin: true },
   { key: 'alertas', label: 'Alertas', icon: 'bell', desc: 'Inatividade no dashboard', admin: true },
   { key: 'smtp', label: 'E-mail (SMTP)', icon: 'mail', desc: 'Servidor de envio dos e-mails agendados', admin: true },
+  { key: 'whatsapp', label: 'WhatsApp', icon: 'whatsapp', desc: 'Preferências de envio das mensagens', admin: true },
 ];
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -58,6 +59,7 @@ export function Settings(): React.JSX.Element {
           {section === 'aliquotas' && <AliquotasEditor inputCls={inputCls} />}
           {section === 'alertas' && <AlertasEditor inputCls={inputCls} />}
           {section === 'smtp' && <SmtpEditor inputCls={inputCls} />}
+          {section === 'whatsapp' && <WhatsAppEditor />}
         </div>
       </div>
     </div>
@@ -227,6 +229,61 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
         {can('settings.smtp.update') && <Btn icon="check" onClick={() => save()} disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>}
         {can('settings.smtp.test') && <Btn variant="soft" icon="mail" onClick={() => testar()} disabled={testing}>{testing ? 'Enviando…' : 'Enviar teste'}</Btn>}
       </div>
+    </Card>
+  );
+}
+
+// Preferências de envio do WhatsApp da org (admin). Hoje só o toggle de incluir o
+// nome de quem enviou no texto que chega ao contato. Sem isso o nome aparece só no
+// balão dentro do app (rótulo verde) e o contato não vê quem da equipe falou.
+function WhatsAppEditor(): React.JSX.Element {
+  const { can } = useAuth();
+  const [incluir, setIncluir] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void api.get<{ include_sender_name: boolean }>('/api/whatsapp/status')
+      .then((r) => setIncluir(r.include_sender_name))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      await api.patch('/api/whatsapp/settings', { include_sender_name: incluir });
+      toast.success('Preferências do WhatsApp salvas.');
+    } catch (e) { toast.error(e instanceof Error ? e.message : 'Não foi possível salvar.'); }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return <Spinner />;
+  const editable = can('whatsapp.connect');
+  return (
+    <Card className="max-w-lg p-4">
+      <h3 className="text-sm font-semibold text-ink-900">Envio de mensagens</h3>
+      <p className="mt-0.5 text-xs text-ink-400">
+        Como as mensagens saem para o contato. O nome sempre aparece no balão dentro do Rovva;
+        aqui você decide se ele também vai no texto que o contato recebe no WhatsApp.
+      </p>
+
+      <label className="mt-4 flex items-start gap-2">
+        <input type="checkbox" checked={incluir} disabled={!editable}
+          onChange={(e) => setIncluir(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-ink-300 text-brand-600" />
+        <span className="text-sm text-ink-700">
+          Incluir o nome de quem enviou no texto da mensagem.
+          <span className="mt-0.5 block text-xs text-ink-400">
+            Prefixa o envio com <span className="font-mono">*Nome*:</span> — vale para envios manuais e agendados.
+          </span>
+        </span>
+      </label>
+
+      {editable && (
+        <div className="mt-4">
+          <Btn icon="check" onClick={() => save()} disabled={busy}>{busy ? '…' : 'Salvar'}</Btn>
+        </div>
+      )}
     </Card>
   );
 }

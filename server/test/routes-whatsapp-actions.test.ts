@@ -10,6 +10,7 @@ const evoMock = vi.hoisted(() => ({
   sendText: vi.fn(), sendMedia: vi.fn(), sendAudio: vi.fn(), groupDetails: vi.fn(),
   fetchAllGroups: vi.fn(async () => []), markRead: vi.fn(async () => undefined),
   profilePicture: vi.fn(async () => null), groupInfo: vi.fn(async () => ({ subject: null, pictureUrl: null })),
+  evolutionEnabled: vi.fn(() => true),
 }));
 vi.mock('../src/evolution.ts', () => ({ ...evoMock, EvolutionDisabledError: class EvolutionDisabledError extends Error {} }));
 const { EvolutionDisabledError } = await import('../src/evolution.ts');
@@ -50,6 +51,23 @@ describe('whatsapp — send texto', () => {
     expect(r.statusCode).toBe(200);
     expect(r.json().message.corpo).toBe('olá');
     expect(evoMock.sendText).toHaveBeenCalledWith('org_' + org, '5511700000001', 'olá');
+  });
+  it('com include_sender_name: prefixa o texto enviado, mas guarda o corpo cru', async () => {
+    const chat = await mkChat('5511700000099@s.whatsapp.net', '5511700000099');
+    // usuário sem nome → COALESCE cai no nome da org ("Org wa-actions").
+    evoMock.sendText.mockResolvedValueOnce({ key: { id: 'sent-prefix' } }); // id único (dedup por evolution_id)
+    expect((await inj('PATCH', '/api/whatsapp/settings', { include_sender_name: true })).statusCode).toBe(200);
+    try {
+      const r = await inj('POST', `/api/whatsapp/chats/${chat}/send`, { text: 'oi' });
+      expect(r.statusCode).toBe(200);
+      expect(r.json().message.corpo).toBe('oi'); // guardado cru (balão já rotula)
+      expect(evoMock.sendText).toHaveBeenCalledWith('org_' + org, '5511700000099', '*Org wa-actions*:\noi');
+      // o flag volta no status
+      expect((await inj('GET', '/api/whatsapp/status')).json().include_sender_name).toBe(true);
+    } finally {
+      await inj('PATCH', '/api/whatsapp/settings', { include_sender_name: false });
+    }
+    expect((await inj('GET', '/api/whatsapp/status')).json().include_sender_name).toBe(false);
   });
   it('503 desligada / 502 erro', async () => {
     const chat = await mkChat('5511700000002@s.whatsapp.net', '5511700000002');

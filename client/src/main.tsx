@@ -15,6 +15,13 @@ import './index.css';
 registerSW({ immediate: true });
 initOfflineSync();
 
+// iOS Safari/PWA ignora `user-scalable=no`; bloqueia o pinch-zoom da página
+// pelos gesture events do WebKit. O Leaflet usa touch events próprios, então
+// o zoom do mapa continua funcionando.
+for (const evt of ['gesturestart', 'gesturechange', 'gestureend']) {
+  document.addEventListener(evt, (e) => e.preventDefault(), { passive: false });
+}
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>

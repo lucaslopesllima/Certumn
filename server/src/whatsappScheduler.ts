@@ -4,7 +4,7 @@
 // envio TRAVA (segue pendente) — só falha real de envio vira 'erro'.
 import { query, one } from './db.ts';
 import * as evo from './evolution.ts';
-import { instanceName, insertMessage, upsertChat, scheduleWhatsappTx, nextOccurrence } from './whatsapp.ts';
+import { instanceName, insertMessage, upsertChat, scheduleWhatsappTx, nextOccurrence, applySenderPrefix } from './whatsapp.ts';
 import type { WaRecorrencia } from './whatsapp.ts';
 import { broadcast } from './ws.ts';
 
@@ -62,15 +62,17 @@ export async function processDueWhatsapp(now = new Date()): Promise<number> {
         return;
       }
       try {
-        const res = await evo.sendText(instanceName(orgId), dest, s.corpo);
+        // Prefixa só o texto enviado (quando a org liga o flag); corpo/prévia crus.
+        const ownerId = s.owner_user_id != null ? Number(s.owner_user_id) : null;
+        const outgoing = await applySenderPrefix(orgId, ownerId, s.corpo) ?? s.corpo;
+        const res = await evo.sendText(instanceName(orgId), dest, outgoing);
         const evolutionId = res.key?.id ?? null;
 
         // garante a conversa (caso o chat_id tenha sumido) e espelha a mensagem.
         const chat = await upsertChat(orgId, remoteJid, { preview: s.corpo, incNaoLidas: false });
         const chatId = s.chat_id ?? chat.id;
         const msg = await insertMessage(orgId, chatId, {
-          evolutionId, fromMe: true, corpo: s.corpo, status: 'enviado',
-          senderUserId: s.owner_user_id != null ? Number(s.owner_user_id) : null,
+          evolutionId, fromMe: true, corpo: s.corpo, status: 'enviado', senderUserId: ownerId,
         });
 
         const rows = await query(

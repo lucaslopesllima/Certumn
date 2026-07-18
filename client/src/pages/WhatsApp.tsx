@@ -1560,7 +1560,7 @@ export function WhatsApp(): React.JSX.Element {
                 </div>
               </div>
 
-              <div className={cn('px-3 py-2', noteMode ? 'bg-amber-100 dark:bg-amber-400/15' : 'bg-[var(--wa-panel)]')}>
+              <div className={cn('px-3 pt-2 pb-[max(env(safe-area-inset-bottom),0.5rem)]', noteMode ? 'bg-amber-100 dark:bg-amber-400/15' : 'bg-[var(--wa-panel)]')}>
                 {/* Chip da mensagem citada: a nota vai pendurada nela. */}
                 {noteMode && noteReplyTo && (
                   <div className="mb-1.5 flex items-start gap-2 rounded-lg border-l-[3px] border-amber-500 bg-amber-200/60 px-2.5 py-1.5 dark:bg-amber-400/10">

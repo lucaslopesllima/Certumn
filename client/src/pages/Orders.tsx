@@ -34,6 +34,11 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string }>> = {
 // Página de pedidos vinda do servidor (default do GET /api/orders).
 const PAGE = 100;
 
+// Estado de abertura dos painéis (persistido) — mesmo padrão da Prospecção:
+// filtros começam fechados, indicadores abertos.
+const FILTERS_OPEN_KEY = 'pedidos:filtersOpen';
+const KPIS_OPEN_KEY = 'pedidos:kpisOpen';
+
 export function Orders(): React.JSX.Element {
   const { user, can, isOffice } = useAuth();
   // Coluna "Vendedor" só faz sentido com equipe: admin em conta escritório.
@@ -54,6 +59,14 @@ export function Orders(): React.JSX.Element {
   const [adding, setAdding] = useState(false);
   const [importing, setImporting] = useState(false);
   const [nfModal, setNfModal] = useState<Order | null>(null);
+  // Painéis colapsáveis — mesmo padrão da Prospecção (toggle no header +
+  // grid-rows, estado persistido). Filtros fechados / indicadores abertos.
+  const [showFilters, setShowFilters] = useState(() => {
+    try { return localStorage.getItem(FILTERS_OPEN_KEY) === '1'; } catch { return false; }
+  });
+  const [showKpis, setShowKpis] = useState(() => {
+    try { return localStorage.getItem(KPIS_OPEN_KEY) !== '0'; } catch { return true; }
+  });
 
   const [reps, setReps] = useState<RepresentedCompany[]>([]);
 
@@ -94,6 +107,13 @@ export function Orders(): React.JSX.Element {
     return () => clearTimeout(t);
   }, [companyQ]);
 
+  useEffect(() => {
+    try { localStorage.setItem(FILTERS_OPEN_KEY, showFilters ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [showFilters]);
+  useEffect(() => {
+    try { localStorage.setItem(KPIS_OPEN_KEY, showKpis ? '1' : '0'); } catch { /* storage indisponível */ }
+  }, [showKpis]);
+
   const loadMore = async (): Promise<void> => {
     setLoadingMore(true);
     try {
@@ -125,6 +145,8 @@ export function Orders(): React.JSX.Element {
     }
     return { aberto, faturado };
   }, [filtered]);
+
+  const filtroAtivo = status !== 'todos' || representedId !== 'todos' || ownerId !== 'todos' || companyTerm !== '';
 
   const transition = async (o: Order, to: OrderStatus, nf?: string | null): Promise<void> => {
     // faturar pede o nº da NF — abre modal em vez de prompt nativo
@@ -183,7 +205,21 @@ export function Orders(): React.JSX.Element {
     <div className="flex h-full flex-col gap-4 p-4 sm:p-6">
       <PageHeader title="Pedidos" subtitle="Cotações e pedidos de venda por representada"
         actions={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Btn variant={filtroAtivo ? 'primary' : 'soft'} icon="search"
+              aria-expanded={showFilters} title={showFilters ? 'Recolher filtros' : 'Expandir filtros'}
+              onClick={() => setShowFilters((v) => !v)}>
+              Filtros
+              <Icon name="chevronRight" size={15}
+                className={cn('transition-transform duration-300 ease-out', showFilters ? 'rotate-90' : 'rotate-0')} />
+            </Btn>
+            <Btn variant="soft" icon="trendingUp"
+              aria-expanded={showKpis} title={showKpis ? 'Recolher indicadores' : 'Expandir indicadores'}
+              onClick={() => setShowKpis((v) => !v)}>
+              Indicadores
+              <Icon name="chevronRight" size={15}
+                className={cn('transition-transform duration-300 ease-out', showKpis ? 'rotate-90' : 'rotate-0')} />
+            </Btn>
             {can('orders.print') && (
               <Btn variant="ghost" icon="download" onClick={exportar} disabled={filtered.length === 0}>Exportar</Btn>
             )}
@@ -196,33 +232,45 @@ export function Orders(): React.JSX.Element {
           </div>
         } />
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        <StatCard label="Em aberto" value={brl(kpis.aberto)} icon="trendingUp" tone="info" />
-        <StatCard label="Total faturado" value={brl(kpis.faturado)} icon="check" tone="success" />
-        <StatCard label="Pedidos" value={String(filtered.length)} icon="list" tone="brand" />
+      <div className={cn('grid transition-[grid-template-rows] duration-500 ease-in-out',
+        showFilters ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className={cn('overflow-hidden transition-opacity duration-500 ease-in-out',
+          showFilters ? 'opacity-100' : 'opacity-0')}>
+          <Card className="flex flex-wrap items-center gap-3 p-3">
+            <div className="relative min-w-[220px] flex-1">
+              <Icon name="search" size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
+              <input value={companyQ} onChange={(e) => setCompanyQ(maskSearchCNPJ(e.target.value))}
+                onKeyDown={(e) => { if (e.key === 'Enter') { const t = companyQ.trim(); setCompanyTerm(t.length >= 2 ? t : ''); } }}
+                aria-label="Filtrar por empresa (nome ou CNPJ)" placeholder="Empresa: nome ou CNPJ"
+                className="w-full rounded-lg border border-ink-200 bg-surface py-1.5 pl-8 pr-2.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400" />
+            </div>
+            <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Filtrar por status"
+              className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
+              <option value="todos">Todos os status</option>
+              {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+            </select>
+            <select value={representedId} onChange={(e) => setRepresentedId(e.target.value === 'todos' ? 'todos' : Number(e.target.value))}
+              aria-label="Filtrar por representada"
+              className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
+              <option value="todos">Todas as representadas</option>
+              {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
+            </select>
+            <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
+          </Card>
+        </div>
       </div>
 
-      <Card className="flex flex-wrap items-center gap-3 p-3">
-        <div className="relative min-w-[220px] flex-1">
-          <Icon name="search" size={15} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-400" />
-          <input value={companyQ} onChange={(e) => setCompanyQ(maskSearchCNPJ(e.target.value))}
-            onKeyDown={(e) => { if (e.key === 'Enter') { const t = companyQ.trim(); setCompanyTerm(t.length >= 2 ? t : ''); } }}
-            aria-label="Filtrar por empresa (nome ou CNPJ)" placeholder="Empresa: nome ou CNPJ"
-            className="w-full rounded-lg border border-ink-200 bg-surface py-1.5 pl-8 pr-2.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400" />
+      <div className={cn('grid transition-[grid-template-rows] duration-500 ease-in-out',
+        showKpis ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]')}>
+        <div className={cn('overflow-hidden transition-opacity duration-500 ease-in-out',
+          showKpis ? 'opacity-100' : 'opacity-0')}>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <StatCard label="Em aberto" value={brl(kpis.aberto)} icon="trendingUp" tone="info" />
+            <StatCard label="Total faturado" value={brl(kpis.faturado)} icon="check" tone="success" />
+            <StatCard label="Pedidos" value={String(filtered.length)} icon="list" tone="brand" />
+          </div>
         </div>
-        <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)} aria-label="Filtrar por status"
-          className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
-          <option value="todos">Todos os status</option>
-          {Object.entries(STATUS_META).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-        </select>
-        <select value={representedId} onChange={(e) => setRepresentedId(e.target.value === 'todos' ? 'todos' : Number(e.target.value))}
-          aria-label="Filtrar por representada"
-          className="rounded-lg border border-ink-200 bg-surface px-2.5 py-1.5 text-xs font-semibold text-ink-600 outline-none focus:border-brand-400">
-          <option value="todos">Todas as representadas</option>
-          {reps.map((r) => <option key={r.id} value={r.id}>{r.nome}</option>)}
-        </select>
-        <SellerFilter value={ownerId} onChange={setOwnerId} sellers={sellers} />
-      </Card>
+      </div>
 
       {loading ? (
         <Spinner />

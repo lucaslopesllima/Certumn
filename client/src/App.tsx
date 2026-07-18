@@ -126,7 +126,6 @@ function useNavGroups(): NavGroup[] {
 
 // No mobile a barra inferior cabe ~4 alvos com toque confortável (≥44px). Os
 // itens mais usados ficam fixos; o resto vai pra uma folha "Mais".
-const MOBILE_PRIMARY = ['/', '/funil', '/pedidos', '/agenda'];
 
 function Brand({ compact }: { compact?: boolean }): React.JSX.Element {
   return (
@@ -331,27 +330,62 @@ export function NotificationBell({ variant }: { variant: 'light' | 'dark' }): Re
   );
 }
 
-// Folha "Mais" no mobile: itens secundários da navegação que não cabem na barra
-// inferior. Abre de baixo, fecha ao tocar fora ou escolher destino.
-function MobileMoreSheet({ items, open, onClose }: { items: typeof NAV; open: boolean; onClose: () => void }): React.JSX.Element | null {
-  if (!open) return null;
+// Navegação no mobile/PWA: FAB Material flutuante no canto inferior esquerdo.
+// Substitui a antiga barra inferior — toca no botão, abre um menu flutuante com
+// toda a navegação (agrupada), fecha ao escolher destino, tocar fora ou trocar
+// de rota. Só aparece no mobile (sm:hidden); no desktop vale a Sidebar.
+function MobileNavFab(): React.JSX.Element {
+  const groups = useNavGroups();
+  const { user, logout } = useAuth();
+  const loc = useLocation();
+  const [open, setOpen] = useState(false);
+  const inicial = (user?.org_nome ?? user?.email ?? '?').charAt(0).toUpperCase();
+  useEffect(() => { setOpen(false); }, [loc.pathname]);
   return (
-    <div className="fixed inset-0 z-[1100] sm:hidden" role="dialog" aria-modal="true" aria-label="Mais opções">
-      <div className="absolute inset-0 bg-black/45" onClick={onClose} />
-      <div className="absolute inset-x-0 bottom-0 rounded-t-2xl border-t border-ink-200 bg-surface pb-[max(env(safe-area-inset-bottom),0.5rem)] pt-2 shadow-pop animate-[toastIn_.18s_ease-out]">
-        <div className="mx-auto mb-1 h-1 w-10 rounded-full bg-ink-200" />
-        <p className="px-4 py-2 text-[11px] font-semibold uppercase tracking-wider text-ink-400">Mais</p>
-        <div className="grid grid-cols-3 gap-1 px-3 pb-3">
-          {items.map((n) => (
-            <NavLink key={n.to} to={n.to} onClick={onClose}
-              className={({ isActive }) => cn(
-                'flex flex-col items-center gap-1 rounded-xl py-3 text-xs font-medium transition-colors',
-                isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-600 hover:bg-ink-50')}>
-              <Icon name={n.icon} size={22} />{n.label}
-            </NavLink>
+    <div className="sm:hidden">
+      {open && <div className="fixed inset-0 z-[1090] bg-black/40" onClick={() => setOpen(false)} />}
+      {open && (
+        <nav aria-label="Navegação"
+          className="fixed top-[calc(env(safe-area-inset-top)+4.5rem)] left-4 z-[1100] max-h-[70vh] w-64 max-w-[calc(100vw-2rem)] overflow-y-auto overscroll-contain rounded-2xl border border-ink-200 bg-surface p-2 shadow-pop animate-[toastIn_.18s_ease-out]">
+          {groups.map((g, gi) => (
+            <div key={g.label ?? 'top'} className={cn(gi > 0 && 'mt-1.5 border-t border-ink-100 pt-1.5')}>
+              {g.label && <p className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-ink-400">{g.label}</p>}
+              {g.items.map((n) => (
+                <NavLink key={n.to} to={n.to} end={n.to === '/'} onClick={() => setOpen(false)}
+                  className={({ isActive }) => cn(
+                    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+                    isActive ? 'bg-brand-50 text-brand-700' : 'text-ink-700 hover:bg-ink-50')}>
+                  {({ isActive }) => (
+                    <>
+                      <Icon name={n.icon} size={20} className={cn('shrink-0', isActive ? 'text-brand-600' : 'text-ink-400')} />
+                      {n.label}
+                    </>
+                  )}
+                </NavLink>
+              ))}
+            </div>
           ))}
-        </div>
-      </div>
+          {/* rodapé: conta + sair, igual à Sidebar do desktop */}
+          <div className="mt-1.5 flex items-center gap-2 border-t border-ink-100 pt-1.5">
+            <NavLink to="/conta" onClick={() => setOpen(false)}
+              className="flex min-w-0 flex-1 items-center gap-2.5 rounded-xl p-2 transition-colors hover:bg-ink-50">
+              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-brand-500/15 text-sm font-bold text-brand-600">{inicial}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-ink-800">{user?.org_nome ?? 'Minha conta'}</p>
+                <p className="truncate text-[11px] text-ink-400">{user?.email}</p>
+              </div>
+            </NavLink>
+            <button onClick={logout} aria-label="Sair"
+              className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink-400 transition-colors hover:bg-rose-50 hover:text-rose-600 dark:hover:bg-rose-500/10">
+              <Icon name="logout" size={18} />
+            </button>
+          </div>
+        </nav>
+      )}
+      <button onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-label={open ? 'Fechar menu' : 'Abrir menu'}
+        className="fixed top-[max(env(safe-area-inset-top),1rem)] left-4 z-[1100] grid h-14 w-14 place-items-center rounded-2xl bg-brand-600 text-white shadow-[0_8px_20px_-6px_rgba(3,152,85,0.6)] transition-transform active:scale-95">
+        <Icon name={open ? 'x' : 'menu'} size={26} className="transition-transform duration-200" />
+      </button>
     </div>
   );
 }
@@ -389,20 +423,15 @@ function OfflineBanner(): React.JSX.Element | null {
 function Shell({ children }: { children: ReactNode }): React.JSX.Element {
   const loc = useLocation();
   const nav = useNav();
-  const [moreOpen, setMoreOpen] = useState(false);
   const title = nav.find((n) => n.to === loc.pathname)?.label ?? 'Rovva';
-  const primary = nav.filter((n) => MOBILE_PRIMARY.includes(n.to));
-  const secondary = nav.filter((n) => !MOBILE_PRIMARY.includes(n.to));
-  // fecha a folha ao trocar de rota
-  useEffect(() => { setMoreOpen(false); }, [loc.pathname]);
   return (
     <div className="flex h-dvh bg-ink-50">
       <Sidebar />
 
       <div className="flex min-w-0 flex-1 flex-col">
         {/* mobile top bar */}
-        <header data-chrome className="flex items-center justify-between bg-ink-900 px-4 py-3 sm:hidden">
-          <Brand />
+        {/* canto superior esquerdo é do FAB de navegação → header só com controles à direita */}
+        <header data-chrome className="flex items-center justify-end bg-ink-900 px-4 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)] sm:hidden">
           <div className="flex items-center gap-2">
             <span className="text-sm font-medium text-ink-300">{title}</span>
             <ThemeToggle variant="dark" />
@@ -421,26 +450,11 @@ function Shell({ children }: { children: ReactNode }): React.JSX.Element {
         </header>
 
         <OfflineBanner />
-        <main className="min-h-0 flex-1 overflow-auto pb-20 sm:pb-0">{children}</main>
+        <main className="min-h-0 flex-1 overflow-auto">{children}</main>
       </div>
 
-      {/* mobile bottom nav: 4 fixos + Mais (alvos ≥44px) */}
-      <nav className="fixed inset-x-0 bottom-0 z-[1000] grid grid-cols-5 border-t border-ink-200 bg-white/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
-        {primary.map((n) => (
-          <NavLink key={n.to} to={n.to} end={n.to === '/'}
-            className={({ isActive }) => cn(
-              'flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors',
-              isActive ? 'text-brand-600' : 'text-ink-400')}>
-            <Icon name={n.icon} size={22} />{n.label}
-          </NavLink>
-        ))}
-        <button onClick={() => setMoreOpen(true)}
-          className={cn('flex flex-col items-center gap-0.5 py-2.5 text-[10px] font-medium transition-colors',
-            moreOpen || secondary.some((n) => n.to === loc.pathname) ? 'text-brand-600' : 'text-ink-400')}>
-          <Icon name="menu" size={22} />Mais
-        </button>
-      </nav>
-      <MobileMoreSheet items={secondary} open={moreOpen} onClose={() => setMoreOpen(false)} />
+      {/* menu flutuante (FAB Material) no mobile — substitui a barra inferior */}
+      <MobileNavFab />
     </div>
   );
 }

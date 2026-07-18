@@ -310,7 +310,7 @@ function PartidaInput({ value, onChange }: { value: Partida | null; onChange: (p
 // Seção colapsável (acordeão) reutilizada para básico/avançado. Mesmo padrão
 // grid-rows-[1fr]/[0fr] + overflow-hidden usado no Recommend para animar altura.
 // `nested` deixa o cabeçalho discreto (avançado dentro do básico).
-function FilterSection({ title, open, onToggle, nested = false, children }: {
+export function FilterSection({ title, open, onToggle, nested = false, children }: {
   title: string; open: boolean; onToggle: () => void; nested?: boolean; children: React.ReactNode;
 }): React.JSX.Element {
   return (
@@ -340,16 +340,12 @@ export function CompanyFilterBar({ f, recommend = false }: { f: CompanyFilter; r
     <div className="space-y-3">
       <div className="rounded-2xl border border-ink-200/70 bg-surface shadow-card">
         <FilterSection title="Filtros" open={basicoOpen} onToggle={() => setBasicoOpen((v) => !v)}>
-          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Nome / CNPJ</span>
               <input value={f.fq} onChange={(e) => f.setFq(maskSearchCNPJ(e.target.value))} maxLength={120} placeholder="Razão, fantasia ou CNPJ" className={inputCls} />
             </label>
             <CnaeSearchInput value={f.fCnae} onChange={f.setFCnae} label={recommend ? 'CNAEs-alvo' : 'CNAE'} />
-            <label className="block">
-              <span className="mb-1 block text-xs font-medium text-ink-500">UF</span>
-              <input value={f.fUf} onChange={(e) => f.setFUf(e.target.value)} maxLength={120} placeholder="Ex.: SC, PR" className={inputCls} />
-            </label>
             <label className="block">
               <span className="mb-1 block text-xs font-medium text-ink-500">Porte</span>
               <select value={f.fPorte} onChange={(e) => f.setFPorte(e.target.value)} className={inputCls}>
@@ -405,10 +401,16 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
   useEffect(() => {
     if (munDebounce.current) clearTimeout(munDebounce.current);
     if (munQ.trim().length < 1) { setMunResults([]); return; }
+    // aborta a busca anterior: sem isso, uma resposta em voo resolve DEPOIS do
+    // addMun (que limpa munQ/munResults) e reabre o dropdown com resultado velho.
+    const ctrl = new AbortController();
     munDebounce.current = window.setTimeout(async () => {
-      const r = await api.get<{ municipios: Municipio[] }>(`/api/municipios/search?q=${encodeURIComponent(munQ.trim())}`);
-      setMunResults(r?.municipios ?? []);
+      try {
+        const r = await api.get<{ municipios: Municipio[] }>(`/api/municipios/search?q=${encodeURIComponent(munQ.trim())}`, { signal: ctrl.signal });
+        setMunResults(r?.municipios ?? []);
+      } catch { /* abortada ou falhou: ignora */ }
     }, 250);
+    return () => ctrl.abort();
   }, [munQ]);
 
   const sel = f.territorio;
@@ -482,7 +484,7 @@ function RecommendConfig({ f }: { f: CompanyFilter }): React.JSX.Element {
           <div className="mt-3 flex flex-wrap gap-1.5">
             {fullUfs.map((uf) => (
               <button key={uf} onClick={() => removeUf(uf)}
-                className="inline-flex items-center gap-1 rounded-full bg-ink-800 px-2.5 py-1 text-xs font-semibold text-white hover:bg-ink-900">
+                className="inline-flex items-center gap-1 rounded-full bg-brand-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-brand-800">
                 <Icon name="layers" size={12} /> {uf} inteiro · {countByUf[uf]} <Icon name="x" size={12} />
               </button>
             ))}
