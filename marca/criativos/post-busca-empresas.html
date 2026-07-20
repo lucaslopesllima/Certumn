@@ -1,0 +1,110 @@
+<meta charset="utf-8">
+<style>
+  :root{
+    --brand-50:#EEF1FE; --brand-500:#3D5AF1; --brand-700:#2438C4;
+    --accent:#FF6A2B; --ink:#0D1220; --slate-600:#475069; --slate-400:#8A93A6;
+    --bg:#FFFFFF; --bg-alt:#F7F8FB; --success:#16A34A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{background:var(--ink);font-family:Inter,-apple-system,'Segoe UI',Helvetica,Arial,sans-serif}
+  .slide{
+    width:1080px;height:1350px;position:relative;overflow:hidden;
+    display:flex;flex-direction:column;padding:96px 88px;
+  }
+  .dark{background:var(--ink);color:#fff}
+  .dark .muted{color:#8A93A6}
+  .eyebrow{
+    font-size:26px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;
+    color:#7C90F6;margin-bottom:36px;
+  }
+  h2{font-size:68px;line-height:1.05;font-weight:800;letter-spacing:-0.02em}
+  .lead{font-size:36px;line-height:1.35;font-weight:400;margin-top:30px}
+  .lead b{font-weight:700}
+  .accent{color:var(--accent)}
+  .grow{flex:1}
+  .foot{font-size:28px;color:#8A93A6;margin-top:34px}
+  .wordmark{font-size:44px;font-weight:800;letter-spacing:-0.03em}
+  .wordmark .vv{color:#7C90F6}
+
+  /* mock da busca */
+  .search{
+    margin-top:46px;background:#141B2E;border:1.5px solid #26304A;border-radius:28px;
+    padding:28px 38px;display:flex;align-items:center;gap:26px;
+    box-shadow:0 24px 60px rgba(0,0,0,.45);
+  }
+  .search .icon{flex:0 0 44px}
+  .search .q{font-size:34px;font-weight:600;color:#fff}
+  .search .cursor{
+    display:inline-block;width:4px;height:40px;background:var(--brand-500);
+    vertical-align:middle;margin-left:6px;border-radius:2px;
+  }
+  .results{margin-top:20px;display:flex;flex-direction:column;gap:18px}
+  .card{
+    background:#141B2E;border:1.5px solid #26304A;border-radius:24px;
+    padding:24px 34px;display:flex;align-items:center;gap:28px;
+  }
+  .card .pin{
+    flex:0 0 64px;width:64px;height:64px;border-radius:20px;
+    background:rgba(255,106,43,.16);display:flex;align-items:center;justify-content:center;
+  }
+  .card .nome{font-size:31px;font-weight:700;color:#fff}
+  .card .meta{font-size:25px;color:#8A93A6;margin-top:6px}
+  .card .tag{
+    margin-left:auto;font-size:24px;font-weight:700;color:#4ADE80;
+    background:rgba(22,163,74,.16);padding:12px 24px;border-radius:999px;white-space:nowrap;
+  }
+  /* stats */
+  .stats{margin-top:auto;display:flex;gap:28px}
+  .stat{
+    flex:1;background:rgba(61,90,241,.14);border:1.5px solid rgba(61,90,241,.35);
+    border-radius:24px;padding:24px 24px;text-align:center;
+  }
+  .stat .n{font-size:46px;font-weight:800;letter-spacing:-0.02em;color:#fff}
+  .stat .n span{color:#7C90F6}
+  .stat .l{font-size:24px;color:#8A93A6;margin-top:8px;line-height:1.25}
+</style>
+
+<!-- POST — busca de empresas / base completa do Brasil (1080×1350) -->
+<div class="slide dark">
+  <div class="eyebrow">Busca de empresas</div>
+  <h2>Todas as empresas<br>do Brasil, <span class="accent">já dentro</span><br>do app.</h2>
+  <div class="lead muted">Base oficial da Receita Federal, <b style="color:#fff">sempre atualizada</b>.<br>Digitou, achou, visitou.</div>
+
+  <div class="search">
+    <svg class="icon" width="44" height="44" viewBox="0 0 24 24" fill="none">
+      <circle cx="11" cy="11" r="7" stroke="#3D5AF1" stroke-width="2.4"/>
+      <path d="M16.5 16.5 L21 21" stroke="#3D5AF1" stroke-width="2.4" stroke-linecap="round"/>
+    </svg>
+    <div class="q">materiais de construção, Goiânia<span class="cursor"></span></div>
+  </div>
+  <div class="results">
+    <div class="card">
+      <div class="pin"><svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11Z" fill="#FF6A2B"/><circle cx="12" cy="10" r="2.6" fill="#0D1220"/></svg></div>
+      <div>
+        <div class="nome">Construforte Materiais Ltda</div>
+        <div class="meta">Goiânia · GO — Comércio de materiais de construção</div>
+      </div>
+      <div class="tag">Ativa</div>
+    </div>
+    <div class="card">
+      <div class="pin"><svg width="34" height="34" viewBox="0 0 24 24" fill="none"><path d="M12 21s-7-6.1-7-11a7 7 0 1 1 14 0c0 4.9-7 11-7 11Z" fill="#FF6A2B"/><circle cx="12" cy="10" r="2.6" fill="#0D1220"/></svg></div>
+      <div>
+        <div class="nome">Depósito Serra Dourada</div>
+        <div class="meta">Aparecida de Goiânia · GO — Atacadista de cimento</div>
+      </div>
+      <div class="tag">Ativa</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">28,9 <span>mi</span></div><div class="l">empresas ativas</div></div>
+    <div class="stat"><div class="n">5.570</div><div class="l">municípios —<br>o Brasil inteiro</div></div>
+    <div class="stat"><div class="n">1.337</div><div class="l">ramos de<br>atividade</div></div>
+  </div>
+
+  <div class="foot" style="display:flex;align-items:center;justify-content:space-between">
+    <span>Seu próximo cliente já está aqui.</span>
+    <span class="wordmark">Ro<span class="vv">vv</span>a</span>
+  </div>
+</div>
