@@ -3,7 +3,7 @@ import { api, ApiError, setToken } from '../lib/api.ts';
 import type { AccountOrg, AccountUser } from '../lib/types.ts';
 import { Btn, Card, PageHeader, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { maskCNPJ, maskPhone, maskCEP } from '../lib/format.ts';
+import { invalidCNPJ, isEmail, maskCNPJ, maskPhone, maskCEP, maskUF } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { useAuth } from '../lib/auth.tsx';
 
@@ -82,6 +82,8 @@ export function Account(): React.JSX.Element {
 
   const saveInfo = async (): Promise<void> => {
     if (!org) return;
+    if (!isEmail(email)) { toast.error('E-mail inválido.'); return; }
+    if (invalidCNPJ(org.cnpj ?? '')) { toast.error('CNPJ inválido.'); return; }
     setBusyInfo(true); setErrInfo('');
     try {
       const r = await api.patch<{ org: AccountOrg; user: AccountUser }>('/api/account', {
@@ -145,7 +147,8 @@ export function Account(): React.JSX.Element {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           <Field label="Nome / Razão social"><input value={org.nome} onChange={set('nome')} maxLength={120} className={inputCls} /></Field>
-          <Field label="CNPJ"><input value={org.cnpj ?? ''} inputMode="numeric"
+          {/* sem inputMode="numeric": CNPJ alfanumérico precisa de letras no teclado */}
+          <Field label="CNPJ"><input value={org.cnpj ?? ''} autoCapitalize="characters"
             onChange={(e) => setOrg((o) => (o ? { ...o, cnpj: maskCNPJ(e.target.value) } : o))} placeholder="00.000.000/0000-00" className={inputCls} /></Field>
           <Field label="E-mail (login)"><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} maxLength={160} className={inputCls} /></Field>
           <Field label="Telefone"><input value={org.telefone ?? ''} inputMode="tel"
@@ -156,7 +159,7 @@ export function Account(): React.JSX.Element {
         <div className="mt-2 grid gap-3 sm:grid-cols-6">
           <Field label="CEP" className="sm:col-span-2">
             <div className="relative">
-              <input value={org.cep ?? ''} onChange={onCep} onBlur={(e) => void buscarCep(e.target.value)}
+              <input value={org.cep ?? ''} inputMode="numeric" onChange={onCep} onBlur={(e) => void buscarCep(e.target.value)}
                 placeholder="00000-000" className={inputCls} />
               {cepBusy && <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-ink-400">buscando…</span>}
             </div>
@@ -171,7 +174,8 @@ export function Account(): React.JSX.Element {
           <Field label="Complemento" className="sm:col-span-2"><input value={org.complemento ?? ''} onChange={set('complemento')} maxLength={120} className={inputCls} /></Field>
           <Field label="Bairro" className="sm:col-span-2"><input value={org.bairro ?? ''} onChange={set('bairro')} maxLength={120} className={inputCls} /></Field>
           <Field label="Cidade" className="sm:col-span-1"><input value={org.cidade ?? ''} onChange={set('cidade')} maxLength={120} className={inputCls} /></Field>
-          <Field label="UF" className="sm:col-span-1"><input value={org.uf ?? ''} maxLength={2} onChange={set('uf')} className={cn(inputCls, 'uppercase')} /></Field>
+          <Field label="UF" className="sm:col-span-1"><input value={org.uf ?? ''} maxLength={2}
+            onChange={(e) => setOrg((o) => (o ? { ...o, uf: maskUF(e.target.value) } : o))} className={inputCls} /></Field>
         </div>
 
         <div className="mt-4 flex items-center gap-3">

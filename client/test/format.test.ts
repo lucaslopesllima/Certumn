@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brl, brl0, fmtDate, todayStr, maskCEP, maskPhone, maskPlaca } from '../src/lib/format.ts';
+import { brl, brl0, fmtDate, todayStr, maskCEP, maskPhone, maskPlaca, isEmail, maskCNPJ, validCNPJ, invalidCNPJ, maskCPF, validCPF, maskUF } from '../src/lib/format.ts';
 
 // Intl usa NBSP entre "R$" e o número — normaliza para comparar.
 const plain = (s: string): string => s.replace(/ /g, ' ');
@@ -53,5 +53,70 @@ describe('format', () => {
     expect(maskPlaca('abc-1d23')).toBe('ABC1D23'); // tira separador
     expect(maskPlaca('abc1d2345')).toBe('ABC1D23'); // máx 7
     expect(maskPlaca('')).toBe('');
+  });
+
+  it('isEmail exige algo@algo.tld e ignora espaços nas bordas', () => {
+    expect(isEmail('a@b.co')).toBe(true);
+    expect(isEmail('  a@b.co  ')).toBe(true);
+    expect(isEmail('a@b')).toBe(false);      // type=email nativo aceitaria
+    expect(isEmail('a b@c.co')).toBe(false); // espaço no meio
+    expect(isEmail('')).toBe(false);
+  });
+
+  it('validCNPJ confere dígitos verificadores', () => {
+    expect(validCNPJ('11.222.333/0001-81')).toBe(true); // com máscara
+    expect(validCNPJ('11222333000181')).toBe(true);
+    expect(validCNPJ('11222333000144')).toBe(false); // DV errado
+    expect(validCNPJ('00000000000000')).toBe(false); // sequência repetida
+    expect(validCNPJ('123')).toBe(false);            // incompleto
+  });
+
+  it('validCNPJ aceita CNPJ alfanumérico (RFB 2026, charCode − 48)', () => {
+    expect(validCNPJ('12.ABC.345/01DE-35')).toBe(true); // exemplo da especificação
+    expect(validCNPJ('12abc34501de35')).toBe(true);     // minúscula normaliza
+    expect(validCNPJ('12ABC34501DE36')).toBe(false);    // DV errado
+    expect(validCNPJ('12ABC34501DEAA')).toBe(false);    // DV tem que ser numérico
+  });
+
+  it('maskCNPJ formata numérico e alfanumérico; DV só aceita dígito', () => {
+    expect(maskCNPJ('11222333000181')).toBe('11.222.333/0001-81');
+    expect(maskCNPJ('112223')).toBe('11.222.3');            // parcial
+    expect(maskCNPJ('12abc34501de35')).toBe('12.ABC.345/01DE-35'); // alfanumérico uppercase
+    expect(maskCNPJ('12ABC34501DEXY')).toBe('12.ABC.345/01DE');    // letra no DV descartada
+    expect(maskCNPJ('')).toBe('');
+  });
+
+  it('invalidCNPJ conta letras no comprimento do alfanumérico', () => {
+    expect(invalidCNPJ('12ABC34501DE36')).toBe(true);  // completo, DV errado
+    expect(invalidCNPJ('12ABC34501DE35')).toBe(false); // válido
+    expect(invalidCNPJ('12ABC345')).toBe(false);       // parcial não trava
+  });
+
+  it('invalidCNPJ só bloqueia CNPJ completo com DV errado (legado parcial passa)', () => {
+    expect(invalidCNPJ('11222333000144')).toBe(true);  // 14 díg, DV errado
+    expect(invalidCNPJ('11222333000181')).toBe(false); // válido
+    expect(invalidCNPJ('123')).toBe(false);            // parcial/legado não trava
+    expect(invalidCNPJ('')).toBe(false);
+  });
+
+  it('maskCPF formata 000.000.000-00', () => {
+    expect(maskCPF('52998224725')).toBe('529.982.247-25');
+    expect(maskCPF('529982')).toBe('529.982');
+    expect(maskCPF('5299822472599')).toBe('529.982.247-25'); // máx 11 dígitos
+    expect(maskCPF('')).toBe('');
+  });
+
+  it('validCPF confere dígitos verificadores', () => {
+    expect(validCPF('529.982.247-25')).toBe(true);
+    expect(validCPF('52998224725')).toBe(true);
+    expect(validCPF('52998224724')).toBe(false); // DV errado
+    expect(validCPF('11111111111')).toBe(false); // sequência repetida
+    expect(validCPF('123')).toBe(false);
+  });
+
+  it('maskUF só letras, uppercase, 2 chars', () => {
+    expect(maskUF('sc')).toBe('SC');
+    expect(maskUF('s1c2p')).toBe('SC');
+    expect(maskUF('')).toBe('');
   });
 });

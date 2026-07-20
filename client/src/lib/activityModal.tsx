@@ -6,6 +6,7 @@ import { Icon, type IconName } from './icons.tsx';
 import { toast } from './toast.tsx';
 import { useAuth } from './auth.tsx';
 import type { Activity } from './types.ts';
+import { EMAIL_RE, maskPhone } from './format.ts';
 
 // Modal de criação de atividade/compromisso. Reutilizado na Agenda e no Funil.
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -29,7 +30,6 @@ type ContactOption = { id: number; nome: string; telefone: string | null };
 
 // Quebra uma string de e-mails (vírgula/;/espaço/linha) em tokens não vazios.
 const splitEmails = (s: string): string[] => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 const toLocalInput = (d: Date): string => {
   const p = (n: number): string => String(n).padStart(2, '0');
@@ -114,6 +114,7 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
       if (!remetente.trim() || dest.length === 0 || !assunto.trim() || !corpo.trim()) {
         toast.error('Preencha remetente, destinatário, assunto e corpo.'); return;
       }
+      if (!EMAIL_RE.test(remetente.trim())) { toast.error('E-mail do remetente inválido.'); return; }
       if (dest.some((d) => !EMAIL_RE.test(d))) { toast.error('Há e-mail de destinatário inválido.'); return; }
     } else if (!titulo.trim()) { toast.error('Informe o título da atividade.'); return; }
 
@@ -212,7 +213,7 @@ export function ActivityCreateModal({ preset, funnel, represented, presetCompany
               <>
                 <label className="block">
                   <span className="text-xs font-semibold text-ink-600">Número de WhatsApp</span>
-                  <input value={numero} onChange={(e) => setNumero(e.target.value)} maxLength={20} inputMode="tel"
+                  <input value={numero} onChange={(e) => setNumero(maskPhone(e.target.value))} maxLength={20} inputMode="tel"
                     placeholder="Ex.: (11) 91234-5678" className={cn(inputCls, 'mt-1')} />
                 </label>
                 <label className="block">

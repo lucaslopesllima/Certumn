@@ -70,14 +70,18 @@ export const maskCEP = (v: string): string => {
 export const maskPlaca = (v: string): string =>
   v.replace(/[^a-zA-Z0-9]/g, '').toUpperCase().slice(0, 7);
 
-// CNPJ: 00.000.000/0000-00
+// CNPJ: 00.000.000/0000-00. Suporta o CNPJ alfanumérico (RFB, a partir de
+// 2026): as 12 primeiras posições aceitam letra OU dígito (uppercase); os 2
+// dígitos verificadores seguem sempre numéricos — letra digitada ali é
+// descartada.
 export const maskCNPJ = (v: string): string => {
-  const d = v.replace(/\D/g, '').slice(0, 14);
+  const raw = v.replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
+  const d = (raw.slice(0, 12) + raw.slice(12).replace(/[^0-9]/g, '')).slice(0, 14);
   return d
-    .replace(/^(\d{2})(\d)/, '$1.$2')
-    .replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3')
-    .replace(/\.(\d{3})(\d)/, '.$1/$2')
-    .replace(/(\d{4})(\d)/, '$1-$2');
+    .replace(/^([0-9A-Z]{2})([0-9A-Z])/, '$1.$2')
+    .replace(/^([0-9A-Z]{2})\.([0-9A-Z]{3})([0-9A-Z])/, '$1.$2.$3')
+    .replace(/\.([0-9A-Z]{3})([0-9A-Z])/, '.$1/$2')
+    .replace(/([0-9A-Z]{4})(\d)/, '$1-$2');
 };
 
 // Máscara p/ campos de busca que aceitam nome OU CNPJ. Só formata como CNPJ
@@ -85,6 +89,9 @@ export const maskCNPJ = (v: string): string => {
 // texto de nome passa intacto. O backend/filtros extraem só os dígitos, então
 // a máscara é cosmética e não quebra a busca. Casado com a regra do servidor
 // em /api/companies/search (CNPJ quando sem letras e ≥4 dígitos).
+// Limitação conhecida: CNPJ alfanumérico digitado aqui cai na busca por nome
+// (letra é indistinguível de nome) — quando a base RFB passar a ter CNPJs com
+// letra, a heurística client+server precisa ser revista junta.
 export const maskSearchCNPJ = (v: string): string =>
   /[a-zA-Z]/.test(v) || v.replace(/\D/g, '').length < 4 ? v : maskCNPJ(v);
 
@@ -114,6 +121,70 @@ export const clampNum = (v: number | string | null | undefined, min: number, max
   if (!Number.isFinite(n)) return min;
   return Math.min(max, Math.max(min, n));
 };
+
+/* ── Validadores ────────────────────────────────────────────────────────────
+   Aplicar no submit (não no onChange — máscara formata, validador bloqueia). */
+
+// e-mail: mesma regex antes duplicada em Contatos/Kanban/WhatsApp/EmailAgendado/
+// activityModal/Carriers. Pragmática (algo@algo.tld), não RFC completa — mais
+// estrita que o type="email" nativo (que aceita "a@b" sem TLD).
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+export const isEmail = (v: string): boolean => EMAIL_RE.test(v.trim());
+
+// CNPJ: dígitos verificadores (módulo 11). Complementa maskCNPJ — a máscara
+// formata, isto valida. Suporta CNPJ alfanumérico: cada caractere vale
+// charCode − 48 ('0'–'9' → 0–9, 'A'–'Z' → 17–42, regra da RFB); DVs sempre
+// numéricos. Rejeita sequência repetida (00.000.000/0000-00 etc).
+export const validCNPJ = (v: string): boolean => {
+  const d = v.replace(/[^0-9a-zA-Z]/g, '').toUpperCase();
+  if (!/^[0-9A-Z]{12}\d{2}$/.test(d) || /^(.)\1{13}$/.test(d)) return false;
+  const val = (i: number): number => d.charCodeAt(i) - 48;
+  const dv = (len: number): number => {
+    let sum = 0, w = len - 7;
+    for (let i = 0; i < len; i++) { sum += val(i) * w; w = w === 2 ? 9 : w - 1; }
+    const r = sum % 11;
+    return r < 2 ? 0 : 11 - r;
+  };
+  return dv(12) === val(12) && dv(13) === val(13);
+};
+
+// CPF: 000.000.000-00. Hoje não há campo de CPF no app (base de empresas é
+// PJ; CPF de sócios chega mascarado da Receita) — utilitário pronto p/ quando
+// surgir. Par com validCPF abaixo.
+export const maskCPF = (v: string): string => {
+  const d = v.replace(/\D/g, '').slice(0, 11);
+  return d
+    .replace(/^(\d{3})(\d)/, '$1.$2')
+    .replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3')
+    .replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2');
+};
+
+// CPF: dígitos verificadores (módulo 11). Rejeita sequência repetida.
+export const validCPF = (v: string): boolean => {
+  const d = v.replace(/\D/g, '');
+  if (d.length !== 11 || /^(\d)\1{10}$/.test(d)) return false;
+  const dv = (len: number): number => {
+    let sum = 0;
+    for (let i = 0; i < len; i++) sum += Number(d[i]) * (len + 1 - i);
+    const r = (sum * 10) % 11;
+    return r === 10 ? 0 : r;
+  };
+  return dv(9) === Number(d[9]) && dv(10) === Number(d[10]);
+};
+
+// Guarda de submit: true só quando o CNPJ está completo (14 caracteres,
+// contando letras do alfanumérico) com DV errado. Parcial/legado passa —
+// registros antigos guardam CNPJ incompleto e não podem travar a edição dos
+// demais campos do formulário.
+export const invalidCNPJ = (v: string): boolean => {
+  const d = v.replace(/[^0-9a-zA-Z]/g, '');
+  return d.length === 14 && !validCNPJ(d);
+};
+
+// UF: só letras, uppercase, 2 chars. Máscara p/ onChange (não valida sigla —
+// backend/uso é livre; evita lista hardcoded p/ campo raramente digitado).
+export const maskUF = (v: string): string =>
+  v.replace(/[^a-zA-Z]/g, '').toUpperCase().slice(0, 2);
 
 // link wa.me (WhatsApp click-to-chat). Assume DDI Brasil (55) quando ausente.
 // Retorna null se não houver dígitos suficientes p/ um telefone válido.

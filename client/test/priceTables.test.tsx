@@ -75,7 +75,7 @@ describe('Catalog · Tabelas de preço', () => {
     const inicio = document.querySelector('input[type="date"]')!;
     fireEvent.change(inicio, { target: { value: '2026-07-01' } });
     await userEvent.selectOptions(screen.getByLabelText('Adicionar produto'), '9');
-    expect(screen.getByLabelText('Preço Produto A')).toHaveValue(100); // sugerido do catálogo
+    expect(screen.getByLabelText('Preço Produto A')).toHaveValue('100'); // sugerido do catálogo
 
     await userEvent.click(screen.getByRole('button', { name: 'Salvar tabela' }));
     await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/price-tables', expect.objectContaining({
@@ -93,7 +93,7 @@ describe('Catalog · Tabelas de preço', () => {
     await userEvent.click(screen.getByLabelText('Editar tabela'));
     const nome = await screen.findByPlaceholderText('Nome da tabela *');
     expect(nome).toHaveValue('Tabela 2026');
-    expect(screen.getByLabelText('Preço Produto A')).toHaveValue(90); // item carregado do GET :id
+    expect(screen.getByLabelText('Preço Produto A')).toHaveValue('90'); // item carregado do GET :id
 
     await userEvent.click(screen.getByRole('button', { name: 'Salvar tabela' }));
     await waitFor(() => expect(m.patch).toHaveBeenCalledWith(`/api/price-tables/${TABLE.id}`, expect.objectContaining({ nome: 'Tabela 2026' })));

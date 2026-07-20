@@ -12,7 +12,7 @@ import { confirmDialog } from '../src/lib/confirm.ts';
 // Empresa devolvida pelo CompanySearch (controlável por teste).
 const hoisted = vi.hoisted(() => ({
   companyHit: {
-    id: 99, cnpj: '12345678000199', razao_social: 'Fornecedor RS',
+    id: 99, cnpj: '12345678000195', razao_social: 'Fornecedor RS',
     nome_fantasia: 'RS Marca', telefone1: '4830001111', email: 'contato@rs.com',
   } as Record<string, unknown>,
 }));

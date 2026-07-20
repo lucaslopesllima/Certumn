@@ -6,11 +6,10 @@ import { Icon } from '../lib/icons.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
-import { maskPhone } from '../lib/format.ts';
+import { isEmail, maskPhone } from '../lib/format.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type ContactForm = {
   nome: string; cargo: string; email: string; telefone: string; represented_id: string;
@@ -136,7 +135,7 @@ function ContatoForm({ inputCls, reps, initial, onSave, onCancel }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!f.nome.trim()) return;
-    if (f.email.trim() && !EMAIL_RE.test(f.email.trim())) { toast.error('E-mail inválido.'); return; }
+    if (f.email.trim() && !isEmail(f.email)) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try { await onSave(f); } finally { setBusy(false); }
   };

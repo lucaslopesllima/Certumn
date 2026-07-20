@@ -9,7 +9,7 @@ import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinne
 import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { downloadCsv } from '../lib/export.ts';
 import { Icon } from '../lib/icons.tsx';
-import { brl, csvNum, dec, fmtDate, maskPct, todayStr } from '../lib/format.ts';
+import { brl, csvNum, dec, fmtDate, maskMoney, maskPct, numStr, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { confirmDialog } from '../lib/confirm.ts';
 
@@ -221,7 +221,7 @@ function EntryRow({ e, onSettle }: { e: CommissionEntry; onSettle: () => void })
 function SettleModal({ entry, onClose, onSaved }: {
   entry: CommissionEntry; onClose: () => void; onSaved: () => void;
 }): React.JSX.Element {
-  const [valor, setValor] = useState(String(entry.valor_recebido ?? entry.valor_previsto));
+  const [valor, setValor] = useState(numStr(entry.valor_recebido ?? entry.valor_previsto));
   const [data, setData] = useState(todayStr());
   const [observacao, setObservacao] = useState(entry.observacao ?? '');
   const [busy, setBusy] = useState(false);
@@ -259,8 +259,8 @@ function SettleModal({ entry, onClose, onSaved }: {
             <div className="grid gap-2 sm:grid-cols-2">
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Valor recebido *</span>
-                <input type="number" min={0} max={1e9} step="0.01" value={valor} autoFocus
-                  onChange={(e) => setValor(e.target.value)} className={cn(inputCls, 'mt-1')} />
+                <input type="text" inputMode="decimal" placeholder="0,00" value={valor} autoFocus
+                  onChange={(e) => setValor(maskMoney(e.target.value))} className={cn(inputCls, 'mt-1')} />
               </label>
               <label className="block">
                 <span className="text-xs font-semibold text-ink-600">Recebida em *</span>

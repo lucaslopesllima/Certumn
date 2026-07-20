@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth.tsx';
 import type { CatalogItem, PriceTable, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, dec, fmtDate, maskPct, numStr } from '../lib/format.ts';
+import { brl, dec, fmtDate, maskMoney, maskPct, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { confirmDialog } from '../lib/confirm.ts';
 
@@ -170,8 +170,8 @@ function TableForm({ reps, catalog, table, onClose, onSaved }: {
             return (
               <div key={i.catalog_item_id} className="flex items-center gap-2 rounded-xl border border-ink-200/70 bg-surface p-2">
                 <span className="min-w-0 flex-1 truncate text-sm text-ink-700">{cat?.nome ?? `#${i.catalog_item_id}`}</span>
-                <input type="number" min={0} max={1e9} step="0.01" value={i.preco} aria-label={`Preço ${cat?.nome ?? i.catalog_item_id}`}
-                  onChange={(e) => setItem(idx, { preco: e.target.value })} placeholder="Preço *"
+                <input type="text" inputMode="decimal" value={i.preco} aria-label={`Preço ${cat?.nome ?? i.catalog_item_id}`}
+                  onChange={(e) => setItem(idx, { preco: maskMoney(e.target.value) })} placeholder="Preço *"
                   className="w-28 rounded-lg border border-ink-200 px-2 py-1.5 text-sm" />
                 <input type="text" inputMode="decimal" value={i.desconto_max_pct} aria-label={`Desconto máx ${cat?.nome ?? i.catalog_item_id}`}
                   onChange={(e) => setItem(idx, { desconto_max_pct: maskPct(e.target.value) })} placeholder="Desc. máx %"

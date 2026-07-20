@@ -11,7 +11,7 @@ vi.mock('../src/lib/confirm.ts', () => ({ confirmDialog: vi.fn() }));
 vi.mock('../src/lib/companySearch.tsx', () => ({
   CompanySearch: ({ onPick }: { onPick: (c: Record<string, unknown>) => void }) => (
     <button type="button" onClick={() => onPick({
-      cnpj: '99888777000166', razao_social: 'RFB LTDA', nome_fantasia: 'RFB',
+      cnpj: '99888777000100', razao_social: 'RFB LTDA', nome_fantasia: 'RFB',
       telefone1: '1140000000', telefone2: null, email: 'rfb@x.com',
     })}>pick-company</button>
   ),
@@ -31,7 +31,7 @@ const useAuthMock = vi.mocked(useAuth);
 const admin: User = { id: 1, email: 'a@b.c', role: 'admin', org_id: 1, org_nome: 'Org' };
 
 const CARRIER = {
-  id: 4, nome: 'Transp X', cnpj: '11222333000144', telefone: '11 99999-0000',
+  id: 4, nome: 'Transp X', cnpj: '11222333000181', telefone: '11 99999-0000',
   email: null, contato: 'Maria', observacoes: null, ativo: true,
 };
 
@@ -53,7 +53,7 @@ describe('Carriers', () => {
   it('carrega e lista com cnpj e contato', async () => {
     render(<Carriers />);
     expect(await screen.findByText('Transp X')).toBeInTheDocument();
-    expect(screen.getByText('11222333000144')).toBeInTheDocument();
+    expect(screen.getByText('11222333000181')).toBeInTheDocument();
     expect(screen.getByText(/Maria · 11 99999-0000/)).toBeInTheDocument();
   });
 
@@ -137,7 +137,7 @@ describe('Carriers', () => {
     expect(screen.getByDisplayValue('RFB')).toBeInTheDocument();
 
     await userEvent.clear(screen.getByPlaceholderText('CNPJ'));
-    await userEvent.type(screen.getByPlaceholderText('CNPJ'), '11222333000144');
+    await userEvent.type(screen.getByPlaceholderText('CNPJ'), '11222333000181');
     await userEvent.type(screen.getByPlaceholderText('Telefone'), '11999990000');
 
     // 'a@b' passa na validação HTML5 (permite submit) mas falha no regex do app

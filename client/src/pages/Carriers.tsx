@@ -6,7 +6,7 @@ import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Spinner, cn } fro
 import { Icon } from '../lib/icons.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
-import { maskCNPJ, maskPhone } from '../lib/format.ts';
+import { invalidCNPJ, isEmail, maskCNPJ, maskPhone } from '../lib/format.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -136,10 +136,11 @@ function CarrierForm({ initial, onSave, onCancel }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!f.nome.trim()) return;
-    if (f.email.trim() && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) {
+    if (f.email.trim() && !isEmail(f.email)) {
       toast.error('E-mail inválido.');
       return;
     }
+    if (invalidCNPJ(f.cnpj)) { toast.error('CNPJ inválido.'); return; }
     setBusy(true);
     try { await onSave(f); } finally { setBusy(false); }
   };
@@ -159,7 +160,7 @@ function CarrierForm({ initial, onSave, onCancel }: {
       <CompanySearch onPick={fillFrom} placeholder="Buscar na base de empresas (CNPJ ou nome)…" />
       <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome da transportadora *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-3">
-        <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
+        <input value={f.cnpj} autoCapitalize="characters" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
         <input value={f.telefone} inputMode="tel" onChange={(e) => setF((p) => ({ ...p, telefone: maskPhone(e.target.value) }))} placeholder="Telefone" className={inputCls} />
         <input type="email" value={f.email} onChange={set('email')} maxLength={160} placeholder="E-mail" className={inputCls} />
       </div>

@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth.tsx';
 import type { CatalogItem, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, dec, numStr } from '../lib/format.ts';
+import { brl, dec, maskMoney, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { PriceTables } from './PriceTables.tsx';
 import { UNIDADES_MEDIDA_GRUPOS } from '../lib/units.ts';
@@ -36,7 +36,7 @@ function toBody(f: Form): Record<string, unknown> {
   const taxNum = (s: string): number => (s.trim() === '' ? 0 : dec(s));
   return {
     nome: f.nome.trim(), codigo: t(f.codigo), descricao: t(f.descricao),
-    preco: f.preco.trim() === '' ? null : Number(f.preco),
+    preco: f.preco.trim() === '' ? null : dec(f.preco),
     unidade_medida: t(f.unidade_medida),
     represented_id: f.represented_id === '' ? null : Number(f.represented_id),
     ...Object.fromEntries(TAX_FIELDS.map(([k]) => [k, taxNum(f[k])])),
@@ -203,7 +203,8 @@ function ItemForm({ reps, initial, onSave, onCancel }: {
       <input autoFocus value={f.nome} onChange={set('nome')} maxLength={120} placeholder="Nome do produto / serviço *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
         <input value={f.codigo} onChange={set('codigo')} maxLength={120} placeholder="Código / SKU" className={inputCls} />
-        <input type="number" min="0" step="0.01" value={f.preco} onChange={set('preco')} placeholder="Preço (R$)" className={inputCls} />
+        <input type="text" inputMode="decimal" value={f.preco}
+          onChange={(e) => setF((p) => ({ ...p, preco: maskMoney(e.target.value) }))} placeholder="Preço (R$)" className={inputCls} />
         <select value={f.unidade_medida} onChange={set('unidade_medida')} className={inputCls}>
           <option value="">Unidade de medida (opcional)</option>
           {UNIDADES_MEDIDA_GRUPOS.map((g) => (

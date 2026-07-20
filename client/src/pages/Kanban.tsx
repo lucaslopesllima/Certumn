@@ -9,7 +9,7 @@ import { useSellers, SellerFilter } from '../lib/sellers.tsx';
 import { CompanyModal } from '../lib/companyModal.tsx';
 import { ActivityCreateModal } from '../lib/activityModal.tsx';
 import { SampleRequestModal, SampleListModal } from '../lib/sampleModal.tsx';
-import { brl0 as brl, clampNum, maskMoney, maskPhone, numStr } from '../lib/format.ts';
+import { brl0 as brl, clampNum, isEmail, maskMoney, maskPhone, numStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { confirmDialog } from '../lib/confirm.ts';
 
@@ -23,7 +23,6 @@ const STATUS_OPTS = ['prospect', 'cliente', 'descartado'] as const;
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 const FILTERS_OPEN_KEY = 'funil:filtersOpen';
 const KPIS_OPEN_KEY = 'funil:kpisOpen';
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // Card do board: /api/kanban devolve a contagem de amostras (amostras_count)
 // em vez do array completo — a lista é carregada sob demanda no modal de amostras.
@@ -691,7 +690,7 @@ function NovoContato({ companyId, onCreated, onCancel }: {
 
   const save = async (): Promise<void> => {
     if (!nome.trim()) return;
-    if (email.trim() && !EMAIL_RE.test(email.trim())) { toast.error('E-mail inválido.'); return; }
+    if (email.trim() && !isEmail(email)) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try {
       const r = await api.post<{ contact: Contact }>('/api/contacts', {

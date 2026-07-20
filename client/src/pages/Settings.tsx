@@ -5,7 +5,7 @@ import { Btn, Card, PageHeader, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
 import { useOptionalUser, useAuth } from '../lib/auth.tsx';
 import { toast } from '../lib/toast.tsx';
-import { clampNum, dec, maskPct } from '../lib/format.ts';
+import { clampNum, dec, isEmail, maskPct } from '../lib/format.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
 type Section = 'funil' | 'cenarios' | 'acoes' | 'aliquotas' | 'alertas' | 'smtp' | 'whatsapp';
@@ -146,6 +146,7 @@ function SmtpEditor({ inputCls }: { inputCls: string }): React.JSX.Element {
 
   const save = async (): Promise<void> => {
     if (!host.trim() || !fromEmail.trim()) { toast.error('Informe o host e o e-mail de origem.'); return; }
+    if (!isEmail(fromEmail)) { toast.error('E-mail de origem inválido.'); return; }
     setBusy(true);
     try {
       await api.put('/api/settings/smtp', {

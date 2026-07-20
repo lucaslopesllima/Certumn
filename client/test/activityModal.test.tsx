@@ -137,7 +137,7 @@ describe('ActivityCreateModal', () => {
     await userEvent.type(screen.getByPlaceholderText(/Texto da mensagem/), 'Olá!');
     await userEvent.click(screen.getByRole('button', { name: /Salvar/ }));
     await waitFor(() => expect(m.post).toHaveBeenCalledWith('/api/whatsapp/chats/schedule-direct',
-      expect.objectContaining({ numero: '11955550000', text: 'Olá!', company_id: 5, contact_id: 1 })));
+      expect.objectContaining({ numero: '(11) 95555-0000', text: 'Olá!', company_id: 5, contact_id: 1 })));
     expect(toast.success).toHaveBeenCalledWith('WhatsApp agendado.');
     expect(onSaved).toHaveBeenCalled();
   });

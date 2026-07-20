@@ -3,6 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth.tsx';
 import { Btn, cn } from '../lib/ui.tsx';
 import { Icon, type IconName } from '../lib/icons.tsx';
+import { isEmail } from '../lib/format.ts';
 
 const FEATURES: { icon: IconName; title: string; desc: string }[] = [
   { icon: 'target', title: 'Recomendação explicável', desc: 'Empresas ranqueadas por CNAE, proximidade e porte.' },
@@ -25,6 +26,9 @@ export function Login(): React.JSX.Element {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     setErr('');
+    // só no cadastro: no login o formato não importa (a senha decide) e não
+    // vale bloquear um e-mail legado que o type="email" nativo aceitou.
+    if (mode === 'register' && !isEmail(email)) { setErr('E-mail inválido.'); return; }
     setBusy(true);
     try {
       if (mode === 'login') await login(email, senha);

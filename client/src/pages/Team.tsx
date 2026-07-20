@@ -4,7 +4,7 @@ import { useAuth } from '../lib/auth.tsx';
 import type { GoalProgress, OrgUser, PermissionGroup, RepresentedCompany } from '../lib/types.ts';
 import { Badge, Btn, Card, EmptyState, PageHeader, SafeButton, Segmented, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { brl, dec, maskMoney, todayStr } from '../lib/format.ts';
+import { brl, dec, isEmail, maskMoney, todayStr } from '../lib/format.ts';
 import { toast } from '../lib/toast.tsx';
 import { confirmDialog } from '../lib/confirm.ts';
 
@@ -74,6 +74,7 @@ function Usuarios(): React.JSX.Element {
 
   const create = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
+    if (!isEmail(email)) { toast.error('E-mail inválido.'); return; }
     setBusy(true); setErr('');
     try {
       await api.post('/api/users', {

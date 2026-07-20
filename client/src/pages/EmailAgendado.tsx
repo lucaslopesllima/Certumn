@@ -7,6 +7,7 @@ import { CompanySearch } from '../lib/companySearch.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import { toast } from '../lib/toast.tsx';
 import { confirmDialog, serieScopeDialog } from '../lib/confirm.ts';
+import { EMAIL_RE, isEmail } from '../lib/format.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
 
@@ -38,9 +39,6 @@ const toLocalInput = (iso: string): string => {
 
 // Quebra uma string de e-mails (vírgula/;/espaço/linha) em tokens não vazios.
 const splitEmails = (s: string): string[] => s.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean);
-
-// Valida formato de e-mail (não só presença de "@").
-const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 type Tab = 'agendados' | 'templates';
 
@@ -269,6 +267,7 @@ function ScheduleModal({ schedule, templates, onClose, onSaved }: {
       toast.error('Preencha remetente, ao menos um destinatário, assunto, corpo e a data/hora.');
       return;
     }
+    if (!isEmail(remetente)) { toast.error('E-mail do remetente inválido.'); return; }
     const repete = recorrencia !== 'nenhuma';
     if ((regen || !schedule) && repete && (quantidade < 2 || quantidade > 60)) { toast.error('Quantidade deve ser de 2 a 60.'); return; }
     setBusy(true);

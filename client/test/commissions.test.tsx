@@ -94,7 +94,7 @@ describe('Commissions · extrato', () => {
 
     await userEvent.click(screen.getAllByRole('button', { name: 'Dar baixa' })[0]!);
     const modal = screen.getByText(/Baixa da comissão · pedido #12/).closest('form') ?? document.body;
-    expect(screen.getByLabelText('Valor recebido *')).toHaveValue(100); // prefill do previsto
+    expect(screen.getByLabelText('Valor recebido *')).toHaveValue('100'); // prefill do previsto
     await userEvent.click(within(modal as HTMLElement).getByRole('button', { name: /Confirmar baixa/ }));
     await waitFor(() => expect(m.patch).toHaveBeenCalledWith('/api/commissions/1/settle', expect.objectContaining({
       valor_recebido: 100, observacao: null,

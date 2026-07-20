@@ -5,7 +5,7 @@ import { api, getToken, ApiError } from '../lib/api.ts';
 import { toast } from '../lib/toast.tsx';
 import { Btn, Card, SafeButton, Spinner, cn } from '../lib/ui.tsx';
 import { Icon } from '../lib/icons.tsx';
-import { maskPhone } from '../lib/format.ts';
+import { isEmail, maskPhone } from '../lib/format.ts';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { OrderModal } from '../lib/orderModal.tsx';
 import { useAuth } from '../lib/auth.tsx';
@@ -726,7 +726,7 @@ function NumberModal({ chatId, onClose, onSet }: { chatId: number; onClose: () =
         Este contato chegou como <b>LID</b> (número oculto pelo WhatsApp). Informe o telefone com DDD
         para confirmar o destinatário e habilitar o envio.
       </p>
-      <input value={numero} onChange={(e) => setNumero(maskPhone(e.target.value))} inputMode="numeric"
+      <input value={numero} onChange={(e) => setNumero(maskPhone(e.target.value))} inputMode="tel"
         placeholder="(11) 98765-4321" className={inputCls} autoFocus />
       <Btn onClick={() => confirm()} disabled={busy} icon="check">{busy ? 'Confirmando…' : 'Confirmar número'}</Btn>
     </Overlay>
@@ -749,7 +749,7 @@ function ContactFormModal({ companyId, contact, defaultPhone, onClose, onSaved, 
     const n = nome.trim();
     if (!n) { toast.error('Informe o nome.'); return; }
     const em = email.trim();
-    if (em && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast.error('E-mail inválido.'); return; }
+    if (em && !isEmail(em)) { toast.error('E-mail inválido.'); return; }
     setBusy(true);
     try {
       const body = {

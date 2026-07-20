@@ -6,7 +6,7 @@ import { Icon } from '../lib/icons.tsx';
 import { useAuth } from '../lib/auth.tsx';
 import { CompanySearch } from '../lib/companySearch.tsx';
 import { toast } from '../lib/toast.tsx';
-import { maskCNPJ } from '../lib/format.ts';
+import { invalidCNPJ, maskCNPJ } from '../lib/format.ts';
 import { confirmDialog } from '../lib/confirm.ts';
 
 const inputCls = 'w-full rounded-xl border border-ink-200 bg-surface px-3 py-2.5 text-sm text-ink-800 outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-200';
@@ -136,6 +136,7 @@ function EmpresaForm({ inputCls, initial, onSave, onCancel }: {
   const submit = async (e: React.FormEvent): Promise<void> => {
     e.preventDefault();
     if (!f.nome.trim()) return;
+    if (invalidCNPJ(f.cnpj)) { toast.error('CNPJ inválido.'); return; }
     setBusy(true);
     try { await onSave(f); } finally { setBusy(false); }
   };
@@ -154,9 +155,9 @@ function EmpresaForm({ inputCls, initial, onSave, onCancel }: {
       <input autoFocus value={f.nome} onChange={set('nome')} maxLength={200} placeholder="Nome da empresa / marca *" className={inputCls} />
       <div className="grid gap-2.5 sm:grid-cols-2">
         <input value={f.segmento} onChange={set('segmento')} maxLength={120} placeholder="Segmento (ex.: Calçados)" className={inputCls} />
-        <input value={f.cnpj} inputMode="numeric" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
+        <input value={f.cnpj} autoCapitalize="characters" onChange={(e) => setF((p) => ({ ...p, cnpj: maskCNPJ(e.target.value) }))} placeholder="CNPJ" className={inputCls} />
         <input type="text" value={f.contato} onChange={set('contato')} maxLength={120} placeholder="Contato (telefone/e-mail)" className={inputCls} />
-        <input value={f.site} onChange={set('site')} maxLength={200} placeholder="Site" className={inputCls} />
+        <input value={f.site} inputMode="url" autoCapitalize="off" onChange={set('site')} maxLength={200} placeholder="Site" className={inputCls} />
       </div>
       <textarea value={f.notas} onChange={set('notas')} maxLength={2000} placeholder="Notas (linha de produtos, comissão, etc.)" rows={2} className={cn(inputCls, 'resize-y')} />
       <div className="flex justify-end gap-2">
