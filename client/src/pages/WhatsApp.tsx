@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import './whatsapp-theme.css';
 import { useSearchParams } from 'react-router-dom';
 import { api, getToken, ApiError } from '../lib/api.ts';
@@ -1162,6 +1162,9 @@ export function WhatsApp(): React.JSX.Element {
 
   const openChat = (id: number): void => {
     setActiveId(id);
+    // Zera as mensagens da conversa anterior: sem isso a lista antiga fica na
+    // tela até a resposta chegar e o scroll ancora no lugar errado.
+    if (activeRef.current !== id) setMessages([]);
     void api.get<{ messages: WaMessage[] }>(`/api/whatsapp/chats/${id}/messages`)
       .then((r) => setMessages(r.messages)).catch(() => undefined);
     setChats((cs) => cs.map((c) => (c.id === id ? { ...c, nao_lidas: 0 } : c)));
@@ -1429,8 +1432,13 @@ export function WhatsApp(): React.JSX.Element {
   // Lista com separadores de data entre dias.
   const listItems = useMemo(() => messageList(messages, setLightbox, startNote), [messages, startNote]);
 
-  // Rola pro fim ao trocar de conversa ou chegar mensagem (a lib fazia sozinha).
-  useEffect(() => { listEndRef.current?.scrollIntoView({ block: 'end' }); }, [messages, activeId]);
+  // Rola pro fim ao trocar de conversa ou chegar mensagem. scrollTop direto (e
+  // antes da pintura) em vez de scrollIntoView: o scrollIntoView também rolava
+  // ancestrais e às vezes parava antes da última mensagem.
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (canvas) canvas.scrollTop = canvas.scrollHeight;
+  }, [messages, activeId]);
 
   // Mídia (imagens) carrega depois do scroll inicial e empurra a lista pra baixo.
   // Enquanto o usuário estiver no fim (não rolou pra cima), qualquer crescimento
@@ -1440,6 +1448,7 @@ export function WhatsApp(): React.JSX.Element {
     const content = listContentRef.current;
     if (!canvas || !content || activeId == null || typeof ResizeObserver === 'undefined') return;
     let stick = true;
+    canvas.scrollTop = canvas.scrollHeight; // ancora na abertura da conversa
     const onScroll = (): void => {
       stick = canvas.scrollHeight - canvas.scrollTop - canvas.clientHeight < 80;
     };
