@@ -19,3 +19,5 @@ coverage/
 # backups e config rclone de produção
 backups/
 rclone/
+
+*.tsbuildinfo
