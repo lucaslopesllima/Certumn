@@ -121,6 +121,8 @@ describe('webhook — messages.upsert', () => {
     ['contato', { message: { contactMessage: { displayName: 'Fulano' } }, key: { remoteJid: '5511900000021@s.whatsapp.net', fromMe: false, id: 'T-ctt' } }, '👤 Fulano', 'texto'],
     ['enquete', { message: { pollCreationMessageV3: { name: 'Almoço onde?' } }, key: { remoteJid: '5511900000022@s.whatsapp.net', fromMe: false, id: 'T-poll' } }, '📊 Almoço onde?', 'texto'],
     ['resposta de botão', { message: { buttonsResponseMessage: { selectedDisplayText: 'Sim' } }, key: { remoteJid: '5511900000023@s.whatsapp.net', fromMe: false, id: 'T-btn' } }, 'Sim', 'texto'],
+    ['template (hydrated)', { message: { templateMessage: { hydratedTemplate: { hydratedContentText: 'assine o contrato' } } }, key: { remoteJid: '5511900000027@s.whatsapp.net', fromMe: false, id: 'T-tpl' } }, 'assine o contrato', 'texto'],
+    ['template (interactive)', { message: { templateMessage: { interactiveMessageTemplate: { body: { text: 'campanha' } } } }, key: { remoteJid: '5511900000028@s.whatsapp.net', fromMe: false, id: 'T-tpl2' } }, 'campanha', 'texto'],
     // Envelopes: o conteúdo real vem aninhado — sem desembrulhar o balão entrava vazio.
     ['efêmera (envelope)', { message: { ephemeralMessage: { message: { conversation: 'some em 24h' } } }, key: { remoteJid: '5511900000024@s.whatsapp.net', fromMe: false, id: 'T-eph' } }, 'some em 24h', 'texto'],
     ['visualização única (envelope)', { message: { viewOnceMessageV2: { message: { imageMessage: { caption: 'vo', mimetype: 'image/png' } } } }, key: { remoteJid: '5511900000025@s.whatsapp.net', fromMe: false, id: 'T-vo' } }, 'vo', 'imagem'],
@@ -142,6 +144,10 @@ describe('webhook — messages.upsert', () => {
     ['reação', { message: { reactionMessage: { text: '👍' } }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-rea' } }],
     ['distribuição de chave', { message: { senderKeyDistributionMessage: {} }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-key' } }],
     ['revogação', { message: { protocolMessage: { type: 'REVOKE' } }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-rev' } }],
+    // Cabeçalho de álbum: só diz quantas mídias vêm; cada imagem chega em mensagem própria.
+    ['cabeçalho de álbum', { message: { albumMessage: { expectedImageCount: 2 } }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-alb' } }],
+    ['voto de enquete cifrado', { message: { secretEncryptedMessage: { encIv: 'x' } }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-sec' } }],
+    ['aviso de sincronia de histórico', { message: { messageHistoryNotice: {} }, key: { remoteJid: '5511900000016@s.whatsapp.net', fromMe: false, id: 'N-hist' } }],
   ])('ignora ruído de protocolo: %s', async (_label, over) => {
     await post(upsertEvent(msg(over as Record<string, unknown>)));
     const key = (over as { key: { id: string } }).key.id;

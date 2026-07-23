@@ -61,6 +61,14 @@ function extractText(message: Msg): string | null {
   const loc = message.locationMessage as { name?: string; address?: string } | undefined;
   const contato = message.contactMessage as { displayName?: string } | undefined;
   const enquete = (message.pollCreationMessage ?? message.pollCreationMessageV2 ?? message.pollCreationMessageV3) as { name?: string } | undefined;
+  // Template (mensagem de negócio/campanha): o texto fica em hydratedTemplate
+  // (.hydratedContentText) ou, no formato novo, em interactiveMessageTemplate.body.
+  const tpl = message.templateMessage as {
+    hydratedTemplate?: { hydratedContentText?: string; hydratedTitleText?: string };
+    hydratedFourRowTemplate?: { hydratedContentText?: string };
+    interactiveMessageTemplate?: { body?: { text?: string } };
+  } | undefined;
+  const inter = message.interactiveMessage as { body?: { text?: string } } | undefined;
   return s((message.conversation as string))
     ?? s((message.extendedTextMessage as { text?: string } | undefined)?.text)
     ?? cap('imageMessage') ?? cap('videoMessage') ?? cap('ptvMessage') ?? cap('documentMessage')
@@ -69,6 +77,9 @@ function extractText(message: Msg): string | null {
     ?? s((message.templateButtonReplyMessage as { selectedDisplayText?: string } | undefined)?.selectedDisplayText)
     ?? s((message.listResponseMessage as { title?: string } | undefined)?.title)
     ?? s((message.interactiveResponseMessage as { body?: { text?: string } } | undefined)?.body?.text)
+    ?? s(tpl?.hydratedTemplate?.hydratedContentText) ?? s(tpl?.hydratedFourRowTemplate?.hydratedContentText)
+    ?? s(tpl?.interactiveMessageTemplate?.body?.text) ?? s(tpl?.hydratedTemplate?.hydratedTitleText)
+    ?? s(inter?.body?.text)
     ?? (contato ? `👤 ${contato.displayName ?? 'Contato'}` : undefined)
     ?? (message.contactsArrayMessage ? '👤 Contatos' : undefined)
     ?? (loc ? `📍 ${loc.name ?? loc.address ?? 'Localização'}` : undefined)
