@@ -32,10 +32,20 @@ export async function setStatus(orgId: number, status: string, numero?: string |
   );
 }
 
+// Invalidação do cache local da foto: a URL do CDN é só a origem — quando ela
+// muda (contato trocou a foto), os bytes cacheados não valem mais e são zerados
+// pra rebaixar na próxima leitura de /chats/:id/foto.
+const FOTO_CACHE_RESET = `
+  foto_path = CASE WHEN foto_url IS DISTINCT FROM $3 THEN NULL ELSE foto_path END,
+  foto_b64  = CASE WHEN foto_url IS DISTINCT FROM $3 THEN NULL ELSE foto_b64 END,
+  foto_mime = CASE WHEN foto_url IS DISTINCT FROM $3 THEN NULL ELSE foto_mime END,
+  foto_at   = CASE WHEN foto_url IS DISTINCT FROM $3 THEN NULL ELSE foto_at END`;
+
 // Atualiza a foto de perfil da conversa (best-effort, vinda do CDN do WhatsApp).
 export async function updateFoto(orgId: number, jid: string, url: string | null): Promise<void> {
   await query(
-    'UPDATE whatsapp_chats SET foto_url = $3 WHERE org_id = $1 AND remote_jid = $2', [orgId, jid, url],
+    `UPDATE whatsapp_chats SET foto_url = $3, ${FOTO_CACHE_RESET} WHERE org_id = $1 AND remote_jid = $2`,
+    [orgId, jid, url],
   );
 }
 
@@ -43,8 +53,43 @@ export async function updateFoto(orgId: number, jid: string, url: string | null)
 // (@lid conciliado) e pode não ser o remote_jid primário.
 export async function updateFotoById(orgId: number, chatId: string, url: string | null): Promise<void> {
   await query(
-    'UPDATE whatsapp_chats SET foto_url = $3 WHERE org_id = $1 AND id = $2', [orgId, chatId, url],
+    `UPDATE whatsapp_chats SET foto_url = $3, ${FOTO_CACHE_RESET} WHERE org_id = $1 AND id = $2`,
+    [orgId, chatId, url],
   );
+}
+
+// Hosts de onde o app aceita baixar foto de perfil. A URL vem da Evolution (não
+// é entrada do usuário, mas também não é confiável): sem allowlist o endpoint
+// vira um SSRF — a URL apontaria pra rede interna do compose (evolution, db) e o
+// app buscaria por ela. Só https e só CDN da Meta.
+function fotoHostPermitido(u: URL): boolean {
+  if (u.protocol !== 'https:') return false;
+  const h = u.hostname.toLowerCase();
+  return h === 'whatsapp.net' || h.endsWith('.whatsapp.net')
+      || h === 'fbcdn.net' || h.endsWith('.fbcdn.net');
+}
+
+const FOTO_MAX_BYTES = 2 * 1024 * 1024; // avatar é sempre pequeno (~dezenas de KB)
+const FOTO_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
+// Baixa os bytes da foto de perfil do CDN. Devolve null quando a URL não é
+// aceitável, expirou (403/404 — comum: o param `oe` da URL do pps caduca), não é
+// imagem ou estoura o teto de tamanho. Nunca lança por falha de rede.
+export async function downloadFoto(url: string): Promise<{ buf: Buffer; mime: string } | null> {
+  let u: URL;
+  try { u = new URL(url); } catch { return null; }
+  if (!fotoHostPermitido(u)) return null;
+  try {
+    const res = await fetch(u, { redirect: 'error', signal: AbortSignal.timeout(10_000) });
+    if (!res.ok) return null;
+    const mime = (res.headers.get('content-type') ?? '').split(';')[0]!.trim().toLowerCase();
+    if (!FOTO_MIMES.has(mime)) return null;
+    const len = Number(res.headers.get('content-length') ?? 0);
+    if (len > FOTO_MAX_BYTES) return null;
+    const buf = Buffer.from(await res.arrayBuffer());
+    if (buf.length === 0 || buf.length > FOTO_MAX_BYTES) return null;
+    return { buf, mime };
+  } catch { return null; }
 }
 
 // Define o nome da conversa (usado p/ o subject do grupo, que o webhook não traz).
@@ -370,6 +415,12 @@ export async function mergeChats(orgId: number, primaryId: number, otherId: numb
            lid = COALESCE(p.lid, o.lid),
            nome = COALESCE(p.nome, o.nome),
            foto_url = COALESCE(p.foto_url, o.foto_url),
+           -- cache da foto só continua válido se a URL vencedora for a da primária;
+           -- herdando a URL da outra, zera pra rebaixar os bytes na próxima leitura.
+           foto_path = CASE WHEN p.foto_url IS NULL THEN NULL ELSE p.foto_path END,
+           foto_b64  = CASE WHEN p.foto_url IS NULL THEN NULL ELSE p.foto_b64 END,
+           foto_mime = CASE WHEN p.foto_url IS NULL THEN NULL ELSE p.foto_mime END,
+           foto_at   = CASE WHEN p.foto_url IS NULL THEN NULL ELSE p.foto_at END,
            company_id = COALESCE(p.company_id, o.company_id),
            relationship_id = COALESCE(p.relationship_id, o.relationship_id),
            last_message_at = GREATEST(p.last_message_at, o.last_message_at),

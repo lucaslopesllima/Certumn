@@ -289,8 +289,20 @@ describe('WhatsApp — lista e mensagens', () => {
     expect(screen.getByText('Carlos')).toBeInTheDocument();
     // documento com nome de arquivo
     expect(await screen.findByText('doc.pdf')).toBeInTheDocument();
-    // imagem carregada via fetch autenticado
-    await waitFor(() => expect([...utils.container.querySelectorAll('img')].some((i) => i.src === 'blob:mock')).toBe(true));
+    // imagem carregada via fetch autenticado (o avatar da conversa também vem por
+    // blob — filtra pela classe do balão pra não casar com ele)
+    await waitFor(() => expect([...utils.container.querySelectorAll('img')]
+      .some((i) => i.src === 'blob:mock' && i.className.includes('max-w-[240px]'))).toBe(true));
+  });
+
+  it('avatar vem do proxy do app, nunca do CDN do WhatsApp', async () => {
+    const utils = await mountConnected();
+    const avatares = [...utils.container.querySelectorAll('img')].filter((i) => i.className.includes('rounded-full'));
+    // nenhum <img> aponta pro foto_url (CDN): a CSP de produção bloqueia e a URL caduca
+    expect(avatares.some((i) => i.src.includes('x/a.png'))).toBe(false);
+    // conversa com foto: blob do proxy; conversa sem foto: SVG com a inicial
+    await waitFor(() => expect(avatares.some((i) => i.src === 'blob:mock')).toBe(true));
+    expect(avatares.some((i) => i.src.startsWith('data:image/svg+xml'))).toBe(true);
   });
 
   it('nota pendurada aparece colada na mensagem de origem, fora da ordem cronológica', async () => {
@@ -313,7 +325,8 @@ describe('WhatsApp — lista e mensagens', () => {
     await openChat('Alice');
     let blobImg: HTMLImageElement | undefined;
     await waitFor(() => {
-      blobImg = [...utils.container.querySelectorAll('img')].find((i) => i.src === 'blob:mock');
+      // a imagem do balão (não o avatar da conversa, que também é blob)
+      blobImg = [...utils.container.querySelectorAll('img')].find((i) => i.src === 'blob:mock' && i.className.includes('max-w-[240px]'));
       expect(blobImg).toBeTruthy();
     });
     fireEvent.click(blobImg!);

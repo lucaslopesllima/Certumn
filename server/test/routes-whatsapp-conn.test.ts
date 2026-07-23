@@ -267,3 +267,127 @@ describe('whatsapp — proxy de mídia', () => {
     expect((await media(id2, auth())).statusCode).toBe(502);
   });
 });
+
+describe('whatsapp — proxy da foto de perfil', () => {
+  const png = Buffer.from('89504e470d0a1a0a-fake-png', 'utf8');
+  const CDN = 'https://pps.whatsapp.net/v/t61/foto.jpg?oe=abc';
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  // fetch global mockado: downloadFoto (whatsapp.ts) sai pra internet.
+  beforeEach(() => {
+    fetchMock = vi.fn(async () => new Response(png, { headers: { 'content-type': 'image/jpeg' } }));
+    vi.stubGlobal('fetch', fetchMock);
+  });
+  afterAll(() => { vi.unstubAllGlobals(); });
+
+  const foto = (id: string, headers: Record<string, string> = {}): ReturnType<FastifyInstance['inject']> =>
+    app.inject({ method: 'GET', url: `/api/whatsapp/chats/${id}/foto`, headers });
+  const auth = (): Record<string, string> => ({ authorization: `Bearer ${s.token}` });
+  const mkFoto = async (url: string | null, jid = `5511820${Math.floor(Math.random() * 1e6)}@s.whatsapp.net`): Promise<string> => {
+    const id = await mkChat(jid, '5511820');
+    if (url) await query('UPDATE whatsapp_chats SET foto_url = $2 WHERE id = $1', [id, url]);
+    return id;
+  };
+
+  it('sem token 401; token inválido 401; token via query vale', async () => {
+    const id = await mkFoto(CDN);
+    expect((await foto(id)).statusCode).toBe(401);
+    expect((await foto(id, { authorization: 'Bearer lixo.invalido' })).statusCode).toBe(401);
+    expect((await app.inject({ method: 'GET', url: `/api/whatsapp/chats/${id}/foto?token=${s.token}` })).statusCode).toBe(200);
+  });
+
+  it('conversa inexistente → 404', async () => {
+    expect((await foto('999999', auth())).statusCode).toBe(404);
+  });
+
+  it('baixa do CDN, serve inline com nosniff e cacheia em disco', async () => {
+    const id = await mkFoto(CDN);
+    const r = await foto(id, auth());
+    expect(r.statusCode).toBe(200);
+    expect(r.headers['content-type']).toContain('image/jpeg');
+    expect(r.headers['x-content-type-options']).toBe('nosniff');
+    expect(r.headers['cache-control']).toBe('private, no-cache');
+    expect(r.rawPayload.equals(png)).toBe(true);
+    const row = await one<{ foto_path: string | null; foto_mime: string | null; foto_at: string | null }>(
+      'SELECT foto_path, foto_mime, foto_at FROM whatsapp_chats WHERE id = $1', [id]);
+    expect(row!.foto_path).toBe(`${org}/avatar-${id}.jpg`);
+    expect(row!.foto_mime).toBe('image/jpeg');
+    expect(row!.foto_at).toBeTruthy();
+    // 2ª leitura vem do disco: não bate de novo no CDN.
+    fetchMock.mockClear();
+    const r2 = await foto(id, auth());
+    expect(r2.statusCode).toBe(200);
+    expect(r2.rawPayload.equals(png)).toBe(true);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('If-None-Match com a foto cacheada devolve 304', async () => {
+    const id = await mkFoto(CDN);
+    const r = await foto(id, auth());
+    const r2 = await foto(id, { ...auth(), 'if-none-match': r.headers.etag as string });
+    expect(r2.statusCode).toBe(304);
+  });
+
+  it('disco desligado cacheia base64 na linha', async () => {
+    config.whatsappMediaDir = '';
+    try {
+      const id = await mkFoto(CDN);
+      expect((await foto(id, auth())).statusCode).toBe(200);
+      const row = await one<{ foto_b64: string | null }>('SELECT foto_b64 FROM whatsapp_chats WHERE id = $1', [id]);
+      expect(row!.foto_b64).toBe(png.toString('base64'));
+    } finally { config.whatsappMediaDir = mediaDir; }
+  });
+
+  it('URL expirada: rebaixa na Evolution, grava a nova e serve', async () => {
+    const id = await mkFoto(CDN);
+    const nova = 'https://pps.whatsapp.net/v/t61/nova.jpg?oe=def';
+    fetchMock.mockImplementationOnce(async () => new Response('', { status: 403 })); // URL velha caducou
+    evoMock.profilePicture.mockResolvedValueOnce(nova);
+    const r = await foto(id, auth());
+    expect(r.statusCode).toBe(200);
+    expect(fetchMock.mock.calls[1]![0]!.toString()).toBe(nova);
+    const row = await one<{ foto_url: string }>('SELECT foto_url FROM whatsapp_chats WHERE id = $1', [id]);
+    expect(row!.foto_url).toBe(nova);
+  });
+
+  it('grupo usa groupInfo pra descobrir a foto', async () => {
+    const id = await mkFoto(null, `12036304@g.us`);
+    evoMock.groupInfo.mockResolvedValueOnce({ subject: 'G', pictureUrl: CDN });
+    expect((await foto(id, auth())).statusCode).toBe(200);
+    expect(evoMock.profilePicture).not.toHaveBeenCalled();
+  });
+
+  it('sem foto no WhatsApp → 404 (client cai na inicial)', async () => {
+    const id = await mkFoto(null);
+    evoMock.profilePicture.mockResolvedValueOnce(null);
+    expect((await foto(id, auth())).statusCode).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('URL fora do CDN da Meta não é buscada (anti-SSRF)', async () => {
+    const id = await mkFoto('http://evolution:8080/interno');
+    evoMock.profilePicture.mockResolvedValueOnce(null);
+    expect((await foto(id, auth())).statusCode).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled(); // nem tentou bater no host interno
+  });
+
+  it('resposta que não é imagem é descartada', async () => {
+    const id = await mkFoto(CDN);
+    fetchMock.mockImplementationOnce(async () => new Response('<html>', { headers: { 'content-type': 'text/html' } }));
+    evoMock.profilePicture.mockResolvedValueOnce(null);
+    expect((await foto(id, auth())).statusCode).toBe(404);
+    const row = await one<{ foto_path: string | null }>('SELECT foto_path FROM whatsapp_chats WHERE id = $1', [id]);
+    expect(row!.foto_path).toBeNull();
+  });
+
+  it('troca da foto no WhatsApp invalida o cache', async () => {
+    const id = await mkFoto(CDN);
+    await foto(id, auth());
+    const { updateFotoById } = await import('../src/whatsapp.ts');
+    await updateFotoById(org, id, 'https://pps.whatsapp.net/v/t61/outra.jpg?oe=999');
+    const row = await one<{ foto_path: string | null; foto_at: string | null }>(
+      'SELECT foto_path, foto_at FROM whatsapp_chats WHERE id = $1', [id]);
+    expect(row!.foto_path).toBeNull();
+    expect(row!.foto_at).toBeNull();
+  });
+});

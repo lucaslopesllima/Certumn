@@ -41,6 +41,17 @@ export async function saveMedia(
   return rel;
 }
 
+// Grava a foto de perfil de uma conversa em <dir>/<orgId>/avatar-<chatId>.<ext>.
+// Mesmo volume da mídia; nome gerado por nós — sem entrada do usuário.
+export async function saveAvatar(
+  orgId: number, chatId: string, buf: Buffer, mime: string | null,
+): Promise<string> {
+  const rel = `${orgId}/avatar-${chatId}.${extFor(mime)}`;
+  await mkdir(join(config.whatsappMediaDir, String(orgId)), { recursive: true });
+  await writeFile(join(config.whatsappMediaDir, rel), buf);
+  return rel;
+}
+
 // Resolve o caminho absoluto validando que fica dentro do diretório configurado
 // (defesa em profundidade contra path traversal) — relPath vem do banco.
 function resolveMediaPath(relPath: string): string {

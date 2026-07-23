@@ -47,14 +47,66 @@ function chatIdent(c: WaChat): string {
   return parts.join(' · ') || c.remote_jid.split('@')[0];
 }
 
-// Avatar: foto do WhatsApp quando houver; senão um SVG com a inicial (evita
-// imagem quebrada que o componente Avatar mostraria sem src).
-function avatarSrc(c: WaChat): string {
-  if (c.foto_url) return c.foto_url;
+// Fallback do avatar: SVG com a inicial do nome (evita imagem quebrada quando a
+// conversa não tem foto ou o download falha).
+function avatarFallback(c: WaChat): string {
   const ch = (nomeChat(c).trim()[0] ?? '?').toUpperCase();
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='80' height='80'><rect width='100%' height='100%' fill='#25D366'/><text x='50%' y='52%' dy='.35em' text-anchor='middle' font-size='38' fill='white' font-family='sans-serif'>${ch}</text></svg>`;
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
+
+// Cache de blobs de avatar, por (conversa, URL de origem) — a mesma foto aparece
+// na lista, no cabeçalho e nos detalhes, e a lista re-renderiza a cada mensagem:
+// sem cache seria um fetch por render. Vive só na aba; teto simples pra não
+// segurar blob de conversa nenhuma indefinidamente.
+const AVATAR_CACHE_MAX = 300;
+const avatarCache = new Map<string, string>();
+const avatarPending = new Map<string, Promise<string | null>>();
+
+function avatarKey(c: WaChat): string { return `${c.id}:${c.foto_url ?? ''}`; }
+
+// Baixa a foto pelo proxy do app (same-origin: passa na CSP, sem hotlink no CDN
+// do WhatsApp). Header Authorization — o token não vai na URL.
+async function fetchAvatar(c: WaChat): Promise<string | null> {
+  const key = avatarKey(c);
+  const hit = avatarCache.get(key);
+  if (hit) return hit;
+  const flying = avatarPending.get(key);
+  if (flying) return flying;
+  const token = getToken();
+  const p = fetch(`/api/whatsapp/chats/${c.id}/foto`, { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+    .then((r) => (r.ok ? r.blob() : Promise.reject(new Error(String(r.status)))))
+    .then((b) => {
+      const url = URL.createObjectURL(b);
+      if (avatarCache.size >= AVATAR_CACHE_MAX) {
+        const oldest = avatarCache.keys().next().value;
+        if (oldest !== undefined) { URL.revokeObjectURL(avatarCache.get(oldest)!); avatarCache.delete(oldest); }
+      }
+      avatarCache.set(key, url);
+      return url;
+    })
+    .catch(() => null)
+    .finally(() => avatarPending.delete(key));
+  avatarPending.set(key, p);
+  return p;
+}
+
+// Avatar da conversa: mostra a inicial enquanto carrega (ou se não houver foto) e
+// troca pelo blob quando chega. Sem foto_url nem tenta o fetch.
+const ChatAvatar = memo(function ChatAvatar({ chat, className }: { chat: WaChat; className: string }): ReactNode {
+  const key = avatarKey(chat);
+  const [src, setSrc] = useState<string | null>(() => avatarCache.get(key) ?? null);
+  useEffect(() => {
+    if (!chat.foto_url) { setSrc(null); return; }
+    const cached = avatarCache.get(key);
+    if (cached) { setSrc(cached); return; }
+    let alive = true;
+    void fetchAvatar(chat).then((u) => { if (alive) setSrc(u); });
+    return () => { alive = false; };
+    // `key` já resume (id, foto_url); `chat` inteiro mudaria a cada mensagem nova.
+  }, [key, chat.foto_url]);
+  return <img src={src ?? avatarFallback(chat)} alt="" className={className} />;
+});
 
 // Busca a mídia autenticada pelo header Authorization e devolve um blob URL. Sem
 // token na query: o JWT não vaza na barra de endereço, histórico, logs de proxy
@@ -430,7 +482,7 @@ function PeekModal({ chat, messages, onClose, onRead, onImage }: {
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/45 p-4" onClick={onClose}>
       <div className="wa flex h-[85vh] w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-ink-200 bg-[var(--wa-panel)] shadow-pop" onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center gap-3 border-b border-[var(--wa-border)] bg-[var(--wa-panel)] px-4 py-2.5">
-          <img src={avatarSrc(chat)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+          <ChatAvatar chat={chat} className="h-10 w-10 shrink-0 rounded-full object-cover" />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-semibold text-[var(--wa-ink)]">{nomeChat(chat)}</span>
             <span className="flex items-center gap-1 text-xs text-sky-600 dark:text-sky-400">
@@ -879,7 +931,7 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
       <div className="min-h-0 flex-1 space-y-2 overflow-auto bg-[var(--wa-bg)] pb-6">
         {/* Identidade */}
         <div className="flex flex-col items-center gap-2 bg-surface px-6 py-6">
-          <img src={avatarSrc(chat)} alt="" className="h-32 w-32 rounded-full object-cover" />
+          <ChatAvatar chat={chat} className="h-32 w-32 rounded-full object-cover" />
           <h2 className="text-xl font-semibold text-ink-900">{nomeChat(chat)}</h2>
           <p className="text-sm text-ink-500">{isGroup ? (group?.size ? `${group.size} participantes` : 'Grupo') : chatIdent(chat)}</p>
           {needsNumber && can('whatsapp.link') && (
@@ -1455,7 +1507,7 @@ export function WhatsApp(): React.JSX.Element {
               <button key={c.id} onClick={() => openChat(c.id)}
                 className={cn('group flex w-full items-center gap-3 border-b border-[var(--wa-border)] px-3 py-2.5 text-left transition-colors',
                   Number(c.id) === Number(activeId) ? 'bg-[var(--wa-active)]' : 'hover:bg-[var(--wa-hover)]')}>
-                <img src={avatarSrc(c)} alt="" className="h-12 w-12 shrink-0 rounded-full object-cover" />
+                <ChatAvatar chat={c} className="h-12 w-12 shrink-0 rounded-full object-cover" />
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center justify-between gap-2">
                     <span className="truncate font-medium text-[var(--wa-ink)]">{nomeChat(c)}</span>
@@ -1493,7 +1545,7 @@ export function WhatsApp(): React.JSX.Element {
                   <Icon name="chevronLeft" size={20} />
                 </button>
                 <button onClick={() => setDetailsOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-                  <img src={avatarSrc(active)} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" />
+                  <ChatAvatar chat={active} className="h-10 w-10 shrink-0 rounded-full object-cover" />
                   <span className="min-w-0">
                     <span className="flex items-center gap-2">
                       <span className="truncate font-semibold text-[var(--wa-ink)]">{nomeChat(active)}</span>

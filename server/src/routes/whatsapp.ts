@@ -1,16 +1,19 @@
 import type { FastifyInstance } from 'fastify';
 import type { WebSocket } from 'ws';
+import type { ReadStream } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { one, query, withClient } from '../db.ts';
 import { requireAuth, requirePermission, authorizeToken, AuthError } from '../auth.ts';
 import { invalidOrgRef } from '../orgRefs.ts';
 import { audit } from '../audit.ts';
 import * as evo from '../evolution.ts';
-import { mediaEnabled, saveMedia, mediaStream } from '../mediaStore.ts';
+import { mediaEnabled, saveMedia, saveAvatar, mediaStream } from '../mediaStore.ts';
 import { addConn, removeConn, broadcast } from '../ws.ts';
 import {
   ensureSettings, setStatus, instanceName, upsertChat, insertMessage,
   CHAT_LABELS_SQL, relationshipForCompany, numeroToJid, mergeChats, deleteChat, syncGroupNames,
   normalizeNumero, jidToNumero, findChatByNumero, scheduleWhatsappTx, insertWhatsappSeries,
+  downloadFoto, updateFotoById,
   WA_RECORRENCIAS, applySenderPrefix,
 } from '../whatsapp.ts';
 import type { WaRecorrencia } from '../whatsapp.ts';
@@ -48,6 +51,14 @@ function safeMediaType(mime: string | null): { type: string; inline: boolean } {
   const m = ((mime ?? '').split(';')[0] ?? '').trim().toLowerCase();
   if (INLINE_MEDIA_MIME.has(m)) return { type: m, inline: true };
   return { type: 'application/octet-stream', inline: false };
+}
+
+// Rebaixa a URL atual da foto de perfil na Evolution (grupo tem endpoint próprio).
+// Usado quando não há URL guardada ou a guardada expirou.
+async function refreshFotoUrl(orgId: number, jid: string): Promise<string | null> {
+  const inst = instanceName(orgId);
+  if (jid.endsWith('@g.us')) return (await evo.groupInfo(inst, jid)).pictureUrl;
+  return evo.profilePicture(inst, jidToNumero(jid));
 }
 
 // 'open' (Evolution) -> 'conectado' etc. Normaliza p/ o vocabulário do front.
@@ -329,6 +340,78 @@ export function whatsappRoutes(app: FastifyInstance): void {
     }
     cacheHeaders();
     return reply.type(applyType(mime)).send(buf);
+  });
+
+  // Proxy da foto de perfil da conversa. O client NÃO aponta o <img> pro CDN do
+  // WhatsApp: a CSP do app (helmet, app.ts) só libera imagens da própria origem,
+  // as URLs do pps caducam (param `oe`) e o hotlink vazaria o IP do usuário pro
+  // CDN da Meta. Aqui o app baixa os bytes uma vez, cacheia (disco ou base64 na
+  // linha, igual à mídia) e serve same-origin. URL caduca → rebaixa a URL na
+  // Evolution e tenta de novo. compress:false: JPEG/PNG já vêm comprimidos.
+  app.get('/api/whatsapp/chats/:id/foto', { compress: false }, async (req, reply) => {
+    const header = req.headers.authorization;
+    const token = header?.startsWith('Bearer ') ? header.slice(7) : (req.query as { token?: string }).token;
+    if (!token) return reply.code(401).send({ error: 'sem token' });
+    let orgId: number;
+    try { orgId = (await authorizeToken(token, 'whatsapp.view')).orgId; }
+    catch (e) { return reply.code(e instanceof AuthError ? 403 : 401).send({ error: 'não autorizado' }); }
+    const id = (req.params as { id: string }).id;
+    const chat = await one<{ id: string; remote_jid: string; numero: string | null; foto_url: string | null; foto_path: string | null; foto_b64: string | null; foto_mime: string | null }>(
+      `SELECT id, remote_jid, numero, foto_url, foto_path, foto_b64, foto_mime
+         FROM whatsapp_chats WHERE id = $1 AND org_id = $2`,
+      [id, orgId],
+    );
+    if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
+
+    // ETag pela URL de origem: mudou a foto no WhatsApp → muda a URL → muda o
+    // ETag. no-cache (revalida sempre) porque o path da requisição é fixo: com
+    // max-age o browser serviria a foto antiga até expirar.
+    const etag = `"wa-foto-${id}-${createHash('sha1').update(chat.foto_url ?? '').digest('hex').slice(0, 16)}"`;
+    const serve = (buf: Buffer | ReadStream, mime: string | null, size?: number): unknown => {
+      reply.header('etag', etag);
+      reply.header('cache-control', 'private, no-cache');
+      reply.header('x-content-type-options', 'nosniff');
+      reply.header('content-disposition', 'inline');
+      if (size !== undefined) reply.header('content-length', size);
+      // Allowlist estreita: só os formatos que aceitamos ao baixar (whatsapp.ts).
+      const safe = mime && ['image/jpeg', 'image/png', 'image/webp'].includes(mime) ? mime : 'application/octet-stream';
+      return reply.type(safe).send(buf);
+    };
+    if (req.headers['if-none-match'] === etag && (chat.foto_path || chat.foto_b64)) {
+      reply.header('etag', etag);
+      reply.header('cache-control', 'private, no-cache');
+      return reply.code(304).send();
+    }
+
+    // 1) cache em disco (preferido) → 2) base64 na linha.
+    if (chat.foto_path) {
+      try {
+        const { stream, size } = await mediaStream(chat.foto_path);
+        return serve(stream, chat.foto_mime, size);
+      } catch { /* arquivo sumiu: rebaixa abaixo */ }
+    }
+    if (chat.foto_b64) return serve(Buffer.from(chat.foto_b64, 'base64'), chat.foto_mime);
+
+    // 3) sem cache: baixa da URL conhecida; se falhar (URL expirada ou ausente),
+    // pede a URL atual pra Evolution e tenta uma vez mais.
+    let got = chat.foto_url ? await downloadFoto(chat.foto_url) : null;
+    if (!got) {
+      const fresh = await refreshFotoUrl(orgId, chat.remote_jid).catch(() => null);
+      if (!fresh) return reply.code(404).send({ error: 'sem foto' });
+      await updateFotoById(orgId, chat.id, fresh);
+      got = await downloadFoto(fresh);
+      if (!got) return reply.code(404).send({ error: 'sem foto' });
+    }
+    // Persiste o cache (best-effort: falha de escrita não impede servir agora).
+    try {
+      if (mediaEnabled()) {
+        const rel = await saveAvatar(orgId, chat.id, got.buf, got.mime);
+        await query('UPDATE whatsapp_chats SET foto_path = $2, foto_mime = $3, foto_at = now() WHERE id = $1', [chat.id, rel, got.mime]);
+      } else {
+        await query('UPDATE whatsapp_chats SET foto_b64 = $2, foto_mime = $3, foto_at = now() WHERE id = $1', [chat.id, got.buf.toString('base64'), got.mime]);
+      }
+    } catch { /* segue e serve os bytes mesmo sem cachear */ }
+    return serve(got.buf, got.mime);
   });
 
   // Envia texto numa conversa existente. Persiste a mensagem própria, atualiza a
