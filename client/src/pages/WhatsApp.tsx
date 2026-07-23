@@ -1085,8 +1085,26 @@ function ContactDetails({ chat, messages, onClose, onLink, onOrder, onNumber, on
   );
 }
 
+// iOS/PWA: com o teclado aberto, env(safe-area-inset-bottom) continua valendo o
+// home indicator e sobra uma faixa entre a barra de digitação e o teclado.
+// O visualViewport encolhe quando o teclado sobe — usamos isso pra zerar o inset.
+function useKeyboardOpen(): boolean {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const check = (): void => { setOpen(window.innerHeight - vv.height - vv.offsetTop > 120); };
+    check();
+    vv.addEventListener('resize', check);
+    vv.addEventListener('scroll', check);
+    return () => { vv.removeEventListener('resize', check); vv.removeEventListener('scroll', check); };
+  }, []);
+  return open;
+}
+
 export function WhatsApp(): React.JSX.Element {
   const { can, user } = useAuth();
+  const kbOpen = useKeyboardOpen();
   const [status, setStatus] = useState<WaStatus | null>(null);
   const [enabled, setEnabled] = useState(true);
   const [chats, setChats] = useState<WaChat[]>([]);
@@ -1617,7 +1635,10 @@ export function WhatsApp(): React.JSX.Element {
 
               {/* Barra de digitação compacta no mobile (metade da altura): tela pequena
                   precisa do espaço pras mensagens. A partir de md volta ao tamanho cheio. */}
-              <div className={cn('px-2 pt-1 pb-[max(env(safe-area-inset-bottom),0.25rem)] md:px-3 md:pt-2 md:pb-[max(env(safe-area-inset-bottom),0.5rem)]',
+              <div className={cn('px-2 pt-1 md:px-3 md:pt-2',
+                kbOpen
+                  ? 'pb-1 md:pb-2'
+                  : 'pb-[max(env(safe-area-inset-bottom),0.25rem)] md:pb-[max(env(safe-area-inset-bottom),0.5rem)]',
                 noteMode ? 'bg-amber-100 dark:bg-amber-400/15' : 'bg-[var(--wa-panel)]')}>
                 {/* Chip da mensagem citada: a nota vai pendurada nela. */}
                 {noteMode && noteReplyTo && (
