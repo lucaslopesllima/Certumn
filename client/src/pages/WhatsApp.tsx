@@ -229,6 +229,18 @@ function Tick({ m }: { m: WaMessage }): React.JSX.Element | null {
   );
 }
 
+// Insere uma mensagem mantendo a ordem (momento, id) — a mesma do servidor.
+// Só anexar no fim erra quando o webhook entrega fora de ordem (reentrega,
+// sincronia do celular): a mensagem antiga apareceria como a mais recente.
+// Balões otimistas (id negativo, ainda sem confirmação) ficam sempre no fim.
+function insertMsg(ms: WaMessage[], m: WaMessage): WaMessage[] {
+  if (ms.some((x) => x.id === m.id)) return ms;
+  const antes = (a: WaMessage): boolean => (a.id < 0 ? false : a.momento !== m.momento ? a.momento < m.momento : a.id < m.id);
+  let i = ms.length;
+  while (i > 0 && !antes(ms[i - 1])) i--;
+  return [...ms.slice(0, i), m, ...ms.slice(i)];
+}
+
 // Rótulo curto pra citar uma mensagem numa nota (texto ou tipo da mídia).
 function quotePreview(m: WaMessage): string {
   if (m.tipo === 'imagem') return '📷 Imagem';
@@ -1287,10 +1299,10 @@ export function WhatsApp(): React.JSX.Element {
           // Modal de espiar aberto nessa conversa: mensagem nova entra no modal
           // (sem confirmar leitura — os branches abaixo cuidam da lista).
           if (peekIdRef.current != null && Number(chatId) === Number(peekIdRef.current)) {
-            setPeekMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+            setPeekMessages((ms) => insertMsg(ms, m));
           }
           if (Number(chatId) === Number(activeRef.current)) {
-            setMessages((ms) => (ms.some((x) => x.id === m.id) ? ms : [...ms, m]));
+            setMessages((ms) => insertMsg(ms, m));
             // Nota interna não é mensagem recebida: não confirma leitura nem recarrega.
             if (m.internal) return;
             // Conversa aberta: confirma leitura no servidor e só então recarrega a
@@ -1362,7 +1374,7 @@ export function WhatsApp(): React.JSX.Element {
         // a mensagem real nesse meio-tempo, só remove o temporário.
         const rest = ms.filter((x) => x.id !== tempId);
         if (!r.message) return rest.length === ms.length ? ms : [...rest, { ...temp, status: 'enviado' }];
-        return rest.some((x) => x.id === r.message!.id) ? rest : [...rest, r.message!];
+        return insertMsg(rest, r.message);
       });
       void loadChats();
     } catch (e) {
@@ -1403,7 +1415,7 @@ export function WhatsApp(): React.JSX.Element {
       setMessages((ms) => {
         const rest = ms.filter((x) => x.id !== tempId);
         if (!r.message) return rest.length === ms.length ? ms : [...rest, temp];
-        return rest.some((x) => x.id === r.message!.id) ? rest : [...rest, r.message!];
+        return insertMsg(rest, r.message);
       });
     } catch (e) {
       setMessages((ms) => ms.filter((x) => x.id !== tempId));
@@ -1422,7 +1434,7 @@ export function WhatsApp(): React.JSX.Element {
       const r = await api.post<{ message: WaMessage | null }>(`/api/whatsapp/chats/${activeId}/send-media`, {
         media, mediatype: detectType(f.type), mimetype: f.type || null, fileName: f.name, caption: null,
       });
-      if (r.message) setMessages((ms) => (ms.some((x) => x.id === r.message!.id) ? ms : [...ms, r.message!]));
+      if (r.message) setMessages((ms) => insertMsg(ms, r.message!));
       void loadChats();
     } catch (err) {
       toast.error(err instanceof ApiError ? err.message : 'Falha ao enviar arquivo');

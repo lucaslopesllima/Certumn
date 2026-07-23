@@ -203,15 +203,23 @@ export function whatsappRoutes(app: FastifyInstance): void {
       'SELECT id, remote_jid, nao_lidas FROM whatsapp_chats WHERE id = $1 AND org_id = $2', [chatId, orgId],
     );
     if (!chat) return reply.code(404).send({ error: 'conversa não encontrada' });
+    // Ordem: (momento, id). O momento sozinho não basta — o timestamp do WhatsApp
+    // é em segundos, então mensagens da mesma rajada empatam e sairiam em ordem
+    // arbitrária; o id (identity) desempata na ordem de gravação.
+    // A janela é das 500 MAIS RECENTES (subselect DESC), devolvida em ordem
+    // cronológica: com ORDER BY ... ASC LIMIT 500 direto, uma conversa longa
+    // abriria mostrando as 500 mais antigas e escondendo as de hoje.
     const messages = await query<{ id: string; evolution_id: string | null; from_me: boolean }>(
-      `SELECT m.id, m.evolution_id, m.from_me, m.tipo, m.corpo, m.status, m.momento, m.mime, m.file_name, m.internal, m.reply_to_id,
-              COALESCE(u.nome, o.nome, u.email) AS sender_nome
-         FROM whatsapp_messages m
-         LEFT JOIN users u ON u.id = m.sender_user_id
-         LEFT JOIN organizations o ON o.id = u.org_id
-        WHERE m.chat_id = $1 AND m.org_id = $2
-        ORDER BY m.momento
-        LIMIT 500`,
+      `SELECT * FROM (
+         SELECT m.id, m.evolution_id, m.from_me, m.tipo, m.corpo, m.status, m.momento, m.mime, m.file_name, m.internal, m.reply_to_id,
+                COALESCE(u.nome, o.nome, u.email) AS sender_nome
+           FROM whatsapp_messages m
+           LEFT JOIN users u ON u.id = m.sender_user_id
+           LEFT JOIN organizations o ON o.id = u.org_id
+          WHERE m.chat_id = $1 AND m.org_id = $2
+          ORDER BY m.momento DESC, m.id DESC
+          LIMIT 500
+       ) t ORDER BY t.momento, t.id`,
       [chatId, orgId],
     );
     // Confirma leitura no WhatsApp só se havia não-lidas (evita chamada à toa).
@@ -243,7 +251,7 @@ export function whatsappRoutes(app: FastifyInstance): void {
       const reads = await query<{ evolution_id: string | null }>(
         `SELECT evolution_id FROM whatsapp_messages
           WHERE chat_id = $1 AND org_id = $2 AND from_me = false AND evolution_id IS NOT NULL
-          ORDER BY momento DESC LIMIT 30`,
+          ORDER BY momento DESC, id DESC LIMIT 30`,
         [chatId, orgId],
       );
       const payload = reads.map((m) => ({ id: m.evolution_id as string, remoteJid: chat.remote_jid, fromMe: false }));
