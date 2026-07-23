@@ -29,6 +29,13 @@ export function auditRoutes(app: FastifyInstance): void {
     const params: unknown[] = [orgId];
     if (entity) { params.push(entity); where.push(`a.entity = $${params.length}`); }
     if (entity_id !== undefined) { params.push(entity_id); where.push(`a.entity_id = $${params.length}`); }
+    // total conta com os MESMOS filtros (sem limit/offset) — a tela pagina por
+    // total, então precisa do universo filtrado, não só da página atual.
+    const totalRow = await query<{ n: string }>(
+      `SELECT count(*) AS n FROM audit_log a WHERE ${where.join(' AND ')}`, params,
+    );
+    const total = Number(totalRow[0]?.n ?? 0);
+
     params.push(limit); const limIdx = params.length;
     params.push(offset); const offIdx = params.length;
 
@@ -42,6 +49,6 @@ export function auditRoutes(app: FastifyInstance): void {
        LIMIT $${limIdx} OFFSET $${offIdx}`,
       params,
     );
-    return { entries };
+    return { entries, total };
   });
 }

@@ -228,9 +228,14 @@ describe('audit (filtros)', () => {
     const relId = (created.json() as { relationship: { id: number } }).relationship.id;
 
     const all = await inj(a, 'GET', '/api/audit?limit=5&offset=0');
-    expect((all.json() as { entries: unknown[] }).entries.length).toBeGreaterThan(0);
+    const allBody = all.json() as { entries: unknown[]; total: number };
+    expect(allBody.entries.length).toBeGreaterThan(0);
+    // total conta o universo filtrado, não só a página — >= itens da página.
+    expect(allBody.total).toBeGreaterThanOrEqual(allBody.entries.length);
     const byEntity = await inj(a, 'GET', `/api/audit?entity=relationship&entity_id=${relId}`);
-    expect((byEntity.json() as { entries: { action: string }[] }).entries[0]!.action).toBe('create');
+    const byBody = byEntity.json() as { entries: { action: string }[]; total: number };
+    expect(byBody.entries[0]!.action).toBe('create');
+    expect(byBody.total).toBe(1); // só o create desse relationship
   });
 });
 

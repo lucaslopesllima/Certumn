@@ -437,3 +437,14 @@ export interface WaMessage {
   internal?: boolean; // nota interna: só a equipe vê, nunca enviada ao contato
   reply_to_id?: string | number | null; // id da mensagem citada (nota pendurada)
 }
+
+export interface AuditEntry {
+  id: number;
+  entity: string;
+  entity_id: number;
+  action: string;
+  diff: unknown | null;
+  created_at: string;
+  user_nome: string | null;
+  user_email: string | null;
+}
